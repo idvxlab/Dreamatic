@@ -36,7 +36,12 @@ cp .env.example .env
 # 填写 provider 凭证
 ```
 
-基本的 OpenAI-compatible 配置：
+你可以直接编辑 `.env`，也可以在 Web UI 中打开 **Settings -> Models & API**。
+设置面板管理的是同一组 Dreamatic 环境变量，并支持导入 `.env` profile 文件。
+
+#### 模型 Provider
+
+默认运行时 provider 使用 OpenAI-compatible 变量：
 
 ```env
 DREAMATIC_API_KEY=your-api-key
@@ -45,14 +50,36 @@ DREAMATIC_MODEL=gpt-4o
 HARNESS_DEFAULT_PROVIDER=openai-hub
 ```
 
-如需完整网页搜索：
+上下文压缩/摘要可以单独使用更便宜的小模型：
+
+```env
+DREAMATIC_SUMMARY_API_KEY=your-summary-api-key
+DREAMATIC_SUMMARY_BASE_URL=https://your-endpoint/v1
+DREAMATIC_SUMMARY_MODEL=gpt-4o-mini
+```
+
+
+#### 搜索工具
+
+`web_search` 建议配置真实搜索 provider：
+
+```env
+DREAMATIC_SEARCH_PROVIDER=serper
+DREAMATIC_SEARCH_API_KEY=your-search-key
+```
+
+当前搜索工具也兼容旧变量：
 
 ```env
 SERPER_API_KEY=your-serper-key
 BRAVE_SEARCH_API_KEY=your-brave-key
 ```
 
-如需图片生成与编辑：
+如果没有配置真实搜索 key，fallback 搜索可能只返回有限结果或空结果。
+
+#### 图片生成与编辑
+
+`image_generate` 和 `image_edit` 使用这些变量：
 
 ```env
 DREAMATIC_IMAGE_API_KEY=your-image-api-key
@@ -61,7 +88,38 @@ DREAMATIC_IMAGE_MODEL=gpt-image-2
 DREAMATIC_IMAGE_GENERATION_ENDPOINT=https://your-image-endpoint/v1/images/generations
 DREAMATIC_IMAGE_EDIT_ENDPOINT=https://your-image-endpoint/v1/images/edits
 DREAMATIC_IMAGE_DEFAULT_SIZE=1024x1024
+DREAMATIC_IMAGE_BACKEND=codex
 ```
+
+`DREAMATIC_IMAGE_DEFAULT_SIZE` 只是默认尺寸。工作流或工具调用仍然可以为具体产物请求某个 provider 支持的尺寸。
+
+#### 视频生成
+
+`video_generate` 是可选工具，适合接入任务式视频生成 API：
+
+```env
+DREAMATIC_VIDEO_API_KEY=your-video-api-key
+DREAMATIC_VIDEO_BASE_URL=https://ark.ap-southeast.bytepluses.com
+DREAMATIC_VIDEO_MODEL=seedance-1-5-pro-251215
+DREAMATIC_VIDEO_ENDPOINT=https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks
+DREAMATIC_VIDEO_DEFAULT_RESOLUTION=720p
+DREAMATIC_VIDEO_DEFAULT_DURATION=5
+DREAMATIC_VIDEO_BACKEND=codex
+```
+
+不同 provider/模型的限制可能不同：文生视频和图生视频可能支持不同的时长、分辨率和输入模式。
+
+#### 可选 3D 生成
+
+`hunyuan3d` 是可选工具，只在用户明确要求 3D 模型，或要求 GLB、OBJ、FBX、STL、USDZ 等格式时使用。
+
+```env
+DREAMATIC_HUNYUAN3D_API_KEY=your-hunyuan3d-key
+DREAMATIC_HUNYUAN3D_BASE_URL=https://tokenhub.tencentmaas.com/v1/api/3d
+DREAMATIC_HUNYUAN3D_MODEL=hy-3d-3.1
+```
+
+生成的 3D 资产是补充产物。在设计工作流中，它们会保存到 `<runDir>/artifacts/models/` 和 `<runDir>/artifacts/model-renders/`；不会替代必需的 PNG 图像集和 gallery。
 
 ### 4. 启动 Web UI
 
@@ -85,7 +143,7 @@ python cli.py --persona builder
 | **入口方式** | Web UI、交互式 CLI、REST + WebSocket API |
 | **智能体运行时** | ReAct 风格循环，支持取消、恢复和实时流式传输 |
 | **模型提供商** | OpenAI-compatible 和 Anthropic；通过 `config.yaml` 和 `.env` 配置 |
-| **内置工具** | 20+ 工具：文件操作、搜索、命令行、网页搜索/抓取、图片生成/编辑、记忆、规划、子智能体 |
+| **内置工具** | 30+ 工具：文件操作、搜索、命令行、网页搜索/抓取、图片/视频/3D 生成、记忆、规划、子智能体 |
 | **持久化** | 基于 SQLite 的消息、计划、记忆、检查点和会话关系 |
 | **安全** | 每工具审批门禁、persona 作用域权限、输出限制、SSRF 保护 |
 | **可扩展性** | Personas（智能体角色）、Skills（可复用流程）、Commands（项目快捷命令）、MCP 桥接 |
@@ -221,6 +279,8 @@ Dreamatic 分为六个运行时层级。
 | `shell`, `powershell` | 本地命令执行 |
 | `web_search`, `web_fetch` | 网页搜索和页面提取 |
 | `image_generate`, `image_edit` | 图片生成和编辑 |
+| `video_generate` | 通过任务式视频 provider 进行可选视频生成 |
+| `hunyuan3d` | 可选 3D 模型生成，包含预览图和 metadata |
 | `todo_write` | 计划创建和更新 |
 | `memory` | 持久化记忆读写 |
 | `think` | 显式推理记录 |

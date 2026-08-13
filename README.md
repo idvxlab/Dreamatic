@@ -36,7 +36,13 @@ cp .env.example .env
 # Fill in provider credentials
 ```
 
-Basic OpenAI-compatible setup:
+You can configure credentials either by editing `.env` directly or by opening
+**Settings -> Models & API** in the Web UI. The settings panel manages the same
+Dreamatic environment variables and can import `.env` profile files.
+
+#### Model providers
+
+The default runtime provider uses OpenAI-compatible variables:
 
 ```env
 DREAMATIC_API_KEY=your-api-key
@@ -45,14 +51,37 @@ DREAMATIC_MODEL=gpt-4o
 HARNESS_DEFAULT_PROVIDER=openai-hub
 ```
 
-For full web search:
+Compression/summarization can use a smaller model so long sessions stay cheaper:
+
+```env
+DREAMATIC_SUMMARY_API_KEY=your-summary-api-key
+DREAMATIC_SUMMARY_BASE_URL=https://your-endpoint/v1
+DREAMATIC_SUMMARY_MODEL=gpt-4o-mini
+```
+
+
+#### Search tools
+
+`web_search` works best with a configured search provider:
+
+```env
+DREAMATIC_SEARCH_PROVIDER=serper
+DREAMATIC_SEARCH_API_KEY=your-search-key
+```
+
+Compatibility variables are also accepted by the current search tools:
 
 ```env
 SERPER_API_KEY=your-serper-key
 BRAVE_SEARCH_API_KEY=your-brave-key
 ```
 
-For image generation and editing:
+Without a real search key, the fallback search provider may return limited or
+empty results.
+
+#### Image generation and editing
+
+`image_generate` and `image_edit` use these variables:
 
 ```env
 DREAMATIC_IMAGE_API_KEY=your-image-api-key
@@ -61,7 +90,43 @@ DREAMATIC_IMAGE_MODEL=gpt-image-2
 DREAMATIC_IMAGE_GENERATION_ENDPOINT=https://your-image-endpoint/v1/images/generations
 DREAMATIC_IMAGE_EDIT_ENDPOINT=https://your-image-endpoint/v1/images/edits
 DREAMATIC_IMAGE_DEFAULT_SIZE=1024x1024
+DREAMATIC_IMAGE_BACKEND=codex
 ```
+
+`DREAMATIC_IMAGE_DEFAULT_SIZE` is only the fallback size. A workflow or tool call
+may still request a specific supported size for a given deliverable.
+
+#### Video generation
+
+`video_generate` is optional and intended for providers with task-style video APIs:
+
+```env
+DREAMATIC_VIDEO_API_KEY=your-video-api-key
+DREAMATIC_VIDEO_BASE_URL=https://ark.ap-southeast.bytepluses.com
+DREAMATIC_VIDEO_MODEL=seedance-1-5-pro-251215
+DREAMATIC_VIDEO_ENDPOINT=https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks
+DREAMATIC_VIDEO_DEFAULT_RESOLUTION=720p
+DREAMATIC_VIDEO_DEFAULT_DURATION=5
+DREAMATIC_VIDEO_BACKEND=codex
+```
+
+Provider constraints matter: text-to-video and image-to-video models may support
+different durations, resolutions, and input modes.
+
+#### Optional 3D generation
+
+`hunyuan3d` is optional and only used when the user explicitly asks for a 3D
+model or a format such as GLB, OBJ, FBX, STL, or USDZ.
+
+```env
+DREAMATIC_HUNYUAN3D_API_KEY=your-hunyuan3d-key
+DREAMATIC_HUNYUAN3D_BASE_URL=https://tokenhub.tencentmaas.com/v1/api/3d
+DREAMATIC_HUNYUAN3D_MODEL=hy-3d-3.1
+```
+
+Generated 3D assets are supplementary. In design workflows they are saved under
+`<runDir>/artifacts/models/` and `<runDir>/artifacts/model-renders/`; they do not
+replace the required PNG image set or gallery.
 
 ### 4. Start Web UI
 
@@ -85,7 +150,7 @@ python cli.py --persona builder
 | **Entry points** | Web UI, interactive CLI, REST + WebSocket API |
 | **Agent runtime** | ReAct-style loop with cancellation, recovery, and real-time streaming |
 | **Model providers** | OpenAI-compatible and Anthropic; configured via `config.yaml` and `.env` |
-| **Built-in tools** | 20+ tools: file ops, search, shell, web search/fetch, image gen/edit, memory, planning, sub-agents |
+| **Built-in tools** | 30+ tools: file ops, search, shell, web search/fetch, image/video/3D generation, memory, planning, sub-agents |
 | **Persistence** | SQLite-backed messages, plans, memory, checkpoints, and session relationships |
 | **Security** | Per-tool approval gates, persona-scoped permissions, output limits, SSRF protection |
 | **Extensibility** | Personas (agent roles), Skills (reusable procedures), Commands (project shortcuts), MCP bridge |
@@ -98,6 +163,10 @@ python cli.py --persona builder
 Dreamatic is organized into six runtime layers.
 
 ![Dreamatic hero illustration](docs/assets/dreamatic-architect-v2.png)
+
+### Agent Workflow and Tool Map
+
+![Dreamatic agent workflow and tool map](docs/assets/dreamatic-agent-tool-map-editable.svg)
 
 | Layer | Responsibility |
 |---|---|
@@ -229,6 +298,8 @@ Project-local behavior in `.myharness/`:
 | `shell`, `powershell` | Local command execution |
 | `web_search`, `web_fetch` | Web search and page extraction |
 | `image_generate`, `image_edit` | Image generation and editing |
+| `video_generate` | Optional video generation through task-style video providers |
+| `hunyuan3d` | Optional 3D model generation with preview renders and metadata |
 | `todo_write` | Plan creation and updates |
 | `memory` | Persistent memory read/write |
 | `think` | Explicit reasoning notes |
