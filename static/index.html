@@ -1198,6 +1198,45 @@
         margin-bottom: 0;
       }
 
+      .msg-bubble .markdown-heading {
+        margin: 10px 0 6px;
+        color: var(--text);
+        font-size: 15px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .msg-bubble .markdown-heading:first-child {
+        margin-top: 0;
+      }
+
+      .markdown-table-wrap {
+        margin: 8px 0;
+        overflow-x: auto;
+      }
+
+      .msg-bubble .markdown-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .markdown-table th,
+      .markdown-table td {
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+        white-space: nowrap;
+      }
+
+      .markdown-table th {
+        background: var(--surface2);
+        color: var(--text);
+        font-weight: 650;
+      }
+
       .msg-bubble code {
         background: var(--bg);
         border: 1px solid var(--border);
@@ -2008,6 +2047,53 @@
         font-size: 11px;
         font-weight: 400;
       }
+
+      .plan-header {
+        transition: margin-bottom 0.15s ease;
+      }
+
+      #plan-panel.is-collapsed .plan-header {
+        margin-bottom: 0;
+      }
+
+      #plan-panel.is-collapsed #plan-list {
+        display: none;
+      }
+
+      .panel-collapse-btn {
+        width: 24px;
+        height: 24px;
+        margin-left: auto;
+        padding: 0;
+        border: none;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.12s, background 0.12s;
+      }
+
+      .panel-collapse-btn:hover {
+        color: var(--text);
+        background: rgba(91, 75, 255, 0.08);
+      }
+
+      .panel-collapse-icon {
+        width: 7px;
+        height: 7px;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(45deg) translate(-2px, -2px);
+        transition: transform 0.15s ease;
+      }
+
+      #plan-panel.is-collapsed .panel-collapse-icon {
+        transform: rotate(-135deg) translate(-2px, -2px);
+      }
+
       .plan-item,
       .runtime-item,
       .queue-item {
@@ -2674,6 +2760,16 @@
             <div class="plan-header">
               <span>计划</span>
               <span class="plan-badge" id="plan-badge">0</span>
+              <button
+                class="panel-collapse-btn"
+                id="plan-toggle"
+                type="button"
+                aria-label="收起计划"
+                aria-expanded="true"
+                title="收起计划"
+              >
+                <span class="panel-collapse-icon" aria-hidden="true"></span>
+              </button>
             </div>
             <div id="plan-list"></div>
           </div>
@@ -3139,6 +3235,7 @@
       let activeThinkingGroup = null;
       let lastToolResultsBelongToThinkingGroup = false;
       let runtimeEvents = [];
+      let planPanelCollapsed = localStorage.getItem("plan-panel-collapsed") === "1";
       let currentSnapshotMeta = {};
       let currentSnapshotAgentId = "";
       const autoContinuationKeys = new Set();
@@ -4299,6 +4396,7 @@
         list.innerHTML = "";
         badge.textContent = String(arr.length);
         panel.classList.remove("hidden");
+        syncPlanPanelState();
         if (!arr.length) {
           const empty = document.createElement("div");
           empty.className = "plan-empty";
@@ -4347,6 +4445,27 @@
           list.appendChild(row);
         });
       }
+
+      function syncPlanPanelState() {
+        const panel = document.getElementById("plan-panel");
+        const toggle = document.getElementById("plan-toggle");
+        if (!panel || !toggle) return;
+        panel.classList.toggle("is-collapsed", planPanelCollapsed);
+        toggle.setAttribute("aria-expanded", String(!planPanelCollapsed));
+        const label = planPanelCollapsed ? "展开计划" : "收起计划";
+        toggle.setAttribute("aria-label", label);
+        toggle.title = label;
+      }
+
+      const planToggle = document.getElementById("plan-toggle");
+      if (planToggle) {
+        planToggle.addEventListener("click", function () {
+          planPanelCollapsed = !planPanelCollapsed;
+          localStorage.setItem("plan-panel-collapsed", planPanelCollapsed ? "1" : "0");
+          syncPlanPanelState();
+        });
+      }
+      syncPlanPanelState();
 
       async function cancelPendingCommand(index) {
         if (typeof index !== "number") return;
@@ -5115,106 +5234,6 @@
         }
       }
 
-      function renderMessage(container, m) {
-        const role = m.role;
-        const content = m.content || [];
-
-        if (role === "user") {
-          const text = content
-            .filter((b) => b.type === "text")
-            .map((b) => b.text)
-            .join("\n");
-          if (!text) return;
-          if (reconcileOptimisticUserMessage(text)) return;
-          const el = div("msg user");
-          const messageId = m.message_id || "";
-          if (messageId) el.dataset.messageId = messageId;
-          el.innerHTML =
-            `<div class="msg-role">You</div>` +
-            `<div class="msg-bubble">${escHtml(text).replace(/\n/g, "<br>")}</div>`;
-          // "Edit & regenerate" strip — always visible below the bubble.
-          // Disabled while the engine is RUNNING; tooltip explains why.
-          if (messageId) {
-            const strip = document.createElement("button");
-            strip.type = "button";
-            strip.className = "msg-msg-edit-strip";
-            strip.innerHTML =
-              `<span class="icon" aria-hidden="true">✎</span>` +
-              `<span class="label">编辑</span>`;
-            strip.title = currentSessionIsRunning()
-              ? "任务运行中，停止后可编辑历史消息"
-              : "修改这条提示词，从该处重新生成回复";
-            if (currentSessionIsRunning()) {
-              strip.setAttribute("aria-disabled", "true");
-              strip.disabled = true;
-            }
-            strip.onclick = (ev) => {
-              ev.stopPropagation();
-              if (strip.getAttribute("aria-disabled") === "true") return;
-              beginInlineEdit(el, messageId, text);
-            };
-            el.appendChild(strip);
-          }
-          container.appendChild(el);
-          return;
-        }
-
-        if (role === "assistant") {
-          const textBlocks = content.filter((b) => b.type === "text" && b.text);
-          const toolCalls = content.filter((b) => b.type === "tool_call");
-          const thinkBlocks = content.filter(
-            (b) => b.type === "thinking" && b.thinking,
-          );
-
-          if (thinkBlocks.length) {
-            thinkBlocks.forEach((tb) => {
-              const el = document.createElement("div");
-              el.className = "thinking-block";
-              el.innerHTML =
-                `<div class="thinking-header">` +
-                `<span>💭 思考过程</span>` +
-                `<span style="font-size:11px">(${tb.thinking.length} 字)</span>` +
-                `<span class="thinking-toggle">展开 ▼</span>` +
-                `</div>` +
-                `<div class="thinking-body collapsed">${escHtml(tb.thinking)}</div>`;
-              el.querySelector(".thinking-header").addEventListener(
-                "click",
-                () => {
-                  const body = el.querySelector(".thinking-body");
-                  const toggle = el.querySelector(".thinking-toggle");
-                  const collapsed = body.classList.toggle("collapsed");
-                  toggle.textContent = collapsed ? "展开 ▼" : "收起 ▲";
-                },
-              );
-              container.appendChild(el);
-            });
-          }
-
-          toolCalls.forEach((tc) => {
-            container.appendChild(renderToolCall(tc));
-          });
-
-          if (textBlocks.length) {
-            const raw = textBlocks.map((b) => b.text).join("\n\n");
-            const el = div("msg assistant");
-            el.innerHTML = `<div class="msg-role">Assistant</div><div class="msg-bubble">${mdToHtml(raw)}</div>`;
-            container.appendChild(el);
-          }
-          return;
-        }
-
-        if (role === "tool") {
-          content
-            .filter((b) => b.type === "tool_result")
-            .forEach((tr) => {
-              // think tool result is already shown via the tool-call block — skip duplicate
-              if (tr.tool_name === "think") return;
-              if (isSyntheticRecoveryToolResult(tr)) return;
-              container.appendChild(renderToolResult(tr));
-            });
-        }
-      }
-
       // ── Edit-and-regenerate (rewrite) helpers ─────────────────────────
       //
       // When a user clicks "✎ 编辑" on a past user bubble, we replace the
@@ -5390,115 +5409,6 @@
         }
       }
 
-      function renderToolCall(tc) {
-        // think tool: render as a collapsible thinking block instead of a generic tool block
-        if (tc.tool_name === "think") {
-          const thought = (tc.tool_input?.thought || "").trim();
-          const wrap = document.createElement("div");
-          wrap.className = "thinking-block";
-          wrap.innerHTML =
-            `<div class="thinking-header">` +
-            `<span>💭 思考过程</span>` +
-            `<span style="font-size:11px;margin-left:6px;color:var(--text-muted)">(${thought.length} 字)</span>` +
-            `<span class="thinking-toggle" style="margin-left:auto">展开 ▼</span>` +
-            `</div>` +
-            `<div class="thinking-body collapsed" style="white-space:pre-wrap">${escHtml(thought)}</div>`;
-          wrap
-            .querySelector(".thinking-header")
-            .addEventListener("click", () => {
-              const body = wrap.querySelector(".thinking-body");
-              const toggle = wrap.querySelector(".thinking-toggle");
-              const collapsed = body.classList.toggle("collapsed");
-              toggle.textContent = collapsed ? "展开 ▼" : "收起 ▲";
-            });
-          return wrap;
-        }
-
-        // spawn_agents: expanded card showing each agent's task
-        if (tc.tool_name === "spawn_agents") {
-          let agents = tc.tool_input?.agents || [];
-          // LLM sometimes serializes the array as a JSON string — parse it back
-          if (typeof agents === "string") {
-            try {
-              agents = JSON.parse(agents);
-            } catch {
-              agents = [];
-            }
-          }
-          if (!Array.isArray(agents)) agents = [];
-          const agentItems = agents
-            .map((a, i) => {
-              const task = a.task || "";
-              return (
-                `<div style="padding:5px 0;display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--border)">` +
-                `<span style="color:var(--green);font-size:11px;white-space:nowrap;margin-top:2px;min-width:54px">Agent ${i + 1}</span>` +
-                `<span style="font-size:12px;color:var(--text)">${escHtml(task.slice(0, 120))}${task.length > 120 ? "…" : ""}</span>` +
-                `</div>`
-              );
-            })
-            .join("");
-          const wrap = document.createElement("div");
-          wrap.className = "tool-block";
-          wrap.innerHTML =
-            `<div class="tool-header open" onclick="toggleCollapse(this)">` +
-            `<span class="tool-icon">🤖</span>` +
-            `<span class="tool-name" style="color:var(--green)">spawn_agents</span>` +
-            `<span class="tool-summary">${agents.length} 个子 Agent 并行</span>` +
-            `<span class="tool-chevron">▶</span>` +
-            `</div>` +
-            `<div class="tool-body open" style="padding:4px 10px">${agentItems || '<em style="color:var(--text-muted);font-size:12px">（无 agents）</em>'}</div>`;
-          return wrap;
-        }
-
-        // spawn_agent: expanded card showing the task
-        if (tc.tool_name === "spawn_agent") {
-          const task = tc.tool_input?.task || "";
-          const wrap = document.createElement("div");
-          wrap.className = "tool-block";
-          wrap.innerHTML =
-            `<div class="tool-header open" onclick="toggleCollapse(this)">` +
-            `<span class="tool-icon">🤖</span>` +
-            `<span class="tool-name" style="color:var(--green)">spawn_agent</span>` +
-            `<span class="tool-summary">${escHtml(task.slice(0, 60))}${task.length > 60 ? "…" : ""}</span>` +
-            `<span class="tool-chevron">▶</span>` +
-            `</div>` +
-            `<div class="tool-body open" style="padding:6px 10px;font-size:12px;color:var(--text);white-space:pre-wrap">${escHtml(task)}</div>`;
-          return wrap;
-        }
-
-        const inputStr = JSON.stringify(tc.tool_input || {}, null, 2);
-        const wrap = document.createElement("div");
-        wrap.className = "tool-block";
-        wrap.innerHTML = `
-    <div class="tool-header" onclick="toggleCollapse(this)">
-      <span class="tool-icon">🔧</span>
-      <span class="tool-name">${escHtml(tc.tool_name)}</span>
-      <span class="tool-summary">${shortInput(tc.tool_input)}</span>
-      <span class="tool-chevron">▶</span>
-    </div>
-    <div class="tool-body"><pre>${escHtml(inputStr)}</pre></div>`;
-        return wrap;
-      }
-
-      function renderToolResult(tr) {
-        const isErr = tr.is_error;
-        const content = tr.content || "";
-        const toolLabel = tr.tool_name ? escHtml(tr.tool_name) : "工具结果";
-        const preview =
-          content.slice(0, 200) + (content.length > 200 ? "…" : "");
-        const wrap = document.createElement("div");
-        wrap.className = "result-block";
-        wrap.innerHTML = `
-    <div class="result-header" onclick="toggleCollapse(this, 'result-body')">
-      <span class="${isErr ? "result-err" : "result-ok"}">${isErr ? "✗" : "✓"}</span>
-      <span style="font-size:11px;color:var(--accent);font-weight:600;margin-left:2px">${toolLabel}</span>
-      <span class="result-summary">${escHtml(preview.replace(/\n/g, " "))}</span>
-      <span class="tool-chevron" style="margin-left:auto;color:var(--text-muted)">▶</span>
-    </div>
-    <div class="result-body"><pre>${escHtml(content)}</pre></div>`;
-        return wrap;
-      }
-
       function toggleCollapse(header, bodyClass = "tool-body") {
         header.classList.toggle("open");
         header.nextElementSibling.classList.toggle("open");
@@ -5525,9 +5435,9 @@
         wrap.innerHTML =
           `<div class="thinking-header">` +
           `<span>&#24605;&#32771;&#36807;&#31243;</span>` +
-          `<span class="thinking-toggle">&#25910;&#36215; &#9650;</span>` +
+          `<span class="thinking-toggle">&#23637;&#24320; &#9660;</span>` +
           `</div>` +
-          `<div class="thinking-body"><div class="thinking-content"></div></div>`;
+          `<div class="thinking-body collapsed"><div class="thinking-content"></div></div>`;
         wrap.querySelector(".thinking-header").addEventListener("click", () => {
           const body = wrap.querySelector(".thinking-body");
           const toggle = wrap.querySelector(".thinking-toggle");
@@ -5545,11 +5455,12 @@
 
       function appendThinkingText(group, text) {
         if (!group || !text) return;
-        if (group.textEl) return; // already have text, skip duplicates
-        group.textEl = document.createElement("div");
-        group.textEl.className = "thinking-text";
-        group.textEl.textContent = text;
-        group.content.prepend(group.textEl);
+        const textEl = document.createElement("div");
+        textEl.className = "thinking-text";
+        textEl.textContent = text;
+        // Keep consecutive thinking segments in their original order.
+        group.content.appendChild(textEl);
+        group.textEl = textEl;
       }
 
       function ensureThinkingGroup(container) {
@@ -5570,7 +5481,6 @@
             .map((b) => b.text)
             .join("\n");
           if (!text) return;
-          activeThinkingGroup = null;
           lastToolResultsBelongToThinkingGroup = false;
           if (reconcileOptimisticUserMessage(text, m.message_id)) return;
           const el = div("msg user");
@@ -5613,9 +5523,14 @@
           let thinkingGroupForMessage = null;
 
           if (thinkBlocks.length) {
-            activeThinkingGroup = createThinkingGroup();
+            // Reuse the open group when adjacent assistant messages contain
+            // more thinking. This produces one expandable block per
+            // consecutive thinking sequence after execution completes.
+            if (!activeThinkingGroup) {
+              activeThinkingGroup = createThinkingGroup();
+              container.appendChild(activeThinkingGroup.wrap);
+            }
             thinkingGroupForMessage = activeThinkingGroup;
-            container.appendChild(activeThinkingGroup.wrap);
             thinkBlocks.forEach((tb) =>
               appendThinkingText(activeThinkingGroup, tb.thinking),
             );
@@ -5630,18 +5545,14 @@
               }
               return;
             }
-            const parent = thinkingGroupForMessage
-              ? thinkingGroupForMessage.content
-              : container;
-            if (thinkingGroupForMessage)
-              lastToolResultsBelongToThinkingGroup = true;
+            // Every tool belongs to the execution details, even when the
+            // model did not emit a separate thinking block before calling it.
+            thinkingGroupForMessage =
+              thinkingGroupForMessage || ensureThinkingGroup(container);
+            const parent = thinkingGroupForMessage.content;
+            lastToolResultsBelongToThinkingGroup = true;
             parent.appendChild(
-              renderToolCall(
-                tc,
-                thinkingGroupForMessage
-                  ? { compact: true }
-                  : { defaultOpen: false },
-              ),
+              renderToolCall(tc, { compact: true }),
             );
           });
 
@@ -5650,13 +5561,16 @@
             const el = div("msg assistant");
             el.innerHTML = `<div class="msg-role">${assistantRoleLabel()}</div><div class="msg-bubble">${mdToHtml(raw)}</div><div class="msg-actions"><button class="msg-act-btn" onclick="copyMessageBubble(this)" title="Copy">📋</button></div>`;
             container.appendChild(el);
-            activeThinkingGroup = null;
+            // A message may contain visible narration and a tool call. Keep
+            // that tool's result in this expandable execution group.
+            if (!toolCalls.length) activeThinkingGroup = null;
           }
           return;
         }
 
         if (role === "tool") {
-          // Inside a thinking group, tool results are redundant with tool call details — skip them
+          // Inside a thinking group, tool results belong to that group's
+          // expandable execution details.
           const resultParent =
             lastToolResultsBelongToThinkingGroup && activeThinkingGroup
               ? activeThinkingGroup.content
@@ -5674,7 +5588,6 @@
                 ),
               );
             });
-          activeThinkingGroup = null;
           lastToolResultsBelongToThinkingGroup = false;
         }
       }
@@ -5709,7 +5622,7 @@
           const card = document.createElement("div");
           card.className = "thinking-tool-card";
           const header = document.createElement("div");
-          header.className = "thinking-tool-inline open";
+          header.className = "thinking-tool-inline";
           header.innerHTML = `
       <span class="tool-icon">&#128295;</span>
       <span class="tool-name">${escHtml(tc.tool_name)}</span>
@@ -5718,7 +5631,7 @@
           header.onclick = () => toggleCompactTool(header);
 
           const body = document.createElement("div");
-          body.className = "thinking-tool-inline-body open";
+          body.className = "thinking-tool-inline-body";
           body.innerHTML = `<pre>${escHtml(inputStr)}</pre>`;
 
           card.appendChild(header);
@@ -5751,13 +5664,13 @@
           const wrap = document.createElement("div");
           wrap.className = "tool-block";
           wrap.innerHTML =
-            `<div class="tool-header open" onclick="toggleCollapse(this)">` +
+            `<div class="tool-header" onclick="toggleCollapse(this)">` +
             `<span class="tool-icon">&#128295;</span>` +
             `<span class="tool-name" style="color:var(--green)">spawn_agents</span>` +
             `<span class="tool-summary">${agents.length} 个 Agent 任务</span>` +
             `<span class="tool-chevron">&#9654;</span>` +
             `</div>` +
-            `<div class="tool-body open" style="padding:4px 10px">${agentItems || '<em style="color:var(--text-muted);font-size:12px">未提供 agents</em>'}</div>`;
+            `<div class="tool-body" style="padding:4px 10px">${agentItems || '<em style="color:var(--text-muted);font-size:12px">未提供 agents</em>'}</div>`;
           return wrap;
         }
 
@@ -5767,13 +5680,13 @@
           const wrap = document.createElement("div");
           wrap.className = "tool-block";
           wrap.innerHTML =
-            `<div class="tool-header open" onclick="toggleCollapse(this)">` +
+            `<div class="tool-header" onclick="toggleCollapse(this)">` +
             `<span class="tool-icon">&#128295;</span>` +
             `<span class="tool-name" style="color:var(--green)">spawn_agent</span>` +
             `<span class="tool-summary">${escHtml(agent)} · ${escHtml(task.slice(0, 60))}${task.length > 60 ? "..." : ""}</span>` +
             `<span class="tool-chevron">&#9654;</span>` +
             `</div>` +
-            `<div class="tool-body open" style="padding:6px 10px;font-size:12px;color:var(--text);white-space:pre-wrap"><div style="font-size:11px;color:var(--accent);margin-bottom:4px">agent: ${escHtml(agent)}</div>${escHtml(task)}</div>`;
+            `<div class="tool-body" style="padding:6px 10px;font-size:12px;color:var(--text);white-space:pre-wrap"><div style="font-size:11px;color:var(--accent);margin-bottom:4px">agent: ${escHtml(agent)}</div>${escHtml(task)}</div>`;
           return wrap;
         }
 
@@ -5805,7 +5718,7 @@
           const card = document.createElement("div");
           card.className = "thinking-tool-card";
           const header = document.createElement("div");
-          header.className = "thinking-tool-inline open";
+          header.className = "thinking-tool-inline";
           header.innerHTML = `
       <span class="${isErr ? "result-err" : "result-ok"}">${isErr ? "&#10005;" : "&#10003;"}</span>
       <span style="font-size:11px;color:var(--accent);font-weight:600">${toolLabel}</span>
@@ -5814,7 +5727,7 @@
           header.onclick = () => toggleCompactTool(header);
 
           const body = document.createElement("div");
-          body.className = "thinking-tool-inline-body open";
+          body.className = "thinking-tool-inline-body";
           body.innerHTML = `<pre>${escHtml(content)}</pre>`;
 
           card.appendChild(header);
@@ -6833,18 +6746,14 @@
         // Phase 3: inline formatting
         h = h.replace(/`([^`]+)`/g, "<code>$1</code>");
         h = h.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-        h = h.replace(/^### (.*?)$/gm, "<strong>$1</strong>");
         h = h.replace(
-          /^## (.*?)$/gm,
-          '<strong style="font-size:1.05em">$1</strong>',
-        );
-        h = h.replace(
-          /^# (.*?)$/gm,
-          '<strong style="font-size:1.1em">$1</strong>',
+          /^#{1,6}\s+(.+?)\s*$/gm,
+          '<div class="markdown-heading">$1</div>',
         );
         // unordered list
         h = h.replace(/^[- *] (.*?)$/gm, "<li>$1</li>");
         h = h.replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>");
+        h = markdownTablesToHtml(h);
         // Phase 4: paragraphs (skip already-html blocks and code block placeholders)
         h = h
           .split("\n\n")
@@ -6861,6 +6770,52 @@
           return `<div class="code-block"><button class="copy-btn" title="Copy" onclick="copyCodeBlock(this)">📋</button><pre><code>${code}</code></pre></div>`;
         });
         return h;
+      }
+
+      function markdownTablesToHtml(source) {
+        const lines = source.split("\n");
+        const output = [];
+        const isTableRow = (line) => /^\s*\|.*\|\s*$/.test(line);
+        const isSeparator = (line) =>
+          /^\s*\|\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|\s*$/.test(
+            line,
+          );
+        const cells = (line) =>
+          line
+            .trim()
+            .replace(/^\||\|$/g, "")
+            .split("|")
+            .map((cell) => cell.trim());
+
+        for (let i = 0; i < lines.length; i += 1) {
+          if (!isTableRow(lines[i]) || !isSeparator(lines[i + 1] || "")) {
+            output.push(lines[i]);
+            continue;
+          }
+
+          const header = cells(lines[i]);
+          i += 2;
+          const rows = [];
+          while (i < lines.length && isTableRow(lines[i])) {
+            rows.push(cells(lines[i]));
+            i += 1;
+          }
+          i -= 1;
+
+          const headerHtml = header.map((cell) => `<th>${cell}</th>`).join("");
+          const rowsHtml = rows
+            .map(
+              (row) =>
+                `<tr>${header
+                  .map((_, index) => `<td>${row[index] || ""}</td>`)
+                  .join("")}</tr>`,
+            )
+            .join("");
+          output.push(
+            `<div class="markdown-table-wrap"><table class="markdown-table"><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table></div>`,
+          );
+        }
+        return output.join("\n");
       }
 
       function showConfirm(title, message) {
