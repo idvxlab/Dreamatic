@@ -1237,6 +1237,101 @@
         font-weight: 650;
       }
 
+      .media-result-block {
+        width: 100%;
+        margin: 8px 0 12px;
+      }
+
+      .media-result-label {
+        margin: 0 0 7px 2px;
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .media-result-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
+      }
+
+      .media-card {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .media-card-image {
+        display: block;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        background: var(--surface2);
+        cursor: zoom-in;
+      }
+
+      .media-card-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 5px 8px;
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      .media-card-meta span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .media-card-download {
+        margin-left: auto;
+        color: var(--accent);
+        text-decoration: none;
+        font-size: 14px;
+      }
+
+      .media-lightbox {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+        background: rgba(20, 18, 36, 0.78);
+      }
+
+      .media-lightbox.hidden {
+        display: none;
+      }
+
+      .media-lightbox img {
+        max-width: min(92vw, 1100px);
+        max-height: 88vh;
+        object-fit: contain;
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .media-lightbox-close {
+        position: fixed;
+        top: 18px;
+        right: 22px;
+        width: 34px;
+        height: 34px;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.3);
+        color: #fff;
+        cursor: pointer;
+        font-size: 20px;
+      }
+
       .msg-bubble code {
         background: var(--bg);
         border: 1px solid var(--border);
@@ -3209,6 +3304,11 @@
     <!-- Toasts -->
     <div id="toasts"></div>
 
+    <div id="media-lightbox" class="media-lightbox hidden" role="dialog" aria-modal="true" aria-label="图片预览">
+      <button class="media-lightbox-close" type="button" aria-label="关闭图片预览">&times;</button>
+      <img id="media-lightbox-image" alt="" />
+    </div>
+
     <script>
       "use strict";
 
@@ -3234,6 +3334,7 @@
       let pendingUserEchoes = [];
       let activeThinkingGroup = null;
       let lastToolResultsBelongToThinkingGroup = false;
+      const toolCallNames = new Map();
       let runtimeEvents = [];
       let planPanelCollapsed = localStorage.getItem("plan-panel-collapsed") === "1";
       let currentSnapshotMeta = {};
@@ -5104,6 +5205,7 @@
           streamIsThinking = false;
           activeThinkingGroup = null;
           lastToolResultsBelongToThinkingGroup = false;
+          toolCallNames.clear();
           lastMsgCount = 0;
           pendingUserEchoes = [];
 
@@ -5537,6 +5639,9 @@
           }
 
           toolCalls.forEach((tc) => {
+            if (tc.tool_call_id && tc.tool_name) {
+              toolCallNames.set(tc.tool_call_id, tc.tool_name);
+            }
             if (tc.tool_name === "think") {
               const thought = (tc.tool_input?.thought || "").trim();
               if (thought) {
@@ -5581,10 +5686,19 @@
             .forEach((tr) => {
               if (tr.tool_name === "think") return;
               if (isSyntheticRecoveryToolResult(tr)) return;
+              const toolName =
+                tr.tool_name || toolCallNames.get(tr.tool_call_id) || "";
+              const media = parseMediaToolResult(toolName, tr.content);
+              if (media.length) {
+                container.appendChild(renderMediaResult(toolName, media));
+                return;
+              }
               resultParent.appendChild(
                 renderToolResult(
                   tr,
-                  compactResults ? { compact: true } : { defaultOpen: false },
+                  compactResults
+                    ? { compact: true, toolName }
+                    : { defaultOpen: false, toolName },
                 ),
               );
             });
@@ -5613,6 +5727,164 @@
           "Error: previous tool result was missing from the persisted conversation history.",
         );
       }
+
+      function parseToolResultJson(content) {
+        if (!content) return null;
+        try {
+          const parsed = JSON.parse(String(content));
+          return parsed && typeof parsed === "object" ? parsed : null;
+        } catch {
+          return null;
+        }
+      }
+
+      function outputPathToUrl(value) {
+        if (!value) return "";
+        const raw = String(value).trim();
+        if (/^https?:\/\//i.test(raw) || /^\/outputs\//i.test(raw)) {
+          return raw;
+        }
+        const normalized = raw.replace(/\\/g, "/");
+        const match = normalized.match(/(?:^|\/)(outputs\/.*)$/i);
+        if (match) return "/" + encodeURI(match[1]);
+
+        // Design tools write during execution under .design-harness/runs;
+        // completed runs are published under outputs/runs/<runId>/final.
+        const runAsset = normalized.match(
+          /(?:^|\/)\.design-harness\/runs\/([^/]+)\/(artifacts|research)\/(.+)$/i,
+        );
+        if (runAsset && runAsset[2].toLowerCase() === "research") {
+          return (
+            "/run-assets/" +
+            encodeURIComponent(runAsset[1]) +
+            "/" +
+            runAsset[2] +
+            "/" +
+            encodeURI(runAsset[3])
+          );
+        }
+        return runAsset
+          ? "/outputs/runs/" +
+              encodeURIComponent(runAsset[1]) +
+              "/final/" +
+              runAsset[2] +
+              "/" +
+              encodeURI(runAsset[3])
+          : "";
+      }
+
+      function parseMediaToolResult(toolName, content) {
+        const payload = parseToolResultJson(content);
+        if (!payload || payload.ok === false) return [];
+        // Some persisted tool results omit tool_name/tool_call_id. Infer only
+        // from downloaded file fields, never from a candidate URL alone.
+        const isReference =
+          toolName === "research_asset_fetch" ||
+          (!toolName && payload.assets_dir && payload.asset?.file);
+        const isGenerated = /^(image_generate|image_edit)$/.test(toolName);
+        const hasStoredItems =
+          Array.isArray(payload.items) &&
+          payload.items.some((item) => item && item.file);
+        if (!isReference && !isGenerated && !hasStoredItems) return [];
+        const items = isReference
+          ? payload.asset
+            ? [payload.asset]
+            : []
+          : Array.isArray(payload.items)
+            ? payload.items
+            : [];
+        return items
+          .map((item, index) => {
+            const storedFile =
+              isReference && item.file && payload.assets_dir
+                ? `${payload.assets_dir}/${item.file}`
+                : item.file;
+            const url = outputPathToUrl(
+              item.url ||
+                storedFile ||
+                item.path ||
+                item.relativePath,
+            );
+            if (!url) return null;
+            return {
+              url,
+              label:
+                item.id || item.relativePath || item.file?.split(/[\\/]/).pop() ||
+                `图片 ${index + 1}`,
+              kind: isReference ? "参考图片" : "生成结果",
+            };
+          })
+          .filter(Boolean);
+      }
+
+      function renderMediaResult(toolName, media) {
+        const wrap = document.createElement("section");
+        wrap.className = "media-result-block";
+        const label = document.createElement("div");
+        label.className = "media-result-label";
+        label.textContent =
+          toolName === "research_asset_fetch" ? "参考图片" : "图片结果";
+        wrap.appendChild(label);
+
+        const grid = document.createElement("div");
+        grid.className = "media-result-grid";
+        media.forEach((item) => {
+          const card = document.createElement("article");
+          card.className = "media-card";
+          const image = document.createElement("img");
+          image.className = "media-card-image";
+          image.src = item.url;
+          image.alt = item.label;
+          image.loading = "lazy";
+          image.addEventListener("click", () => openMediaLightbox(item.url, item.label));
+          image.addEventListener("error", () => {
+            card.remove();
+            if (!grid.querySelector(".media-card")) wrap.remove();
+          });
+          card.appendChild(image);
+
+          const meta = document.createElement("div");
+          meta.className = "media-card-meta";
+          const name = document.createElement("span");
+          name.textContent = item.label;
+          name.title = item.label;
+          meta.appendChild(name);
+          const download = document.createElement("a");
+          download.className = "media-card-download";
+          download.href = item.url;
+          download.download = item.label;
+          download.title = "下载图片";
+          download.textContent = "⤓";
+          meta.appendChild(download);
+          card.appendChild(meta);
+          grid.appendChild(card);
+        });
+        wrap.appendChild(grid);
+        return wrap;
+      }
+
+      function openMediaLightbox(url, alt) {
+        const overlay = document.getElementById("media-lightbox");
+        const image = document.getElementById("media-lightbox-image");
+        if (!overlay || !image) return;
+        image.src = url;
+        image.alt = alt || "";
+        overlay.classList.remove("hidden");
+      }
+
+      function closeMediaLightbox() {
+        const overlay = document.getElementById("media-lightbox");
+        const image = document.getElementById("media-lightbox-image");
+        if (overlay) overlay.classList.add("hidden");
+        if (image) image.removeAttribute("src");
+      }
+
+      document
+        .querySelector("#media-lightbox .media-lightbox-close")
+        ?.addEventListener("click", closeMediaLightbox);
+      document.getElementById("media-lightbox")?.addEventListener("click", (event) => {
+        if (event.target.id === "media-lightbox") closeMediaLightbox();
+      });
 
       function renderToolCall(tc, options = {}) {
         const { defaultOpen = false } = options;
@@ -5707,11 +5979,12 @@
 
       function renderToolResult(tr, options = {}) {
         const { defaultOpen = false } = options;
+        const resolvedToolName = options.toolName || tr.tool_name || "";
         if (options.compact) {
           const isErr = tr.is_error;
           const content = tr.content || "";
-          const toolLabel = tr.tool_name
-            ? escHtml(tr.tool_name)
+          const toolLabel = resolvedToolName
+            ? escHtml(resolvedToolName)
             : "tool_result";
           const preview =
             content.slice(0, 120) + (content.length > 120 ? "..." : "");
@@ -5736,7 +6009,9 @@
         }
         const isErr = tr.is_error;
         const content = tr.content || "";
-        const toolLabel = tr.tool_name ? escHtml(tr.tool_name) : "tool_result";
+        const toolLabel = resolvedToolName
+          ? escHtml(resolvedToolName)
+          : "tool_result";
         const preview =
           content.slice(0, 200) + (content.length > 200 ? "..." : "");
         const wrap = document.createElement("div");

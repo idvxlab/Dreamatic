@@ -518,6 +518,8 @@ async def _shutdown() -> None:
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
+OUTPUTS_DIR = ROOT_DIR / "outputs"
+RUNS_DIR = ROOT_DIR / ".design-harness" / "runs"
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> Response:
@@ -541,6 +543,11 @@ async def serve_index() -> FileResponse:
 async def _mount_static() -> None:
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    if OUTPUTS_DIR.exists():
+        app.mount("/outputs", StaticFiles(directory=str(OUTPUTS_DIR)), name="outputs")
+    if RUNS_DIR.exists():
+        # Research assets exist here before export_package copies them to outputs/.
+        app.mount("/run-assets", StaticFiles(directory=str(RUNS_DIR)), name="run-assets")
 
 
 # ── Request / response models ──────────────────────────────────────────
@@ -1564,13 +1571,18 @@ async def api_save_model_profile(req: ModelProfileRequest) -> dict[str, Any]:
     if not replaced:
         profiles.append(profile)
     settings["profiles"] = profiles
+    active_id = ""
+    if req.activate:
+        settings["active_profile_id"] = profile["id"]
+        active_id = profile["id"]
+        _write_managed_env_values({**_read_managed_env_values(), **_profile_to_env_values(profile)})
     _save_dreamatic_settings(settings)
     _reload_runtime_config()
     cfg = _require_config()
     return {
         "status": "saved",
         "profile": _profile_public(profile),
-        "active_profile_id": "",
+        "active_profile_id": active_id,
         "providers": list(cfg.providers.keys()),
         "default_provider": cfg.default_provider,
     }
