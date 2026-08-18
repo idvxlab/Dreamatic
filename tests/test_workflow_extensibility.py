@@ -19,7 +19,11 @@ from harness.tools.builtin.design_run import (
     design_bus_read_tool,
     run_init_tool,
 )
-from harness.tools.builtin.skill import list_skills_tool, use_skill_tool
+from harness.tools.builtin.skill import (
+    list_skills_tool,
+    read_skill_file_tool,
+    use_skill_tool,
+)
 
 
 def _write_skill(root: Path, name: str, description: str, body: str) -> Path:
@@ -53,6 +57,20 @@ def _write_persona(root: Path, name: str) -> Path:
     return path
 
 
+def _write_agents_skill(root: Path, name: str) -> Path:
+    path = root / ".agents" / "skills" / name / "SKILL.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "---\n"
+        f"name: {name}\n"
+        'description: "A specialized scripted workflow."\n'
+        "---\n"
+        "# Scripted workflow\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_unclassified_skill_is_discovered_and_loaded(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     _write_skill(
@@ -73,6 +91,23 @@ def test_unclassified_skill_is_discovered_and_loaded(monkeypatch, tmp_path):
     assert "Follow the visitor narrative." in load_skill("museum-work")["system_prompt"]
 
 
+def test_agents_skill_is_discovered(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    _write_agents_skill(tmp_path, "travel-workflow")
+
+    summaries = list_skills(project_only=True)
+    assert summaries == [
+        {
+            "name": "travel-workflow",
+            "description": "A specialized scripted workflow.",
+            "source": "project-agents",
+        }
+    ]
+    loaded = load_skill("travel-workflow", project_only=True)
+    assert loaded["_source"] == "project-agents"
+    assert loaded["_source_file"].endswith("SKILL.md")
+
+
 @pytest.mark.asyncio
 async def test_list_skills_refreshes_current_filesystem(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
@@ -88,6 +123,64 @@ async def test_list_skills_refreshes_current_filesystem(monkeypatch, tmp_path):
     assert refreshed["count"] == 1
     assert refreshed["skills"][0]["name"] == "late-skill"
     assert "# Skill: late-skill" in await use_skill_tool("late-skill")
+
+
+@pytest.mark.asyncio
+async def test_skill_resources_are_indexed_and_loaded_progressively(
+    monkeypatch, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
+    _write_skill(
+        tmp_path,
+        "progressive-skill",
+        "A progressive workflow.",
+        "# Workflow\n\nRead `references/current-step.md` only when needed.",
+    )
+    resource = (
+        tmp_path
+        / ".myharness"
+        / "skills"
+        / "progressive-skill"
+        / "references"
+        / "current-step.md"
+    )
+    resource.parent.mkdir(parents=True, exist_ok=True)
+    resource.write_text("line one\nline two\nline three\n", encoding="utf-8")
+
+    loaded = await use_skill_tool("progressive-skill")
+    assert "references/current-step.md" in loaded
+    assert "line one" not in loaded
+    assert "Supporting files listed above were not loaded" in loaded
+    assert "resource index is not an execution order" in loaded
+    assert f"Base directory: {resource.parent.parent.resolve()}" in loaded
+    assert "authoritative copy for this activation" in loaded
+    assert "replace any generic pre-load plan" in loaded
+
+    first = await read_skill_file_tool(
+        "progressive-skill", "references/current-step.md", limit=2
+    )
+    assert "line one" in first
+    assert "line two" in first
+    assert "line three" not in first
+    assert "Continue with offset=2" in first
+
+    second = await read_skill_file_tool(
+        "progressive-skill", "references/current-step.md", offset=2, limit=2
+    )
+    assert "line three" in second
+    assert "End of resource" in second
+
+
+@pytest.mark.asyncio
+async def test_read_skill_file_rejects_path_escape(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    _write_skill(tmp_path, "safe-skill", "Safe.", "# Safe")
+    outside = tmp_path / "outside.md"
+    outside.write_text("secret", encoding="utf-8")
+
+    result = await read_skill_file_tool("safe-skill", "../../outside.md")
+
+    assert "escapes the Skill directory" in result
 
 
 def test_skill_tools_exist_when_session_starts_without_skills(monkeypatch, tmp_path):
@@ -113,7 +206,7 @@ def test_skill_tools_exist_when_session_starts_without_skills(monkeypatch, tmp_p
     )
 
     tool_names = {schema.name for schema in engine.tool_schemas}
-    assert {"list_skills", "use_skill"}.issubset(tool_names)
+    assert {"list_skills", "use_skill", "read_skill_file"}.issubset(tool_names)
 
 
 def test_skill_addendum_does_not_classify_every_skill_as_workflow():
@@ -123,6 +216,9 @@ def test_skill_addendum_does_not_classify_every_skill_as_workflow():
     assert "## Available Skills" in addendum
     assert "Skills (Workflow Presets)" not in addendum
     assert "Skills do not need a category" in addendum
+    assert "Do not batch-read resources for future stages" in addendum
+    assert "Do not search for or switch to duplicate Skill copies" in addendum
+    assert "replace any generic plan" in addendum
     assert "**free-form**" in addendum
 
 
@@ -134,6 +230,7 @@ async def test_run_init_accepts_generic_workflow_context(monkeypatch, tmp_path):
     result = json.loads(
         await run_init_tool(
             brief="Create a museum exhibition concept.",
+            mode="minimal",
             workflowSkill="museum-exhibition-workflow",
             context='{"visitor_goal":"orientation","custom_stage":"narrative"}',
             runIdOverride="museum-run",
@@ -141,12 +238,11 @@ async def test_run_init_accepts_generic_workflow_context(monkeypatch, tmp_path):
     )
 
     assert result["ok"] is True
+    assert result["mode"] == "minimal"
     assert result["workflowSkill"] == "museum-exhibition-workflow"
-    brief = json.loads(Path(result["runDir"], "brief.json").read_text(encoding="utf-8"))
-    assert brief["workflowSkill"] == "museum-exhibition-workflow"
-    assert brief["context"]["custom_stage"] == "narrative"
-    assert brief["resolvedScope"] is None
-    assert brief["domainContext"] is None
+    run_dir = Path(result["runDir"])
+    assert run_dir.is_dir()
+    assert list(run_dir.iterdir()) == []
 
 
 @pytest.mark.asyncio
@@ -270,6 +366,26 @@ def test_design_primary_keeps_four_agent_spawn_boundary():
     ]
     assert "cannot grant that agent additional tools" in profile.system_prompt
     assert "do not silently substitute a different agent" in profile.system_prompt
+    assert {
+        "powershell", "list_skills", "image_generate", "image_edit", "inspect_image"
+    }.issubset(
+        profile.allowed_tools
+    )
+    assert "single-controller or single-agent" in profile.system_prompt
+    assert "do not create another nested run root" in profile.system_prompt
+
+
+def test_design_stage_agents_can_run_bundled_skill_scripts():
+    for name in (
+        "design-research",
+        "design-planner",
+        "design-designer",
+        "design-critic",
+    ):
+        profile = load_agent_profile(name)
+        assert "powershell" in profile.allowed_tools
+        assert "list_skills" in profile.allowed_tools
+        assert "inspect_image" in profile.allowed_tools
 
 
 def test_design_command_uses_explicit_or_default_workflow():

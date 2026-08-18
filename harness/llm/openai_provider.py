@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import json
+from pathlib import Path
 from typing import Any
 
 import openai
@@ -9,6 +11,7 @@ from harness.llm.base import LLMConfig, LLMProvider, TokenCallback
 from harness.types.messages import (
     Message,
     TextBlock,
+    ImageBlock,
     ToolCallBlock,
     ToolResultBlock,
     ThinkingBlock,
@@ -216,7 +219,22 @@ class OpenAIProvider(LLMProvider):
                 text = "\n".join(
                     b.text for b in msg.content if isinstance(b, TextBlock)
                 )
-                result.append({"role": "user", "content": text})
+                images = [b for b in msg.content if isinstance(b, ImageBlock)]
+                if not images:
+                    result.append({"role": "user", "content": text})
+                    continue
+                content: list[dict[str, Any]] = []
+                if text:
+                    content.append({"type": "text", "text": text})
+                for image in images:
+                    encoded = base64.b64encode(Path(image.path).read_bytes()).decode("ascii")
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{image.media_type};base64,{encoded}",
+                        },
+                    })
+                result.append({"role": "user", "content": content})
 
             elif msg.role == "assistant":
                 text_parts = [

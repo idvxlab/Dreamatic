@@ -6,10 +6,15 @@ from harness.tools.builtin.skill import (
     USE_SKILL_SCHEMA,
     list_skills_tool,
     LIST_SKILLS_SCHEMA,
+    read_skill_file_tool,
+    READ_SKILL_FILE_SCHEMA,
 )
 from harness.tools.builtin.glob_tool import glob_tool, GLOB_SCHEMA
 from harness.tools.builtin.grep_tool import grep_tool, GREP_SCHEMA
 from harness.tools.builtin.powershell_tool import powershell_tool, POWERSHELL_SCHEMA
+from harness.tools.builtin.tool_output import (
+    READ_TOOL_OUTPUT_SCHEMA, make_read_tool_output_tool,
+)
 from harness.tools.builtin.write_file import write_file_tool, WRITE_FILE_SCHEMA
 from harness.tools.builtin.write_json import write_json_tool, WRITE_JSON_SCHEMA
 from harness.tools.builtin.create_directory import create_directory_tool, CREATE_DIRECTORY_SCHEMA
@@ -31,6 +36,9 @@ from harness.tools.builtin.background_task import (
 from harness.tools.builtin.design_image import (
     IMAGE_GENERATE_SCHEMA, image_generate_tool,
     IMAGE_EDIT_SCHEMA, image_edit_tool,
+)
+from harness.tools.builtin.inspect_image import (
+    INSPECT_IMAGE_SCHEMA, make_inspect_image_tool,
 )
 from harness.tools.builtin.design_video import (
     VIDEO_GENERATE_SCHEMA, video_generate_tool,
@@ -64,9 +72,11 @@ __all__ = [
     "search_tool", "SEARCH_SCHEMA",
     "use_skill_tool", "USE_SKILL_SCHEMA",
     "list_skills_tool", "LIST_SKILLS_SCHEMA",
+    "read_skill_file_tool", "READ_SKILL_FILE_SCHEMA",
     "glob_tool", "GLOB_SCHEMA",
     "grep_tool", "GREP_SCHEMA",
     "powershell_tool", "POWERSHELL_SCHEMA",
+    "READ_TOOL_OUTPUT_SCHEMA", "make_read_tool_output_tool",
     "write_file_tool", "WRITE_FILE_SCHEMA",
     "write_json_tool", "WRITE_JSON_SCHEMA",
     "create_directory_tool", "CREATE_DIRECTORY_SCHEMA",
@@ -80,6 +90,7 @@ __all__ = [
     "background_task_tool", "BACKGROUND_TASK_SCHEMA",
     "IMAGE_GENERATE_SCHEMA", "image_generate_tool",
     "IMAGE_EDIT_SCHEMA", "image_edit_tool",
+    "INSPECT_IMAGE_SCHEMA", "make_inspect_image_tool",
     "VIDEO_GENERATE_SCHEMA", "video_generate_tool",
     "HUNYUAN3D_SCHEMA", "hunyuan3d_tool",
     "RUN_INIT_SCHEMA", "run_init_tool",

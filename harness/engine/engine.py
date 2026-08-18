@@ -41,7 +41,7 @@ NETWORK_RECOVERY_ATTEMPTS = 99
 OTHER_RECOVERY_ATTEMPTS = 5
 SUBAGENT_RECOVERY_DELAY_SECONDS = 3.0
 
-from harness.types.messages import Message, TextBlock, new_message_id
+from harness.types.messages import ImageBlock, Message, TextBlock, new_message_id
 from harness.engine.state_machine import StateMachine, EngineState
 from harness.engine.loop import ReactLoop, InterruptSignal
 from harness.engine.prompt_cache import PromptCache
@@ -76,9 +76,24 @@ class PendingCommand:
     index: int
     text: str
     submitted_at: float  # unix timestamp
+    images: list[ImageBlock] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        return {
+            "index": self.index,
+            "text": self.text,
+            "submitted_at": self.submitted_at,
+            "images": [
+                {
+                    "type": "image",
+                    "name": item.name,
+                    "media_type": item.media_type,
+                    "attachment_id": item.attachment_id,
+                    "url": item.url,
+                }
+                for item in self.images
+            ],
+        }
 
 
 @dataclass
@@ -95,8 +110,13 @@ class PendingSpawn:
 
 _PLAN_REMINDER_TEXT = (
     "System reminder: this looks like non-trivial work. If there is no visible "
-    "plan yet, first call think, then call todo_write(action=\"set\") with "
-    "2-6 concrete steps for the current session_id. Keep the plan updated with "
+    "plan yet, first call think. When the user explicitly selects an installed "
+    "Skill, load that Skill before writing the detailed plan, then derive the "
+    "plan from its mandatory ordered workflow. Otherwise call "
+    "todo_write(action=\"set\") with 2-6 concrete steps for the current "
+    "session_id. If a generic plan was created before a selected Skill loaded, "
+    "replace it with the Skill-defined stages before domain execution. Keep the "
+    "plan updated with "
     "todo_write(action=\"update\") as work progresses. If the user asks for a "
     "new, revised, or more detailed plan, replace the current visible plan with "
     "todo_write(action=\"set\") instead of trying to maintain multiple plans."
@@ -149,6 +169,11 @@ def serialize_message(msg: Message) -> dict[str, Any]:
     blocks = []
     for b in msg.content:
         d: dict[str, Any] = {"type": b.type}
+        if isinstance(b, ImageBlock):
+            d.update({"name": b.name, "media_type": b.media_type,
+                      "attachment_id": b.attachment_id, "url": b.url})
+            blocks.append(d)
+            continue
         if hasattr(b, "text"):
             d["text"] = b.text
         if hasattr(b, "thinking"):
@@ -701,7 +726,9 @@ class AgentEngine:
             pass
         return Message(role="system", content=[TextBlock(text=_PLAN_REMINDER_TEXT)])
 
-    async def send_message(self, text: str) -> dict[str, Any]:
+    async def send_message(
+        self, text: str, images: list[ImageBlock] | None = None
+    ) -> dict[str, Any]:
         """
         Accept a user message.
 
@@ -722,6 +749,7 @@ class AgentEngine:
         only returns None-style state via the dict. Callers that previously
         ignored the return value keep working unchanged.
         """
+        images = list(images or [])
         async with self._state_lock:
             state = self._sm.state
 
@@ -733,6 +761,7 @@ class AgentEngine:
                     index=self._pending_commands_counter,
                     text=text,
                     submitted_at=__import__("time").time(),
+                    images=images,
                 )
                 self._pending_commands.append(pc)
             self._emitter.emit(
@@ -750,7 +779,11 @@ class AgentEngine:
             }
 
         reminder_msg = await self._build_plan_reminder_message_if_needed(text)
-        user_msg = Message(role="user", content=[TextBlock(text=text)])
+        user_content = []
+        if text:
+            user_content.append(TextBlock(text=text))
+        user_content.extend(images)
+        user_msg = Message(role="user", content=user_content)
 
         # Concurrency rule: transition inside lock, then release before async work
         async with self._state_lock:
@@ -776,7 +809,7 @@ class AgentEngine:
         # Trigger async title generation (only for top-level agents, only once)
         if self._config.spawn_depth == 0 and not self._title_generated:
             self._title_generated = True
-            asyncio.create_task(self._generate_title_async(text))
+            asyncio.create_task(self._generate_title_async(text or "Image request"))
 
         # Pending list is empty at this point (we just transitioned out of
         # any RUNNING state), but we still serialize it for API symmetry.
@@ -1905,7 +1938,11 @@ class AgentEngine:
     async def _process_queued_command(self, pc: "PendingCommand") -> None:
         """Run a queued user command: transition to RUNNING and fire the loop."""
         reminder_msg = await self._build_plan_reminder_message_if_needed(pc.text)
-        user_msg = Message(role="user", content=[TextBlock(text=pc.text)])
+        user_content = []
+        if pc.text:
+            user_content.append(TextBlock(text=pc.text))
+        user_content.extend(pc.images)
+        user_msg = Message(role="user", content=user_content)
         async with self._state_lock:
             # COMPLETED/ERROR -> WAITING_INPUT -> RUNNING
             if self._sm.state in (EngineState.COMPLETED, EngineState.ERROR):

@@ -29,6 +29,17 @@ class TextBlock:
 
 
 @dataclass
+class ImageBlock:
+    """A persisted user image attachment available to multimodal providers."""
+    path: str
+    media_type: str
+    name: str = ""
+    attachment_id: str = ""
+    url: str = ""
+    type: Literal["image"] = field(default="image", init=False)
+
+
+@dataclass
 class ThinkingBlock:
     """
     Anthropic extended thinking block.
@@ -67,7 +78,7 @@ class ToolResultBlock:
     type: Literal["tool_result"] = field(default="tool_result", init=False)
 
 
-ContentBlock = Union[TextBlock, ThinkingBlock, ToolCallBlock, ToolResultBlock]
+ContentBlock = Union[TextBlock, ImageBlock, ThinkingBlock, ToolCallBlock, ToolResultBlock]
 
 
 @dataclass

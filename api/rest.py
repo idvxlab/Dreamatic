@@ -8,11 +8,14 @@ Switching sessions: call /state to get last_messages + is_running.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import os
 import re
 import uuid
+from urllib.parse import quote
 from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
@@ -35,7 +38,7 @@ logging.basicConfig(
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from harness.commands import CommandSystem
 from harness.commands.models import CommandContext, CommandResult, substitute_args
@@ -61,7 +64,7 @@ from harness.storage.backends.sqlite import (
     SQLitePlanStore,
     SQLiteSessionStore,
 )
-from harness.types.messages import Message, TextBlock
+from harness.types.messages import ImageBlock, Message, TextBlock
 
 app = FastAPI(title="MyHarnessPy", version="0.1.0")
 api_logger = logging.getLogger("harness.api")
@@ -520,6 +523,14 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
 OUTPUTS_DIR = ROOT_DIR / "outputs"
 RUNS_DIR = ROOT_DIR / ".design-harness" / "runs"
+ATTACHMENTS_DIR = ROOT_DIR / ".dreamatic" / "attachments"
+MAX_MESSAGE_IMAGES = 4
+MAX_IMAGE_BYTES = 10 * 1024 * 1024
+IMAGE_MEDIA_EXTENSIONS = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/webp": ".webp",
+}
 
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> Response:
@@ -561,8 +572,15 @@ class CreateSessionRequest(BaseModel):
     approval_mode: str = ""     # "ask" | "auto" | "full" — picked at session start
 
 
+class ImageAttachmentRequest(BaseModel):
+    name: str = "image"
+    media_type: str
+    data: str
+
+
 class SendMessageRequest(BaseModel):
-    text: str
+    text: str = ""
+    images: list[ImageAttachmentRequest] = Field(default_factory=list)
 
 
 class UpdateSessionRequest(BaseModel):
@@ -949,16 +967,88 @@ async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
     }
 
 
+def _valid_image_signature(raw: bytes, media_type: str) -> bool:
+    if media_type == "image/png":
+        return raw.startswith(b"\x89PNG\r\n\x1a\n")
+    if media_type == "image/jpeg":
+        return raw.startswith(b"\xff\xd8\xff")
+    if media_type == "image/webp":
+        return len(raw) >= 12 and raw[:4] == b"RIFF" and raw[8:12] == b"WEBP"
+    return False
+
+
+def _attachment_session_dir(session_id: str) -> Path:
+    directory_id = uuid.uuid5(uuid.NAMESPACE_URL, session_id).hex
+    return ATTACHMENTS_DIR / directory_id
+
+
+def _save_image_attachments(
+    session_id: str, attachments: list[ImageAttachmentRequest]
+) -> list[ImageBlock]:
+    if len(attachments) > MAX_MESSAGE_IMAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A message can contain at most {MAX_MESSAGE_IMAGES} images.",
+        )
+    session_dir = _attachment_session_dir(session_id)
+    session_dir.mkdir(parents=True, exist_ok=True)
+    result: list[ImageBlock] = []
+    for attachment in attachments:
+        media_type = attachment.media_type.lower().strip()
+        extension = IMAGE_MEDIA_EXTENSIONS.get(media_type)
+        if extension is None:
+            raise HTTPException(status_code=400, detail=f"Unsupported image type: {media_type}")
+        encoded = attachment.data.split(",", 1)[-1]
+        try:
+            raw = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data.") from exc
+        if not raw or len(raw) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=400, detail="Each image must be between 1 byte and 10 MB.")
+        if not _valid_image_signature(raw, media_type):
+            raise HTTPException(status_code=400, detail="Image content does not match its media type.")
+        attachment_id = uuid.uuid4().hex
+        path = session_dir / f"{attachment_id}{extension}"
+        path.write_bytes(raw)
+        safe_name = Path(attachment.name).name or f"image{extension}"
+        url = (
+            f"/sessions/{quote(session_id, safe='')}/attachments/"
+            f"{quote(attachment_id, safe='')}"
+        )
+        result.append(ImageBlock(
+            path=str(path.resolve()),
+            media_type=media_type,
+            name=safe_name,
+            attachment_id=attachment_id,
+            url=url,
+        ))
+    return result
+
+
+@app.get("/sessions/{session_id}/attachments/{attachment_id}")
+async def get_message_attachment(session_id: str, attachment_id: str) -> FileResponse:
+    session_dir = _attachment_session_dir(session_id).resolve()
+    for extension in IMAGE_MEDIA_EXTENSIONS.values():
+        candidate = (session_dir / f"{attachment_id}{extension}").resolve()
+        if candidate.parent == session_dir and candidate.is_file():
+            return FileResponse(candidate)
+    raise HTTPException(status_code=404, detail="Attachment not found")
+
+
 @app.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, req: SendMessageRequest) -> dict[str, Any]:
     engine = _get_engine(session_id)
+    text = req.text.strip()
+    if not text and not req.images:
+        raise HTTPException(status_code=400, detail="Message text or an image is required.")
+    images = _save_image_attachments(session_id, req.images)
 
     # Route decision:
     # - If the user is explicitly querying the tool inventory (not executing a task),
     #   respond locally without entering the agent loop.
     # - Tasks always enter the Agent Loop, even if they mention tools.
-    is_tool_query = _is_tool_inventory_query(req.text)
-    is_task_request = _is_task_execution_request(req.text)
+    is_tool_query = not images and _is_tool_inventory_query(text)
+    is_task_request = _is_task_execution_request(text)
 
     if is_tool_query and not is_task_request:
         snap = await engine.get_snapshot()
@@ -966,12 +1056,12 @@ async def send_message(session_id: str, req: SendMessageRequest) -> dict[str, An
             await _respond_with_local_text(
                 session_id=session_id,
                 engine=engine,
-                user_text=req.text,
+                user_text=text,
                 assistant_text=_render_tool_inventory(engine),
             )
             return {"status": "completed-locally"}
 
-    result = await engine.send_message(req.text)
+    result = await engine.send_message(text, images=images)
     # result == {"status": "started"|"queued", "queued": bool,
     #            "index": int|None, "text": str,
     #            "pending_commands": [...]} — pass through verbatim so
@@ -1915,7 +2005,8 @@ async def api_save_yaml(req: ConfigWriteRequest) -> dict[str, Any]:
 # ── Commands ───────────────────────────────────────────────────────────
 
 class ExecuteCommandRequest(BaseModel):
-    args: dict[str, str] = {}
+    args: dict[str, str] = Field(default_factory=dict)
+    images: list[ImageAttachmentRequest] = Field(default_factory=list)
 
 
 @app.get("/commands")
@@ -1964,7 +2055,8 @@ async def api_execute_command(
     result = cmd.handler(cmd, ctx)
 
     if result.kind == "prompt":
-        await engine.send_message(result.prompt_text)
+        images = _save_image_attachments(session_id, req.images)
+        await engine.send_message(result.prompt_text, images=images)
         return {"kind": "prompt", "text": result.prompt_text, "sent": True}
 
     if result.kind == "internal":

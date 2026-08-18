@@ -21,7 +21,7 @@ import yaml
 
 SKILLS_DIR         = Path(".myharness/skills")   # where skill CRUD writes to
 PERSONAS_DIR       = Path(".myharness/personas")
-PROJECT_SKILL_SOURCES = {"project", "project-claude"}
+PROJECT_SKILL_SOURCES = {"project", "project-agents", "project-claude"}
 
 def _get_skill_scan_dirs() -> list[tuple[Path, str]]:
     """Return [(directory, source_label), ...] in priority order."""
@@ -30,6 +30,8 @@ def _get_skill_scan_dirs() -> list[tuple[Path, str]]:
     return [
         (Path(".myharness/skills"), "project"),
         (home / ".myharness" / "skills", "global"),
+        (Path(".agents/skills"), "project-agents"),
+        (home / ".agents" / "skills", "global-agents"),
         (Path(".claude/skills"), "project-claude"),
         (home / ".claude" / "skills", "global-claude"),
     ]
@@ -178,14 +180,14 @@ def _display_skill_path(path: Path) -> str:
 
 
 def resolve_project_skill_path(name: str) -> tuple[Path, str] | None:
-    """Resolve a project-local skill from .myharness/skills or .claude/skills."""
+    """Resolve a project-local skill from supported project Skill directories."""
     return _resolve_skill_file(name, project_only=True)
 
 
 def load_skill(name: str, project_only: bool = False) -> dict[str, Any]:
     """Load a skill by name, searching all directories in priority order.
 
-    Priority: .myharness/skills/ > ~/.myharness/skills/ > .claude/skills/
+    Priority follows :func:`_get_skill_scan_dirs`.
 
     For each directory, looks for ``{name}/SKILL.md`` first, then ``{name}.md`` (legacy).
     """
@@ -268,8 +270,7 @@ def list_skills(
 ) -> list[dict[str, str]]:
     """Return [{name, description, source}] for all skills across all directories.
 
-    Sources: "system" (built-in), "project" (.myharness/), "global" (~/.myharness/),
-    "claude" (.claude/ compat).
+    Sources cover Dreamatic, Agents, and Claude-compatible project/global directories.
 
     Higher-priority directories override lower-priority skills with the same name.
     """
@@ -316,6 +317,15 @@ def build_skill_system_addendum(skills: list[dict[str, str]]) -> str:
         "instructions explicitly define the workflow being followed.",
         "Your actual executable tools (read_file, shell, web_search, etc.) are",
         "listed separately in your function-calling interface.",
+        "After loading a Skill, resolve bundled references, assets, and scripts",
+        "relative to the authoritative Base directory returned by `use_skill`.",
+        "Do not search for or switch to duplicate Skill copies. Use",
+        "`read_skill_file` to load only the resource needed for the next",
+        "immediate action. Do not batch-read resources for future stages; load",
+        "each one when that stage begins. Run bundled scripts with an",
+        "available shell tool when the Skill requests it. If the loaded Skill",
+        "defines an ordered workflow, replace any generic plan created before",
+        "loading it with the Skill's ordered mandatory stages before execution.",
         "",
     ]
     for s in skills:

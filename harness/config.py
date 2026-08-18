@@ -72,6 +72,8 @@ _DEFAULT_LIMITS: dict[str, int] = {
     "read_file": 20_000,
     "search":    10_000,
     "shell":     15_000,
+    "use_skill": 50_000,
+    "read_skill_file": 25_000,
 }
 _ALL_BUILTIN_TOOLS = list(_DEFAULT_LIMITS.keys())
 

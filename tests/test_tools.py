@@ -219,6 +219,55 @@ async def test_executor_overflow():
 
 
 @pytest.mark.asyncio
+async def test_executor_keeps_normal_skill_body_inline():
+    reg = ToolRegistry()
+    schema = ToolSchema(name="use_skill", description="Load skill", params=[])
+
+    async def handler() -> str:
+        return "skill instruction\n" * 600
+
+    reg.register(schema, handler)
+    executor = ToolExecutor(
+        registry=reg,
+        overflow=OverflowStore(),
+        emitter=EventEmitter("skill-output"),
+    )
+
+    [result] = await executor.execute_all(
+        [ToolCallBlock(tool_call_id="skill", tool_name="use_skill", tool_input={})],
+        round_idx=0,
+    )
+
+    assert result.is_overflow_ref is False
+    assert result.content.startswith("skill instruction")
+
+
+@pytest.mark.asyncio
+async def test_partial_config_limits_preserve_skill_defaults():
+    reg = ToolRegistry()
+    schema = ToolSchema(name="use_skill", description="Load skill", params=[])
+
+    async def handler() -> str:
+        return "skill instruction\n" * 600
+
+    reg.register(schema, handler)
+    executor = ToolExecutor(
+        registry=reg,
+        overflow=OverflowStore(),
+        emitter=EventEmitter("skill-config-output"),
+        limits={"read_file": 100},
+    )
+
+    [result] = await executor.execute_all(
+        [ToolCallBlock(tool_call_id="skill", tool_name="use_skill", tool_input={})],
+        round_idx=0,
+    )
+
+    assert result.is_overflow_ref is False
+    assert result.content.startswith("skill instruction")
+
+
+@pytest.mark.asyncio
 async def test_executor_tool_exception():
     reg = ToolRegistry()
     schema = ToolSchema(name="fail", description="Fails", params=[])
@@ -328,8 +377,11 @@ async def test_powershell_tool_accepts_command_alias(monkeypatch):
 
     result = await powershell_tool(command="Get-Location")
 
-    assert recorded["cmd"][-1] == "Get-Location"
-    assert "D:\\MyHarnessPy" in result
+    assert "$ErrorActionPreference = 'Stop'" in recorded["cmd"][-1]
+    assert "$OutputEncoding = $utf8" in recorded["cmd"][-1]
+    assert "Get-Location" in recorded["cmd"][-1]
+    assert result.is_error is False
+    assert "D:\\MyHarnessPy" in result.content
 
 
 @pytest.mark.asyncio
@@ -819,3 +871,27 @@ async def test_write_json_tool_writes_nested_unicode_object(tmp_path):
     assert "Written JSON object" in result
     assert json.loads(f.read_text(encoding="utf-8")) == payload
     assert "古镇游客" in f.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_powershell_tool_returns_structured_error(monkeypatch):
+    ps_tool_module = importlib.import_module("harness.tools.builtin.powershell_tool")
+    from harness.tools.builtin.powershell_tool import powershell_tool
+
+    class DummyCompleted:
+        returncode = 1
+        stdout = "开始处理\n".encode("utf-8")
+        stderr = "参数错误\n".encode("utf-8")
+
+    monkeypatch.setattr(
+        ps_tool_module.subprocess,
+        "run",
+        lambda *args, **kwargs: DummyCompleted(),
+    )
+
+    result = await powershell_tool(script="Write-Error 'bad'; Set-Content later.txt x")
+
+    assert result.is_error is True
+    assert "开始处理" in result.content
+    assert "参数错误" in result.content
+    assert "[exit code: 1]" in result.content

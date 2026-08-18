@@ -8,11 +8,14 @@ default_approval_mode: ask
 can_spawn: false
 allowed_tools:
   - use_skill
+  - list_skills
+  - powershell
   - read_file
   - write_file
   - write_json
   - edit_file
   - list_dir
+  - inspect_image
   - artifact_lint
   - design_bus_post
   - design_bus_read

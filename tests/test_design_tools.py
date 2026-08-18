@@ -52,9 +52,13 @@ def test_design_designer_engine_has_image_and_lint_tools():
     )
 
     tool_names = {schema.name for schema in engine.tool_schemas}
-    assert {"image_generate", "image_edit", "artifact_lint"}.issubset(tool_names)
+    assert {
+        "image_generate", "image_edit", "inspect_image", "artifact_lint",
+        "read_tool_output",
+    }.issubset(tool_names)
     assert "image_generate" in engine._config.system_prompt
     assert "image_edit" in engine._config.system_prompt
+    assert "inspect_image" in engine._config.system_prompt
     assert "artifact_lint" in engine._config.system_prompt
 
 
@@ -129,6 +133,7 @@ async def test_run_init_and_design_bus_round_trip(monkeypatch, tmp_path):
         )
     )
     assert init["ok"] is True
+    assert init["mode"] == "default"
     assert Path(init["paths"]["bus"]).exists()
     assert Path(init["paths"]["modelsDir"]).is_dir()
     assert Path(init["paths"]["modelRendersDir"]).is_dir()
@@ -185,6 +190,49 @@ async def test_run_init_uses_numbered_id_when_override_exists(monkeypatch, tmp_p
     assert second["runId"] == "same-run-2"
     assert Path(first["runDir"]).exists()
     assert Path(second["runDir"]).exists()
+
+
+@pytest.mark.asyncio
+async def test_run_init_minimal_creates_only_run_directory(monkeypatch, tmp_path):
+    harness_root = tmp_path / "harness"
+    outputs_root = tmp_path / "outputs"
+    monkeypatch.setenv("DESIGN_HARNESS_ROOT", str(harness_root))
+    monkeypatch.setenv("DESIGN_OUTPUTS_ROOT", str(outputs_root))
+
+    result = json.loads(
+        await run_init_tool(
+            brief="Create a custom infographic.",
+            mode="minimal",
+            workflowSkill="custom-infographic-workflow",
+            runIdOverride="minimal-run",
+        )
+    )
+
+    run_dir = Path(result["runDir"])
+    assert result["ok"] is True
+    assert result["mode"] == "minimal"
+    assert result["paths"] == {"runDir": str(run_dir)}
+    assert run_dir.is_dir()
+    assert list(run_dir.iterdir()) == []
+    assert not outputs_root.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_init_rejects_unknown_mode(monkeypatch, tmp_path):
+    harness_root = tmp_path / "harness"
+    monkeypatch.setenv("DESIGN_HARNESS_ROOT", str(harness_root))
+
+    result = json.loads(
+        await run_init_tool(
+            brief="Create a custom infographic.",
+            mode="custom",
+            runIdOverride="invalid-run",
+        )
+    )
+
+    assert result["ok"] is False
+    assert result["allowed"] == ["default", "minimal"]
+    assert not harness_root.exists()
 
 
 @pytest.mark.asyncio

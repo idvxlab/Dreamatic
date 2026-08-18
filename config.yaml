@@ -140,6 +140,7 @@ tools:
     - background_task
     - image_generate
     - image_edit
+    - inspect_image
     - video_generate
     - hunyuan3d
     - run_init
@@ -161,6 +162,7 @@ tools:
     write_json: 12000
     search: 10000
     shell: 15000
+    read_tool_output: 16000
     web_fetch: 8000
     web_search: 8000
     create_directory: 5000
@@ -170,6 +172,7 @@ tools:
     background_task: 8000
     image_generate: 8000
     image_edit: 8000
+    inspect_image: 12000
     video_generate: 15000
     hunyuan3d: 12000
     run_init: 8000

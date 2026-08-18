@@ -1,6 +1,7 @@
 from harness.types.messages import (
     Message,
     TextBlock,
+    ImageBlock,
     ThinkingBlock,
     ToolCallBlock,
     ToolResultBlock,
@@ -9,13 +10,20 @@ from harness.types.messages import (
     validate_message_sequence,
     ProtocolViolationError,
 )
-from harness.types.tools import ToolParam, ToolSchema, ToolResult, ToolHandler
+from harness.types.tools import (
+    ToolParam,
+    ToolSchema,
+    ToolExecutionResult,
+    ToolResult,
+    ToolHandler,
+)
 from harness.types.events import ObservabilityEvent, EventState
 from harness.types.tasks import TaskRecord, TaskStatus
 
 __all__ = [
     "Message",
     "TextBlock",
+    "ImageBlock",
     "ThinkingBlock",
     "ToolCallBlock",
     "ToolResultBlock",
@@ -25,6 +33,7 @@ __all__ = [
     "ProtocolViolationError",
     "ToolParam",
     "ToolSchema",
+    "ToolExecutionResult",
     "ToolResult",
     "ToolHandler",
     "ObservabilityEvent",

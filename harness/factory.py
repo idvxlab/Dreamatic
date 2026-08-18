@@ -36,9 +36,11 @@ from harness.tools.builtin import (
     SHELL_SCHEMA, shell_tool,
     USE_SKILL_SCHEMA, use_skill_tool,
     LIST_SKILLS_SCHEMA, list_skills_tool,
+    READ_SKILL_FILE_SCHEMA, read_skill_file_tool,
     GLOB_SCHEMA, glob_tool,
     GREP_SCHEMA, grep_tool,
     POWERSHELL_SCHEMA, powershell_tool,
+    READ_TOOL_OUTPUT_SCHEMA, make_read_tool_output_tool,
     WRITE_FILE_SCHEMA, write_file_tool,
     WRITE_JSON_SCHEMA, write_json_tool,
     CREATE_DIRECTORY_SCHEMA, create_directory_tool,
@@ -52,6 +54,7 @@ from harness.tools.builtin import (
     BACKGROUND_TASK_SCHEMA, background_task_tool,
     IMAGE_GENERATE_SCHEMA, image_generate_tool,
     IMAGE_EDIT_SCHEMA, image_edit_tool,
+    INSPECT_IMAGE_SCHEMA, make_inspect_image_tool,
     VIDEO_GENERATE_SCHEMA, video_generate_tool,
     RUN_INIT_SCHEMA, run_init_tool,
     DESIGN_BUS_POST_SCHEMA, design_bus_post_tool,
@@ -176,6 +179,7 @@ ALL_TOOLS: dict[str, tuple] = {
     "background_task": (BACKGROUND_TASK_SCHEMA, background_task_tool),
     "image_generate": (IMAGE_GENERATE_SCHEMA, image_generate_tool),
     "image_edit": (IMAGE_EDIT_SCHEMA, image_edit_tool),
+    "inspect_image": (INSPECT_IMAGE_SCHEMA, None),
     "video_generate": (VIDEO_GENERATE_SCHEMA, video_generate_tool),
     "hunyuan3d": (HUNYUAN3D_SCHEMA, hunyuan3d_tool),
     "run_init": (RUN_INIT_SCHEMA, run_init_tool),
@@ -355,6 +359,7 @@ def build_engine(
         session_id, global_enabled, allowed_tools, tools_to_load,
     )
 
+    overflow = OverflowStore()
     if registry is None:
         registry = ToolRegistry()
     for name in tools_to_load:
@@ -368,6 +373,8 @@ def build_engine(
                 )
             elif name == "memory":
                 handler = make_memory_tool(memory_store)
+            elif name == "inspect_image":
+                handler = make_inspect_image_tool(llm, workspace_root=Path.cwd())
             registry.register(schema, handler)
             logger.info("[build_engine] registered tool: %s", name)
         elif name == "ask_user":
@@ -382,6 +389,11 @@ def build_engine(
     # the engine. These read-only tools are not controlled by persona allowlists.
     registry.register(USE_SKILL_SCHEMA, use_skill_tool)
     registry.register(LIST_SKILLS_SCHEMA, list_skills_tool)
+    registry.register(READ_SKILL_FILE_SCHEMA, read_skill_file_tool)
+    registry.register(
+        READ_TOOL_OUTPUT_SCHEMA,
+        make_read_tool_output_tool(overflow),
+    )
 
     # spawn_agent / spawn_agents: registered conditionally by depth (not via ALL_TOOLS
     # because they need runtime dependencies passed as closure args)
@@ -460,7 +472,6 @@ def build_engine(
     else:
         full_system = _base_fragment + question_block
 
-    overflow = OverflowStore()
     hooks = HookManager()
     executor = ToolExecutor(
         registry=registry,

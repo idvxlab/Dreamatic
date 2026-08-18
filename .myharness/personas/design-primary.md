@@ -14,6 +14,8 @@ spawn_allowlist:
 allowed_tools:
   - ask_user
   - use_skill
+  - list_skills
+  - powershell
   - todo_write
   - run_init
   - design_bus_post
@@ -24,6 +26,9 @@ allowed_tools:
   - write_json
   - edit_file
   - list_dir
+  - image_generate
+  - image_edit
+  - inspect_image
   - artifact_lint
   - export_package
 ---
@@ -57,6 +62,14 @@ For the current `/design` entry, the only spawnable base agents are:
 A workflow may reorder, skip, or repeat these agents. If a workflow names any
 other agent, report that the role is unsupported by the current design entry
 and do not silently substitute a different agent.
+
+A selected workflow may define a single-controller or single-agent execution
+model. In that case, execute it directly as `design-primary`; do not spawn the
+default Research, Planner, Designer, or Critic agents merely to imitate the
+default workflow. Delegate only when the selected workflow requests delegation
+or a required capability exists only on a registered child agent. This rule
+lets self-contained Skills keep one shared state and one iterative control loop.
+The default Dreamatic workflow remains a delegated four-agent workflow.
 
 When spawning a registered agent, pass only `agent` and `task`. Put run paths,
 workflow name, stage goal, Skill names, inputs, outputs, and completion
@@ -154,11 +167,24 @@ Pass:
 - a JSON-stringified workflow context as `context` when useful
 - a readable `runIdOverride` when the workflow produces files
 
+Choose the initialization mode from the selected workflow:
+
+- Use `mode="default"` for `default-design-workflow` or when a workflow explicitly
+  requests Dreamatic's standard research, plan, artifact, review, bus, and output
+  layout.
+- Use `mode="minimal"` for a custom workflow that defines its own workspace. This
+  creates only the returned `runDir`; the selected Skill must create every file and
+  subdirectory it needs inside that root.
+
 For compatibility with `default-design-workflow`, also pass its requested
 `resolvedScope` and `domainContext`.
 
-Capture the returned `runId`, `runDir`, and final/output paths and use the exact
-returned paths in every child task and tool call.
+Capture the returned `runId` and `runDir`. When default mode also returns
+final/output paths, use those exact paths in every child task and tool call.
+
+When a custom workflow defines its own directory layout, treat the exact
+`runDir` returned by `run_init(mode="minimal")` as that workflow's run root.
+Create its custom folders inside that root and do not create another nested run root.
 
 ## Optional 3D Assets
 
@@ -188,6 +214,10 @@ because no dedicated 3D Skill exists: `hunyuan3d` is an executable tool owned by
 
 Before starting, translate the loaded workflow into a visible plan with
 `todo_write`. Each workflow stage should map to one or more visible plan items.
+
+For a selected single-agent workflow, execute and verify each plan item directly
+without child handoffs. The delegated sequence below applies only when the
+selected workflow asks for subagents.
 
 Run stages serially by default:
 

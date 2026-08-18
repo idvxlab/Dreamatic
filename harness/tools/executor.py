@@ -22,8 +22,17 @@ LIMITS: dict[str, int] = {
     "read_file": 20_000,
     "search":    10_000,
     "shell":     15_000,
+    # Skill bodies are intentionally loaded into model context. Keep a
+    # practical ceiling, but do not spill ordinary SKILL.md files into the
+    # process-local overflow store where they can expire across restarts.
+    "use_skill": 50_000,
+    "read_skill_file": 25_000,
 }
 DEFAULT_LIMIT = 8_000
+
+# These tools mutate session-scoped state and therefore cannot safely run more
+# than once in parallel inside the same assistant tool-call batch.
+SERIAL_TOOLS = {"todo_write"}
 
 
 def _move_extra_spawn_context_into_task(args: dict[str, Any]) -> dict[str, Any]:
@@ -115,8 +124,13 @@ class ToolExecutor:
         self._emitter = emitter
         self._hooks = hooks
         self._session_id = session_id
-        # Allow config-driven limits to override defaults
-        self._limits: dict[str, int] = limits if limits is not None else dict(LIMITS)
+        # Config normally supplies only selected overrides. Preserve executor
+        # defaults for tools omitted by config so newly added tools do not
+        # silently fall back to DEFAULT_LIMIT.
+        self._limits: dict[str, int] = {
+            **LIMITS,
+            **(limits or {}),
+        }
 
     async def execute_all(
         self,
@@ -125,15 +139,34 @@ class ToolExecutor:
         on_event: Callable[[dict], Awaitable[None]] | None = None,
     ) -> list[ToolResultBlock]:
         """
-        Execute all tool calls concurrently (independent within a round).
-        Returns results in the SAME ORDER as calls.
+        Execute independent tool calls concurrently and stateful tools in call
+        order. Returns results in the SAME ORDER as calls.
 
         Each result is a non-blocking ToolResultBlock. Tools that need to
         interrupt the run (e.g. ask_user) return a result whose
         `is_interrupt=True`; the executor copies that flag through.
         """
-        tasks = [self._execute_one(call, round_idx, on_event) for call in calls]
-        return list(await asyncio.gather(*tasks))
+        results: list[ToolResultBlock | None] = [None] * len(calls)
+
+        async def execute_at(index: int) -> None:
+            results[index] = await self._execute_one(
+                calls[index], round_idx, on_event
+            )
+
+        async def execute_serial_calls() -> None:
+            for index, call in enumerate(calls):
+                if call.tool_name in SERIAL_TOOLS:
+                    await execute_at(index)
+
+        tasks = [
+            execute_at(index)
+            for index, call in enumerate(calls)
+            if call.tool_name not in SERIAL_TOOLS
+        ]
+        if any(call.tool_name in SERIAL_TOOLS for call in calls):
+            tasks.append(execute_serial_calls())
+        await asyncio.gather(*tasks)
+        return [result for result in results if result is not None]
 
     async def _execute_one(
         self,
@@ -305,15 +338,16 @@ class ToolExecutor:
                 tool_name=call.tool_name,
             )
 
-        # Tool handlers may return either a plain string (the historical
-        # contract) OR an InterruptibleToolResult object that carries an
-        # is_interrupt flag. We detect the latter by duck-typing.
-        is_interrupt = False
-        if hasattr(raw_output, "is_interrupt") and hasattr(raw_output, "content"):
-            content = str(raw_output.content)
-            is_interrupt = bool(raw_output.is_interrupt)
-        else:
-            content = str(raw_output) if raw_output is not None else ""
+        # Structured handler results can report errors without throwing. This
+        # keeps command stderr/exit failures visible to hooks, events, and the UI.
+        has_content = hasattr(raw_output, "content")
+        content = (
+            str(raw_output.content)
+            if has_content
+            else str(raw_output) if raw_output is not None else ""
+        )
+        is_interrupt = bool(getattr(raw_output, "is_interrupt", False))
+        is_error = bool(getattr(raw_output, "is_error", False))
 
         # Overflow handling only for non-interrupt results (interrupt placeholders
         # are tiny handles, never truncated).
@@ -350,6 +384,45 @@ class ToolExecutor:
                 tool_call_id=call.tool_call_id,
                 content=content,
                 is_interrupt=True,
+                tool_name=call.tool_name,
+            )
+
+        if is_error:
+            self._emitter.emit(
+                "tool_call", "execution-error",
+                detail={"tool": call.tool_name, "error": content, "round": round_idx},
+            )
+            if self._hooks is not None:
+                await self._hooks.emit(
+                    HookEvent(
+                        name="after_tool_call",
+                        session_id=self._session_id,
+                        round_index=round_idx,
+                        payload={
+                            "tool": call.tool_name,
+                            "tool_call_id": call.tool_call_id,
+                            "is_error": True,
+                            "reason": content,
+                        },
+                    )
+                )
+            if on_event is not None:
+                await on_event(
+                    {
+                        "type": "runtime.event",
+                        "data": {
+                            "phase": "tool_error",
+                            "round": round_idx,
+                            "tool": call.tool_name,
+                            "tool_call_id": call.tool_call_id,
+                            "error": content,
+                        },
+                    }
+                )
+            return ToolResultBlock(
+                tool_call_id=call.tool_call_id,
+                content=content,
+                is_error=True,
                 tool_name=call.tool_name,
             )
 

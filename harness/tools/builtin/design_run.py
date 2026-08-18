@@ -14,12 +14,20 @@ from harness.types.tools import ToolParam, ToolSchema
 RUN_INIT_SCHEMA = ToolSchema(
     name="run_init",
     description=(
-        "Initialize a Dreamatic workflow run. Creates a stable run workspace, "
-        "brief.json, and an empty bus.jsonl. Custom workflows may use any subset "
-        "of the standard subdirectories."
+        "Initialize a Dreamatic workflow run. mode=default creates the complete "
+        "Dreamatic workspace, brief.json, output folder, and empty bus.jsonl. "
+        "mode=minimal creates only the run directory so a custom workflow Skill "
+        "can define its own files and directory layout."
     ),
     params=[
         ToolParam(name="brief", type="string", description="Raw user design brief."),
+        ToolParam(
+            name="mode",
+            type="string",
+            description="Initialization mode: default or minimal. Defaults to default.",
+            required=False,
+            enum=["default", "minimal"],
+        ),
         ToolParam(
             name="workflowSkill",
             type="string",
@@ -107,9 +115,20 @@ async def run_init_tool(
     resolvedScope: str | None = None,
     domainContext: str | None = None,
     runIdOverride: str | None = None,
+    mode: str | None = None,
 ) -> str:
     if not brief or not brief.strip():
         return _json({"ok": False, "error": "brief is required"})
+
+    init_mode = (mode or "default").strip().lower()
+    if init_mode not in {"default", "minimal"}:
+        return _json(
+            {
+                "ok": False,
+                "error": f"invalid initialization mode: {mode}",
+                "allowed": ["default", "minimal"],
+            }
+        )
 
     harness_root = Path(os.getenv("DESIGN_HARNESS_ROOT", ".design-harness"))
     outputs_root = Path(os.getenv("DESIGN_OUTPUTS_ROOT", "outputs"))
@@ -117,6 +136,19 @@ async def run_init_tool(
     run_id = _unique_run_id(run_id, harness_root, outputs_root)
     run_dir = harness_root / "runs" / run_id
     output_dir = outputs_root / "runs" / run_id
+
+    if init_mode == "minimal":
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return _json(
+            {
+                "ok": True,
+                "mode": init_mode,
+                "runId": run_id,
+                "runDir": str(run_dir),
+                "workflowSkill": (workflowSkill or "").strip(),
+                "paths": {"runDir": str(run_dir)},
+            }
+        )
 
     subdirs = [
         "",
@@ -173,6 +205,7 @@ async def run_init_tool(
     }
     payload = {
         "runId": run_id,
+        "mode": init_mode,
         "createdAt": _now_iso(),
         "brief": brief,
         "workflowSkill": (workflowSkill or "").strip(),
@@ -187,6 +220,7 @@ async def run_init_tool(
     return _json(
         {
             "ok": True,
+            "mode": init_mode,
             "runId": run_id,
             "runDir": str(run_dir),
             "outputDir": str(output_dir),

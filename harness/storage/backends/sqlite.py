@@ -45,6 +45,7 @@ import aiosqlite
 from harness.types.messages import (
     Message,
     TextBlock,
+    ImageBlock,
     ThinkingBlock,
     ToolCallBlock,
     ToolResultBlock,
@@ -65,6 +66,15 @@ def _block_to_dict(block: Any) -> dict:
     t = block.type
     if t == "text":
         return {"type": "text", "text": block.text}
+    if t == "image":
+        return {
+            "type": "image",
+            "path": block.path,
+            "media_type": block.media_type,
+            "name": block.name,
+            "attachment_id": block.attachment_id,
+            "url": block.url,
+        }
     if t == "thinking":
         return {"type": "thinking", "thinking": block.thinking, "signature": block.signature}
     if t == "tool_call":
@@ -90,6 +100,14 @@ def _block_from_dict(d: dict) -> Any:
     t = d["type"]
     if t == "text":
         return TextBlock(text=d["text"])
+    if t == "image":
+        return ImageBlock(
+            path=d["path"],
+            media_type=d["media_type"],
+            name=d.get("name", ""),
+            attachment_id=d.get("attachment_id", ""),
+            url=d.get("url", ""),
+        )
     if t == "thinking":
         return ThinkingBlock(thinking=d["thinking"], signature=d.get("signature", ""))
     if t == "tool_call":

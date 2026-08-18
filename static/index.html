@@ -549,6 +549,7 @@
         padding: 12px 16px;
         border-top: 1px solid var(--border);
         display: flex;
+        flex-wrap: wrap;
         gap: 8px;
         align-items: center;
         flex-shrink: 0;
@@ -675,6 +676,60 @@
 
       #msg-input:focus {
         border-color: var(--accent);
+      }
+
+      #image-preview-strip {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+        overflow-x: auto;
+      }
+      #image-preview-strip.hidden { display: none; }
+      .image-preview-item {
+        position: relative;
+        width: 72px;
+        height: 72px;
+        flex: 0 0 72px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        background: var(--bg);
+      }
+      .image-preview-item img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+      .image-preview-remove {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid rgba(255,255,255,.28);
+        border-radius: 50%;
+        color: #fff;
+        background: rgba(10,13,18,.78);
+        cursor: pointer;
+        line-height: 20px;
+      }
+      .message-images {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 220px));
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .message-images:first-child { margin-top: 0; }
+      .message-images img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
       }
 
       /* config panel */
@@ -2902,6 +2957,25 @@
           </div>
 
           <div id="input-bar">
+            <div id="image-preview-strip" class="hidden" aria-live="polite"></div>
+            <input
+              id="image-file-input"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              hidden
+              onchange="handleImageFiles(this.files); this.value = '';"
+            />
+            <button
+              class="btn btn-icon"
+              type="button"
+              onclick="document.getElementById('image-file-input').click()"
+              title="Add images (PNG, JPEG, or WebP)"
+              aria-label="Add images"
+              style="width:32px;height:32px;padding:0;flex-shrink:0;border-radius:6px"
+            >
+              +
+            </button>
             <button
               class="btn btn-icon"
               onclick="showCommandBar()"
@@ -3316,6 +3390,7 @@
       let currentSessionId = null;
       let pollTimer = null;
       let sessionRefreshTimer = null;
+      let pollGraceUntil = 0;
       let lastMsgCount = 0;
       let lastSnapshotVersion = -1;
       let overview = {
@@ -3354,6 +3429,9 @@
       let modelProfilesState = { profiles: [], active_profile_id: "" };
       let editingModelProfileId = "";
       let pendingModelProfileEnvText = "";
+      let pendingImageAttachments = [];
+      const MAX_MESSAGE_IMAGES = 4;
+      const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
       // ── Chat Auto-Scroll State ─────────────────────────────────────────────
       // Core state: whether new content should auto-follow to bottom
@@ -3798,6 +3876,7 @@
         // Load initial state
         try {
           const snap = await api(`/sessions/${id}/state`);
+          if (currentSessionId !== id) return;
           renderSnapshot(snap);
           if (snap.is_running) startPolling();
         } catch (e) {
@@ -3847,8 +3926,9 @@
           ws.send(JSON.stringify({ type: "confirm" }));
         } else {
           await api(`/sessions/${currentSessionId}/confirm`, "POST");
-          doPoll();
         }
+        startPolling(3000);
+        triggerPoll();
       }
 
       async function denyAction() {
@@ -3859,8 +3939,9 @@
           ws.send(JSON.stringify({ type: "deny" }));
         } else {
           await api(`/sessions/${currentSessionId}/deny`, "POST");
-          doPoll();
         }
+        startPolling(1500);
+        triggerPoll();
       }
 
       async function cancelSession() {
@@ -4269,7 +4350,7 @@
           card.classList.add("is-readonly");
           if (status) status.textContent = "已提交，等待 Agent 继续...";
           triggerPoll();
-          if (!ws || ws.readyState !== WebSocket.OPEN) startPolling();
+          startPolling(3000);
         } catch (e) {
           card
             .querySelectorAll("button,input")
@@ -4296,7 +4377,7 @@
           );
           card.remove();
           triggerPoll();
-          if (!ws || ws.readyState !== WebSocket.OPEN) startPolling();
+          startPolling(3000);
         } catch (e) {
           toast("跳过失败: " + e.message, true);
           card
@@ -4586,11 +4667,94 @@
         }
       }
       // ── Messaging ─────────────────────────────────────────────────────────
+      function readImageAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function handleImageFiles(fileList) {
+        const allowed = new Set(["image/png", "image/jpeg", "image/webp"]);
+        for (const file of Array.from(fileList || [])) {
+          if (pendingImageAttachments.length >= MAX_MESSAGE_IMAGES) {
+            toast(`A message can contain at most ${MAX_MESSAGE_IMAGES} images.`, true);
+            break;
+          }
+          if (!allowed.has(file.type)) {
+            toast(`${file.name}: only PNG, JPEG, and WebP are supported.`, true);
+            continue;
+          }
+          if (!file.size || file.size > MAX_IMAGE_BYTES) {
+            toast(`${file.name}: image must be smaller than 10 MB.`, true);
+            continue;
+          }
+          try {
+            const data = await readImageAsDataUrl(file);
+            pendingImageAttachments.push({
+              name: file.name,
+              media_type: file.type,
+              data,
+            });
+          } catch (error) {
+            toast(error.message, true);
+          }
+        }
+        renderPendingImagePreviews();
+      }
+
+      function renderPendingImagePreviews() {
+        const strip = document.getElementById("image-preview-strip");
+        if (!strip) return;
+        strip.replaceChildren();
+        strip.classList.toggle("hidden", pendingImageAttachments.length === 0);
+        pendingImageAttachments.forEach((image, index) => {
+          const item = document.createElement("div");
+          item.className = "image-preview-item";
+          const img = document.createElement("img");
+          img.src = image.data;
+          img.alt = image.name || `Attached image ${index + 1}`;
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.className = "image-preview-remove";
+          remove.textContent = "x";
+          remove.title = "Remove image";
+          remove.setAttribute("aria-label", `Remove ${img.alt}`);
+          remove.onclick = () => {
+            pendingImageAttachments.splice(index, 1);
+            renderPendingImagePreviews();
+          };
+          item.append(img, remove);
+          strip.appendChild(item);
+        });
+      }
+
+      function clearPendingImages() {
+        pendingImageAttachments = [];
+        renderPendingImagePreviews();
+      }
+
+      function buildMessageImageGallery(images) {
+        const gallery = document.createElement("div");
+        gallery.className = "message-images";
+        (images || []).forEach((image, index) => {
+          const img = document.createElement("img");
+          img.src = image.url || image.data || "";
+          img.alt = image.name || `Image ${index + 1}`;
+          img.loading = "lazy";
+          gallery.appendChild(img);
+        });
+        return gallery;
+      }
+
       async function sendMessage() {
         const inp = document.getElementById("msg-input");
         const btn = document.getElementById("send-btn");
         const text = inp.value.trim();
-        if (!text || btn.disabled) return;
+        const images = pendingImageAttachments.map((item) => ({ ...item }));
+        if ((!text && images.length === 0) || btn.disabled) return;
 
         // Detect slash commands in the input
         if (text.startsWith("/")) {
@@ -4598,7 +4762,7 @@
             toast("请先创建会话后再使用命令", true);
             return;
           }
-          await _handleSlashInput(text, inp, btn);
+          await _handleSlashInput(text, inp, btn, images);
           return;
         }
 
@@ -4613,8 +4777,9 @@
           const resp = await api(
             `/sessions/${currentSessionId}/messages`,
             "POST",
-            { text },
+            { text, images },
           );
+          clearPendingImages();
 
           if (resp && resp.status === "queued") {
             // Engine is RUNNING; this message was appended to _pending_commands.
@@ -4623,7 +4788,7 @@
             // _process_queued_command(). Just refresh the queued panel.
             renderPendingCommands(resp.pending_commands || []);
             triggerPoll();
-            if (!ws || ws.readyState !== WebSocket.OPEN) startPolling();
+            startPolling();
             return;
           }
 
@@ -4635,10 +4800,10 @@
           }
 
           // Normal started path (status === 'started' or unset for back-compat)
-          appendOptimisticUserMessage(text);
+          appendOptimisticUserMessage(text, images);
           markCurrentSessionRunning();
           triggerPoll();
-          if (!ws || ws.readyState !== WebSocket.OPEN) startPolling();
+          startPolling(3000);
           document.getElementById("cancel-btn").classList.remove("hidden");
         } catch (e) {
           rollbackOptimisticUserMessage(text);
@@ -4649,7 +4814,7 @@
         }
       }
 
-      async function _handleSlashInput(text, inp, btn) {
+      async function _handleSlashInput(text, inp, btn, images = []) {
         hideCommandBar();
         // Parse: /command_id rest of user text. A single placeholder such as
         // $ARGUMENTS should receive the full remaining text, including spaces.
@@ -4667,13 +4832,15 @@
           inp.value = "";
           autoGrow(inp);
           try {
-            appendOptimisticUserMessage(text);
+            appendOptimisticUserMessage(text, images);
             await api(`/sessions/${currentSessionId}/messages`, "POST", {
               text,
+              images,
             });
+            clearPendingImages();
             markCurrentSessionRunning();
             triggerPoll();
-            if (!ws || ws.readyState !== WebSocket.OPEN) startPolling();
+            startPolling(3000);
             document.getElementById("cancel-btn").classList.remove("hidden");
           } catch (e) {
             rollbackOptimisticUserMessage(text);
@@ -4703,13 +4870,14 @@
         }
 
         // Show the command in chat so the user sees what was sent
-        appendOptimisticUserMessage(text);
+        appendOptimisticUserMessage(text, images);
         inp.value = "";
         autoGrow(inp);
         btn.disabled = true;
 
         try {
-          await executeCommand(cmd.id, args);
+          const sent = await executeCommand(cmd.id, args, images);
+          if (sent) clearPendingImages();
         } catch (e) {
           toast("命令执行失败: " + e.message, true);
         } finally {
@@ -4763,9 +4931,12 @@
       }
 
       // ── Polling ───────────────────────────────────────────────────────────
-      function startPolling() {
+      function startPolling(graceMs = 0) {
+        if (graceMs > 0) {
+          pollGraceUntil = Math.max(pollGraceUntil, Date.now() + graceMs);
+        }
         if (pollTimer) return;
-        pollTimer = setInterval(doPoll, 800);
+        pollTimer = setInterval(triggerPoll, 800);
         // Refresh the session list every 3s while running so sub-agent sessions appear
         sessionRefreshTimer = setInterval(refreshSessions, 3000);
       }
@@ -4779,6 +4950,7 @@
           clearInterval(sessionRefreshTimer);
           sessionRefreshTimer = null;
         }
+        pollGraceUntil = 0;
         document.getElementById("running-indicator").classList.add("hidden");
         document.getElementById("cancel-btn").classList.add("hidden");
       }
@@ -4792,11 +4964,22 @@
         streamIsThinking = false;
         const wsUrl =
           location.origin.replace(/^http/, "ws") + "/ws/" + sessionId;
-        ws = new WebSocket(wsUrl);
-        ws.onmessage = handleWsFrame;
-        ws.onclose = () => {
+        const socket = new WebSocket(wsUrl);
+        ws = socket;
+        socket.onopen = () => {
+          if (ws === socket && currentSessionId === sessionId) triggerPoll();
+        };
+        socket.onmessage = (event) => {
+          if (ws !== socket || currentSessionId !== sessionId) return;
+          handleWsFrame(event);
+        };
+        socket.onerror = () => {
+          if (ws === socket && currentSessionId === sessionId) startPolling();
+        };
+        socket.onclose = () => {
+          if (ws !== socket) return;
           ws = null;
-          if (currentSessionId) startPolling();
+          if (currentSessionId === sessionId) startPolling();
         }; // fallback if WS drops
       }
 
@@ -4860,30 +5043,24 @@
           streamEl.querySelector(".msg-bubble").textContent = streamText;
           scheduleChatScrollToBottom({ force: false, behavior: "auto" });
         } else if (frame.type === "message") {
-          // A message completed (tool call or tool result). Trigger an incremental
-          // snapshot fetch so renderSnapshot() is the single source of truth.
-          // This avoids lastMsgCount desync from direct rendering + doPoll races.
+          // Every completed message must reconcile against the persisted snapshot.
+          // Tokens are only a transient preview and a normal assistant message is
+          // just as important as tool activity.
           const m = frame.data;
-          const isToolActivity =
-            (m?.role === "assistant" &&
-              (m.content || []).some((b) => b.type === "tool_call")) ||
-            m?.role === "tool";
-          if (isToolActivity) {
-            triggerPoll();
-            // If a spawn_agent/spawn_agents call was made, refresh the session list
-            // after a short delay so new sub-agent sessions appear in the sidebar.
-            const hasSpawnCall =
-              m?.role === "assistant" &&
-              (m.content || []).some(
-                (b) =>
-                  b.type === "tool_call" &&
-                  (b.tool_name === "spawn_agent" ||
-                    b.tool_name === "spawn_agents"),
-              );
-            if (hasSpawnCall) {
-              setTimeout(refreshSessions, 600);
-              setTimeout(refreshSessions, 2500);
-            }
+          triggerPoll();
+          // If a spawn_agent/spawn_agents call was made, refresh the session list
+          // after a short delay so new sub-agent sessions appear in the sidebar.
+          const hasSpawnCall =
+            m?.role === "assistant" &&
+            (m.content || []).some(
+              (b) =>
+                b.type === "tool_call" &&
+                (b.tool_name === "spawn_agent" ||
+                  b.tool_name === "spawn_agents"),
+            );
+          if (hasSpawnCall) {
+            setTimeout(refreshSessions, 600);
+            setTimeout(refreshSessions, 2500);
           }
         } else if (frame.type === "state") {
           // Always re-render on state change so confirm panel hides immediately after approve/deny
@@ -5008,16 +5185,22 @@
       }
 
       async function doPoll() {
-        if (!currentSessionId) {
+        const polledSessionId = currentSessionId;
+        if (!polledSessionId) {
           stopPolling();
           return;
         }
         try {
-          const snap = await api(`/sessions/${currentSessionId}/state`);
+          const snap = await api(`/sessions/${polledSessionId}/state`);
+          if (polledSessionId !== currentSessionId) return;
           renderSnapshot(snap);
           if (!snap.is_running) {
+            if (Date.now() < pollGraceUntil) return;
             stopPolling();
             await refreshSessions();
+          } else {
+            pollGraceUntil = 0;
+            startPolling();
           }
         } catch (e) {}
       }
@@ -5582,15 +5765,26 @@
             .filter((b) => b.type === "text")
             .map((b) => b.text)
             .join("\n");
-          if (!text) return;
+          const images = content.filter((b) => b.type === "image" && b.url);
+          if (!text && images.length === 0) return;
+          activeThinkingGroup = null;
           lastToolResultsBelongToThinkingGroup = false;
           if (reconcileOptimisticUserMessage(text, m.message_id)) return;
           const el = div("msg user");
           const messageId = m.message_id || "";
           if (messageId) el.dataset.messageId = messageId;
-          el.innerHTML = `<div class="msg-role">You</div><div class="msg-bubble">${escHtml(text).replace(/\n/g, "<br>")}</div>`;
+          const roleEl = div("msg-role");
+          roleEl.textContent = "You";
+          const bubble = div("msg-bubble");
+          if (text) {
+            const textEl = document.createElement("div");
+            textEl.innerHTML = escHtml(text).replace(/\n/g, "<br>");
+            bubble.appendChild(textEl);
+          }
+          if (images.length) bubble.appendChild(buildMessageImageGallery(images));
+          el.append(roleEl, bubble);
           // Edit strip (same UX as the snapshot-render path).
-          if (messageId) {
+          if (messageId && text) {
             const strip = document.createElement("button");
             strip.type = "button";
             strip.className = "msg-msg-edit-strip";
@@ -6028,13 +6222,22 @@
         return wrap;
       }
 
-      function appendOptimisticUserMessage(text) {
+      function appendOptimisticUserMessage(text, images = []) {
         const container = document.getElementById("messages");
         if (!container) return;
         const el = div("msg user");
         el.dataset.pending = "true";
         el.dataset.pendingText = text;
-        el.innerHTML = `<div class="msg-role">You</div><div class="msg-bubble">${escHtml(text).replace(/\n/g, "<br>")}</div>`;
+        const roleEl = div("msg-role");
+        roleEl.textContent = "You";
+        const bubble = div("msg-bubble");
+        if (text) {
+          const textEl = document.createElement("div");
+          textEl.innerHTML = escHtml(text).replace(/\n/g, "<br>");
+          bubble.appendChild(textEl);
+        }
+        if (images.length) bubble.appendChild(buildMessageImageGallery(images));
+        el.append(roleEl, bubble);
         // Show an "edit" strip immediately. While pending we don't yet have a
         // server-side message_id, so the strip is disabled until the echo
         // arrives; reconcileOptimisticUserMessage() then enables it.
@@ -7316,7 +7519,7 @@
         }, 10);
       }
 
-      async function executeCommand(cmdId, args) {
+      async function executeCommand(cmdId, args, images = []) {
         if (!cmdId || !currentSessionId) return;
         try {
           const res = await fetch(
@@ -7324,20 +7527,26 @@
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ args }),
+              body: JSON.stringify({ args, images }),
             },
           );
           const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
           if (data.sent) {
             stopPolling();
             connectWS(currentSessionId);
+            markCurrentSessionRunning();
+            startPolling(3000);
+            triggerPoll();
             document.getElementById("cancel-btn").classList.remove("hidden");
           }
           if (data.kind === "internal" && data.message) {
             appendSystemMessage(data.message);
           }
+          return true;
         } catch (e) {
           toast("命令执行失败: " + e.message, true);
+          return false;
         }
       }
 

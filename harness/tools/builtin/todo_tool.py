@@ -15,7 +15,9 @@ TODO_WRITE_SCHEMA = ToolSchema(
         "Create, replace, read, and update the single visible session plan. "
         "Use this before non-trivial multi-step work, update it as steps "
         "progress, and replace it with action=set when the user asks for a "
-        "new, revised, or more detailed plan."
+        "new, revised, or more detailed plan. Submit at most one todo_write "
+        "call in a tool-call batch; when advancing, complete the current item "
+        "before starting the next item."
     ),
     params=[
         ToolParam(name="session_id", type="string", description="Current session identifier"),

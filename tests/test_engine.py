@@ -253,6 +253,8 @@ async def test_plan_reminder_added_for_nontrivial_task_without_existing_plan():
     text = reminder.content[0].text
     assert "todo_write" in text
     assert 'action="set"' in text
+    assert "load that Skill before writing the detailed plan" in text
+    assert "replace it with the Skill-defined stages" in text
 
 
 @pytest.mark.asyncio

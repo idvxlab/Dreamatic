@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+from pathlib import Path
 from typing import Any
 
 import anthropic
@@ -8,6 +10,7 @@ from harness.llm.base import LLMConfig, LLMProvider, TokenCallback
 from harness.types.messages import (
     Message,
     TextBlock,
+    ImageBlock,
     ThinkingBlock,
     ToolCallBlock,
     ToolResultBlock,
@@ -161,6 +164,16 @@ class AnthropicProvider(LLMProvider):
             for block in msg.content:
                 if isinstance(block, TextBlock):
                     content_blocks.append({"type": "text", "text": block.text})
+                elif isinstance(block, ImageBlock):
+                    encoded = base64.b64encode(Path(block.path).read_bytes()).decode("ascii")
+                    content_blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": block.media_type,
+                            "data": encoded,
+                        },
+                    })
             if not content_blocks:
                 return None
             return {"role": "user", "content": content_blocks}

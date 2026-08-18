@@ -119,6 +119,46 @@ async def test_micro_does_not_break_protocol():
 
 
 @pytest.mark.asyncio
+async def test_micro_compression_preserves_loaded_skill_content():
+    cfg = CompressionConfig(token_window=1_000_000, micro_keep_recent=1)
+    compressor = ContextCompressor(summarizer=_MockSummarizer(), config=cfg)
+    messages: list[Message] = [_make_user_msg("Start")]
+    messages.extend(
+        [
+            Message(
+                role="assistant",
+                content=[
+                    ToolCallBlock(
+                        tool_call_id="skill-call",
+                        tool_name="use_skill",
+                        tool_input={"name": "example-skill"},
+                    )
+                ],
+                round_index=0,
+            ),
+            Message(
+                role="tool",
+                content=[
+                    ToolResultBlock(
+                        tool_call_id="skill-call",
+                        tool_name="use_skill",
+                        content="full skill instructions",
+                    )
+                ],
+                round_index=0,
+            ),
+        ]
+    )
+    for i in range(1, 5):
+        messages.extend(_make_tool_round(i))
+
+    result = await compressor.maybe_compress(messages, round_idx=5)
+
+    assert "full skill instructions" in _tool_contents(result)
+    assert "[cleared by micro-compression]" in _tool_contents(result)
+
+
+@pytest.mark.asyncio
 async def test_loop_compression_does_not_mutate_visible_history():
     cfg = CompressionConfig(token_window=1_000_000, micro_keep_recent=1)
     llm = _RecordingLLM()
@@ -213,6 +253,54 @@ async def test_auto_compression_reinjects_identity_and_goal():
         if isinstance(b, TextBlock) and "goal" in b.text.lower()
     ]
     assert any("My important goal" in t for t in goal_texts)
+
+
+@pytest.mark.asyncio
+async def test_auto_compression_keeps_only_loaded_skill_activation():
+    cfg = CompressionConfig(
+        token_window=10,
+        auto_trigger_ratio=0.1,
+        micro_keep_recent=1,
+    )
+    compressor = ContextCompressor(summarizer=_MockSummarizer(), config=cfg)
+    messages = [
+        _make_user_msg("Start" * 20, round_idx=0),
+        Message(
+            role="assistant",
+            content=[
+                ToolCallBlock(
+                    tool_call_id="skill-call",
+                    tool_name="use_skill",
+                    tool_input={"name": "example-skill"},
+                )
+            ],
+            round_index=0,
+        ),
+        Message(
+            role="tool",
+            content=[
+                ToolResultBlock(
+                    tool_call_id="skill-call",
+                    tool_name="use_skill",
+                    content="very long skill body",
+                )
+            ],
+            round_index=0,
+        ),
+    ]
+
+    result = await compressor.maybe_compress(messages, round_idx=1)
+    system_text = "\n".join(
+        block.text
+        for msg in result
+        if msg.role == "system"
+        for block in msg.content
+        if isinstance(block, TextBlock)
+    )
+
+    assert "example-skill" in system_text
+    assert "reload it with use_skill" in system_text
+    assert "very long skill body" not in system_text
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,11 @@ ai-design-harness-folder
 
 env-profiles/
 
+# Local domain Skill packages and research datasets
+.agents/skills/chinatravel-infographic/
+.myharness/skills/chinatravel-infographic/
+designspace/
+
 # Server logs
 server.log
 *.log

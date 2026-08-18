@@ -23,7 +23,10 @@ from typing import TYPE_CHECKING, Callable
 if TYPE_CHECKING:
     from harness.types.messages import Message
 
-from harness.types.messages import Message, TextBlock, ToolResultBlock
+from harness.types.messages import Message, TextBlock, ToolCallBlock, ToolResultBlock
+
+
+_MICRO_COMPRESSION_PROTECTED_TOOLS = frozenset({"use_skill"})
 
 
 @dataclass
@@ -90,17 +93,24 @@ class ContextCompressor:
 
     def _micro_compress(self, messages: list[Message]) -> list[Message]:
         keep_from = max(0, len(messages) - self._cfg.micro_keep_recent * 2)
+        protected_call_ids = _tool_call_ids_for(
+            messages, _MICRO_COMPRESSION_PROTECTED_TOOLS
+        )
         result: list[Message] = []
         for i, msg in enumerate(messages):
             if i < keep_from and msg.role == "tool":
                 new_blocks = []
                 for block in msg.content:
-                    if isinstance(block, ToolResultBlock):
+                    if (
+                        isinstance(block, ToolResultBlock)
+                        and block.tool_call_id not in protected_call_ids
+                    ):
                         new_blocks.append(
                             ToolResultBlock(
                                 tool_call_id=block.tool_call_id,
                                 content="[cleared by micro-compression]",
                                 is_error=block.is_error,
+                                tool_name=block.tool_name,
                             )
                         )
                     else:
@@ -132,6 +142,7 @@ class ContextCompressor:
         summary_prompt = _build_summary_prompt(old_msgs)
         _save_transcript(messages, cfg, round_idx)
         summary_text = await self._summarizer.complete(summary_prompt)
+        active_skills = _loaded_skill_names(messages)
 
         rebuilt: list[Message] = []
 
@@ -153,6 +164,28 @@ class ContextCompressor:
                     role="user",
                     content=[TextBlock(text=f"[Task goal reminder]: {cfg.task_goal}")],
                     round_index=0,
+                    is_compressed=True,
+                )
+            )
+
+        # Keep only compact activation state across the full compression
+        # boundary. The Skill body is reloaded on demand instead of being
+        # duplicated as a system instruction on every model round.
+        if active_skills:
+            rebuilt.append(
+                Message(
+                    role="system",
+                    content=[
+                        TextBlock(
+                            text=(
+                                "Skills loaded before context compression: "
+                                f"{', '.join(active_skills)}. "
+                                "If one is still needed for the current task, "
+                                "reload it with use_skill before continuing."
+                            )
+                        )
+                    ],
+                    round_index=round_idx,
                     is_compressed=True,
                 )
             )
@@ -181,6 +214,30 @@ class ContextCompressor:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+def _tool_call_ids_for(
+    messages: list[Message], tool_names: set[str] | frozenset[str]
+) -> set[str]:
+    return {
+        block.tool_call_id
+        for msg in messages
+        for block in msg.content
+        if isinstance(block, ToolCallBlock) and block.tool_name in tool_names
+    }
+
+
+def _loaded_skill_names(messages: list[Message]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for msg in messages:
+        for block in msg.content:
+            if not isinstance(block, ToolCallBlock) or block.tool_name != "use_skill":
+                continue
+            name = str(block.tool_input.get("name") or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
 
 def _estimate_tokens(messages: list[Message]) -> int:
     """Fast approximation: 4 chars ≈ 1 token."""
@@ -245,6 +302,11 @@ def _message_to_dict(msg: Message) -> dict:
             "tool_input",
             "content",
             "is_error",
+            "path",
+            "media_type",
+            "name",
+            "attachment_id",
+            "url",
         ):
             if hasattr(block, attr):
                 data[attr] = getattr(block, attr)

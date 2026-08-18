@@ -8,6 +8,8 @@ default_approval_mode: ask
 can_spawn: false
 allowed_tools:
   - use_skill
+  - list_skills
+  - powershell
   - read_file
   - write_file
   - write_json
@@ -15,6 +17,7 @@ allowed_tools:
   - list_dir
   - image_generate
   - image_edit
+  - inspect_image
   - video_generate
   - hunyuan3d
   - artifact_lint
