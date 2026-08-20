@@ -101,11 +101,11 @@ DESIGN_BUS_READ_SCHEMA = ToolSchema(
 
 
 LEGACY_COORDINATION_AGENTS = {
-    "design-primary",
-    "design-research",
-    "design-planner",
-    "design-designer",
-    "design-critic",
+    "master",
+    "researcher",
+    "planner",
+    "designer",
+    "reviewer",
     "design-evaluator",
 }
 async def run_init_tool(

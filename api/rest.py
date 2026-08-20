@@ -566,7 +566,7 @@ async def _mount_static() -> None:
 class CreateSessionRequest(BaseModel):
     session_id: str = ""       # optional; pass to restore after server reload
     provider: str = ""
-    persona: str = "design-primary"  # load from personas/{name}.md (preferred)
+    persona: str = "master"  # load from personas/{name}.md (preferred)
     system_prompt: str = ""     # fallback if no persona
     allowed_tools: list[str] | None = None
     approval_mode: str = ""     # "ask" | "auto" | "full" — picked at session start
@@ -1190,8 +1190,8 @@ async def get_state(session_id: str) -> dict[str, Any]:
             # Sub-agent engines are created from spawn_agent and may already be
             # live in _engines before _engine_meta has been populated for that
             # child. If we only trust _engine_meta, the UI can show the parent
-            # persona (for example design-primary) while the child prompt is
-            # actually design-research/design-designer.
+            # persona (for example master) while the child prompt is
+            # actually researcher/designer.
             for key in (
                 "persona",
                 "provider",

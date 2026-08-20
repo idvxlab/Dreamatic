@@ -10,6 +10,7 @@ from harness.skills import list_personas, load_persona
 class AgentProfile:
     agent_id: str
     name: str
+    display_name: str = ""
     description: str = ""
     mode: str = "all"
     hidden: bool = False
@@ -25,6 +26,7 @@ class AgentProfile:
         return {
             "agent_id": self.agent_id,
             "name": self.name,
+            "display_name": self.display_name or self.name,
             "description": self.description,
             "mode": self.mode,
             "hidden": self.hidden,
@@ -47,6 +49,7 @@ def _profile_from_meta(agent_id: str, meta: dict[str, Any]) -> AgentProfile:
     return AgentProfile(
         agent_id=agent_id,
         name=str(meta.get("name") or agent_id),
+        display_name=str(meta.get("display_name") or meta.get("name") or agent_id),
         description=str(meta.get("description", "")),
         mode=str(meta.get("mode", "all")),
         hidden=bool(meta.get("hidden", False)),

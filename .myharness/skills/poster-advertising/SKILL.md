@@ -3,7 +3,7 @@ name: poster-advertising
 description: "Poster, advertising, event key-visual, and campaign communication guidance for Dreamatic: message hierarchy, visual hook, media adaptation, and critique focus."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
+  audience: researcher, planner, designer, reviewer
   workflow: ai-design-harness
   domain_type: poster_advertising_design
 ---
@@ -51,7 +51,7 @@ Read `brief.json::resolvedScope.domain_scope`:
 }
 ```
 
-Primary should ask for missing key message, audience/action, or format only
+Master should ask for missing key message, audience/action, or format only
 when these are not inferable from the brief.
 
 ## 3. Research Guidance
@@ -115,7 +115,7 @@ the manifest:
 - format constraints differ strongly, such as portrait poster plus wide web banner plus square social post -> define a format adaptation matrix before writing the manifest
 
 Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
+Designer and Reviewer can understand why the package has that shape.
 
 ## 5. Designer Guidance
 
@@ -136,9 +136,9 @@ Each image prompt should include:
 
 Avoid generic decorative graphics with no message hierarchy.
 
-## 6. Critic Guidance
+## 6. Reviewer Guidance
 
-Critic should evaluate:
+Reviewer should evaluate:
 
 - whether the message is clear within a few seconds
 - whether hierarchy supports the intended action

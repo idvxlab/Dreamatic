@@ -3,7 +3,7 @@ name: product-design
 description: "Product and industrial-design domain guidance for Dreamatic: user scenarios, functions, form language, CMF, render deliverables, and critique focus."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
+  audience: researcher, planner, designer, reviewer
   workflow: ai-design-harness
   domain_type: product_design
 ---
@@ -52,7 +52,7 @@ Read `brief.json::resolvedScope.domain_scope`:
 ```
 
 If fields are missing, infer careful defaults from the brief and record them in
-planning assumptions. Primary should ask the user only when the missing field
+planning assumptions. Master should ask the user only when the missing field
 would materially change the design direction.
 
 ## 3. Research Guidance
@@ -118,7 +118,7 @@ manifest:
 - launch, retail, or public communication is part of the brief -> add packaging/display or marketing visual
 
 Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
+Designer and Reviewer can understand why the package has that shape.
 
 ## 5. Designer Guidance
 
@@ -137,9 +137,9 @@ Each image prompt should include:
 
 Avoid images that only look like abstract branding graphics.
 
-## 6. Critic Guidance
+## 6. Reviewer Guidance
 
-Critic should evaluate:
+Reviewer should evaluate:
 
 - whether function is visually understandable
 - whether form and CMF match the user/context

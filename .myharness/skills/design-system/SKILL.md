@@ -1,9 +1,9 @@
 ---
 name: design-system
-description: "How to author `plan/design_system.json` — the must-use contract every deliverable in a run shares (palette tokens, type roles, grid, motif, voice, lockup, imagery, asset usage). Owned by design-planner; consumed by Designer + Critic + artifact_lint. Includes a worked SII example."
+description: "How to author `plan/design_system.json` — the must-use contract every deliverable in a run shares (palette tokens, type roles, grid, motif, voice, lockup, imagery, asset usage). Owned by planner; consumed by Designer + Reviewer + artifact_lint. Includes a worked SII example."
 license: MIT
 metadata:
-  audience: design-planner, design-designer, design-critic
+  audience: planner, designer, reviewer
   workflow: ai-design-harness
 ---
 
@@ -17,7 +17,7 @@ A design system is the set of **must-use** rules every deliverable in a run shar
 
 For non-brand domains, a design system is a presentation and visual-system contract: palette, typography, layout, motif language, material/atmosphere cues, imagery treatment, and cross-deliverable consistency. It does not imply a new corporate identity or mandatory lockup unless the brief requires one.
 
-The harness writes the system to `plan/design_system.json`. Planner owns it. Designer reads it before every prompt. Critic verifies cross-PNG consistency against it. `artifact_lint` enforces presence + schema + per-sidecar citation.
+The harness writes the system to `plan/design_system.json`. Planner owns it. Designer reads it before every prompt. Reviewer verifies cross-PNG consistency against it. `artifact_lint` enforces presence + schema + per-sidecar citation.
 
 This is distinct from `brand_lock.md`, which is the **do-not-duplicate** contract (Research-owned). The lock says what the existing identity already owns; the system says what the run will use.
 
@@ -59,7 +59,7 @@ Aim for **5–7 tokens**. Fewer than 4 fails the lint. More than 8 confuses Desi
 Pull primary + (when relevant) secondary from `research/evidence.json::existing_brand_assets` color clues. Invent the rest with restraint.
 
 Avoid:
-- Two blues (Critic flags "palette split").
+- Two blues (Reviewer flags "palette split").
 - Eight-step gradient as a token.
 - Pure black (#000) for text — harsh in print and on screen.
 
@@ -97,7 +97,7 @@ When `brief.json::language` contains `zh`, `stack_cjk` is required. The CJK fami
 
 ## 7. How Designer consumes the system
 
-Every `image_edit` / `image_generate` prompt MUST contain these blocks verbatim (see `design-designer.md` §"Production order"):
+Every `image_edit` / `image_generate` prompt MUST contain these blocks verbatim (see `designer.md` §"Production order"):
 
 ```
 PALETTE:
@@ -121,9 +121,9 @@ DO NOT:
 
 Paraphrasing a hex (`"deep blue"` instead of `#0168B7`) is a `sidecar.token_citation` warning. The primary token's hex OR name MUST appear in ≥ 70 % of required PNG sidecars.
 
-## 8. How Critic verifies (cross-PNG)
+## 8. How Reviewer verifies (cross-PNG)
 
-`design-critic` reads every sidecar's `prompt` field and computes mechanical signals:
+`reviewer` reads every sidecar's `prompt` field and computes mechanical signals:
 
 - `primary_token_coverage_pct` — fraction of sidecars citing the primary token's name OR hex.
 - `palette_drift_count` — hex literals that are NOT in the token set.
@@ -131,7 +131,7 @@ Paraphrasing a hex (`"deep blue"` instead of `#0168B7`) is a `sidecar.token_cita
 - `lockup_string_drift_count` — sidecars showing the lockup but quoting a different string.
 - `do_not_use_violation_count` — sidecars containing any `do_not_use` phrase.
 
-`artifact_lint` also emits these in `report.stats`. Critic's `system_consistency` score is the **minimum** band across the five signals (see `critic-rubric` SKILL §10). `< 4` is a hard fail.
+`artifact_lint` also emits these in `report.stats`. Reviewer's `system_consistency` score is the **minimum** band across the five signals (see `critic-rubric` SKILL §10). `< 4` is a hard fail.
 
 ## 9. Reference example: 上海创智学院 / Shanghai Innovation Institute
 
@@ -154,7 +154,7 @@ This flow applies primarily to `brand_cultural_design`, where the user may choos
 | `let_system_choose`  | Keep current behavior (derive from research, optionally consulting the bundled reference as a structural template). Record the actual choice + rationale in `task_breakdown.md`.                                                                                                                                                          |
 | absent / free-form   | Treat as `let_system_choose`. Free-form answers are recorded verbatim in `task_breakdown.md` so they are not lost.                                                                                                                                                                                                                        |
 
-Primary does not always ask a `design_system_preference` question. Ask it only when the selected domain and brief make the choice consequential, most commonly for `brand_cultural_design` runs that may use a bundled or official identity reference. Otherwise infer a reasonable visual-system approach and record it in `task_breakdown.md`.
+Master does not always ask a `design_system_preference` question. Ask it only when the selected domain and brief make the choice consequential, most commonly for `brand_cultural_design` runs that may use a bundled or official identity reference. Otherwise infer a reasonable visual-system approach and record it in `task_breakdown.md`.
 - If the target name maps to a known reference (see §9.2), Planner prefers `use_reference`.
 - Otherwise, Planner falls back to `derive_new` or a domain-appropriate visual-system approach and records the rationale in `task_breakdown.md`.
 
@@ -178,4 +178,4 @@ To add a new reference, drop a new `<slug>.design_system.json` under this skill'
 6. `lockup` should define at least one of `string_zh` / `string_en` when the run has a brand, institution, event title, or repeated public-facing name. For product and spatial concepts without a lockup, record an empty or minimal lockup with a rationale.
 7. `motif_system.name` is required and must be a non-empty string Designer can quote verbatim in prompts.
 8. `do_not_use` is the cross-deliverable cliché list; `artifact_lint` scans every sidecar prompt for these phrases. Keep entries ≥ 4 chars or they are ignored to avoid false positives.
-9. Never modify `design_system.json` from Designer or Critic. Edits go through Planner via a `plan_amendment` round routed by Primary.
+9. Never modify `design_system.json` from Designer or Reviewer. Edits go through Planner via a `plan_amendment` round routed by Master.

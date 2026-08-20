@@ -3,7 +3,7 @@ name: architecture-space
 description: "Architecture, interior, exhibition, and spatial-design domain guidance for Dreamatic: site, program, spatial sequence, atmosphere, material, and presentation render deliverables."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
+  audience: researcher, planner, designer, reviewer
   workflow: ai-design-harness
   domain_type: architecture_space_design
 ---
@@ -49,7 +49,7 @@ Read `brief.json::resolvedScope.domain_scope`:
 }
 ```
 
-Primary should ask the user only when missing function, scale, site, or
+Master should ask the user only when missing function, scale, site, or
 atmosphere would lead to a materially different concept.
 
 ## 3. Research Guidance
@@ -115,7 +115,7 @@ manifest:
 - elders, children, care, public service, accessibility, or comfort-sensitive users -> keep accessibility and scale visible in a dedicated board and in at least one experiential render
 
 Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
+Designer and Reviewer can understand why the package has that shape.
 
 ## 5. Designer Guidance
 
@@ -136,9 +136,9 @@ Each image prompt should include:
 
 Avoid purely decorative mood images that do not show usable space.
 
-## 6. Critic Guidance
+## 6. Reviewer Guidance
 
-Critic should evaluate:
+Reviewer should evaluate:
 
 - whether spatial logic and program are understandable
 - whether scale and human use feel plausible

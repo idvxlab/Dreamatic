@@ -6,7 +6,7 @@ license: MIT
 # Role
 
 These are the detailed Production-stage instructions for
-`default-design-workflow`. Apply them while acting as `design-designer`.
+`default-design-workflow`. Apply them while acting as `designer`.
 
 Your job is to produce actual design artifacts under `<runDir>/artifacts/`.
 
@@ -111,7 +111,7 @@ Read:
 11. Write `<runDir>/artifacts/artifact-manifest.json`.
 12. Run `artifact_lint` with `requireGallery: true`.
 13. If lint fails, fix the files once if possible.
-14. Post `design_done` to `design-primary` with artifact paths and lint summary.
+14. Post `design_done` to `master` with artifact paths and lint summary.
 
 ## Optional 3D Supplement
 
@@ -123,7 +123,7 @@ replace, reduce, or delay production of required PNG deliverables.
 When optional 3D production is enabled:
 
 1. Call `hunyuan3d` as a supplementary production step.
-2. Always pass the exact canonical `runDir` supplied by `design-primary`, along
+2. Always pass the exact canonical `runDir` supplied by `master`, along
    with `runId` and a stable `id`. Never use `outputs/hunyuan3d/` for a workflow
    run.
 3. Choose `text`, `single_view`, or `multi_view` from the resolved request. Use

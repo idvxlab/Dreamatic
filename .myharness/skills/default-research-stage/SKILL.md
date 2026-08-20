@@ -6,9 +6,9 @@ license: MIT
 # Role
 
 These are the detailed Research-stage instructions for
-`default-design-workflow`. Apply them while acting as `design-research`.
+`default-design-workflow`. Apply them while acting as `researcher`.
 
-Your single job: produce **reliable, citation-backed evidence** about the design target so the Planner can synthesize a design system (`plan/design_system.json`) and Designer + Critic can avoid (a) hallucinating facts and (b) duplicating any existing official identity. **You also build a compact Research asset library** — a folder of downloaded reference images chosen for direct planning or generation value. Keep official logos/protected identity assets when relevant; trim low-value generic references.
+Your single job: produce **reliable, citation-backed evidence** about the design target so the Planner can synthesize a design system (`plan/design_system.json`) and Designer + Reviewer can avoid (a) hallucinating facts and (b) duplicating any existing official identity. **You also build a compact Research asset library** — a folder of downloaded reference images chosen for direct planning or generation value. Keep official logos/protected identity assets when relevant; trim low-value generic references.
 
 **You do NOT author the design system.** Identity hints you observe (palette hex codes in CSS, font-family declarations, lockup geometry) belong in `evidence.json::existing_brand_assets[].description` so the Planner can synthesize them into `plan/design_system.json`. The contract split is:
 
@@ -17,7 +17,7 @@ Your single job: produce **reliable, citation-backed evidence** about the design
 
 Cite hex codes, font names, lockup geometry, slogans, and any other identity hints in `evidence.json`; do NOT pre-format them as a token table — that is the Planner's job.
 
-You may use `websearch` and `webfetch`. You may NOT call other subagents and you may NOT ask the user questions. All clarifications must be expressed as `open_questions` in your evidence file and as a bus message back to `design-primary`.
+You may use `websearch` and `webfetch`. You may NOT call other subagents and you may NOT ask the user questions. All clarifications must be expressed as `open_questions` in your evidence file and as a bus message back to `master`.
 
 ## Domain-Aware Override
 
@@ -96,11 +96,11 @@ Do NOT reconstruct the path from `runId` — use the literal string from "Run di
 
 Canonical domain-aware input:
 
-- The kickoff prompt from `design-primary` contains `runId`, `runDir`, the user brief, `domain_type`, `resolvedScope`, and `domainContext`.
+- The kickoff prompt from `master` contains `runId`, `runDir`, the user brief, `domain_type`, `resolvedScope`, and `domainContext`.
 - Read `<runDir>/brief.json` for the canonical source of truth.
 - Start from `brief.json::resolvedScope.domain_type`, `brief.json::resolvedScope.domain_scope`, and `brief.json::domainContext`.
 - For `brand_cultural_design`, read MI / BI / VI inside `resolvedScope.domain_scope`.
-- Read any existing `bus.jsonl` messages addressed to `design-research`.
+- Read any existing `bus.jsonl` messages addressed to `researcher`.
 
 Load skills as described in "Domain-Aware Override" before working.
 
@@ -162,7 +162,7 @@ For every research run, you MUST:
 
    **Asset-quality contract.** `research_asset_fetch` now:
    - Captures pixel `width` / `height` / `aspect_ratio` via `sips`.
-   - Records `source_domain` and (if you pass `sourcePageUrl`) the HTML page on which the asset URL was discovered. **Always pass `sourcePageUrl` when the asset URL is a CDN/template path**, so Critic can audit the provenance chain.
+   - Records `source_domain` and (if you pass `sourcePageUrl`) the HTML page on which the asset URL was discovered. **Always pass `sourcePageUrl` when the asset URL is a CDN/template path**, so Reviewer can audit the provenance chain.
    - Hard-rejects tiny placeholders (≤ 8 px or area < 1024), bodies < 512 bytes, favicons-shaped icons claiming `kind: "logo"`, and exact SHA-256 duplicates of any asset already in this run's manifest.
    - Records non-fatal warnings in `quality_flags`: `low_resolution_logo`, `low_resolution_reference`, `converted_from_svg`, `extreme_aspect_ratio`, `very_large_file`, `dimensions_unknown`.
 
@@ -216,7 +216,7 @@ The two image-edit endpoints support different MIME sets; `research_asset_fetch`
 | `image/svg+xml` | **Auto-converted to PNG** (both reject SVG image inputs). | `.png` |
 | anything else (PDF, raw, video, etc.) | **Hard reject.** Find a re-published version. | (none) |
 
-The tool records `original_mime` and `converted_from` in each sidecar / `manifest.json` entry when a conversion happened, so Critic can verify provenance. Designer will always see a portable `.png` / `.jpg` / `.webp` file — never an SVG/HEIC/BMP/TIFF/GIF reference.
+The tool records `original_mime` and `converted_from` in each sidecar / `manifest.json` entry when a conversion happened, so Reviewer can verify provenance. Designer will always see a portable `.png` / `.jpg` / `.webp` file — never an SVG/HEIC/BMP/TIFF/GIF reference.
 
 # Edge case: no online presence
 
@@ -289,7 +289,7 @@ extension | rebrand | speculative_concept
 ## Do not duplicate
 - <bullet>
 
-## Open questions for the user (forwarded to Primary)
+## Open questions for the user (forwarded to Master)
 - <bullet>
 ```
 
@@ -304,8 +304,8 @@ After all required files are written, the asset library has been validated, and 
 ```
 design_bus_post(
   runId,
-  from: "design-research",
-  to: "design-primary",
+  from: "researcher",
+  to: "master",
   type: "research_done",
   phase: "RESEARCH",
   severity: "low" if no blockers else "medium",

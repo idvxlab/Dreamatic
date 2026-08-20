@@ -3421,7 +3421,14 @@
       let currentQuestionMode = "question";
       let selectedCmdIndex = -1; // index in filteredCommands
       let menuSessionId = null; // which session's menu is open
-      const DEFAULT_DESIGN_PERSONA = "design-primary";
+      const DEFAULT_DESIGN_PERSONA = "master";
+      const AGENT_DISPLAY_NAMES = {
+        "master": "Master",
+        "researcher": "Researcher",
+        "planner": "Planner",
+        "designer": "Designer",
+        "reviewer": "Reviewer",
+      };
       const LAST_SESSION_KEY = "myharness:last-session-id";
       // Poll deduplication: at most one doPoll in-flight + one queued
       let doPollInFlight = false;
@@ -3606,13 +3613,17 @@
         // config editing and internal design workflow profiles.
       }
 
+      function displayAgentName(agentId) {
+        const id = String(agentId || "").trim();
+        return AGENT_DISPLAY_NAMES[id] || id;
+      }
+
       function getSessionLabel(s) {
         const manual = (s.display_name || "").trim();
         if (manual) return manual;
         const title = (s.title || "").trim();
         if (title) return title;
-        if (s.persona && s.persona !== DEFAULT_DESIGN_PERSONA) return s.persona;
-        if (s.persona === DEFAULT_DESIGN_PERSONA) return "Dreamatic Design";
+        if (s.persona) return displayAgentName(s.persona);
         if ((s.spawn_depth || 0) > 0) return `sub ${s.session_id.slice(4, 12)}`;
         return s.session_id.slice(0, 8);
       }
@@ -5297,8 +5308,8 @@
         titleEl.textContent = getSessionLabel(headerInfo);
         const parts = [];
         if (meta.skill) parts.push(`Skill: <strong>${meta.skill}</strong>`);
-        if (meta.persona && meta.persona !== DEFAULT_DESIGN_PERSONA)
-          parts.push(`\u667a\u80fd\u4f53: <strong>${meta.persona}</strong>`);
+        if (meta.persona)
+            parts.push(`\u667a\u80fd\u4f53: <strong>${escHtml(displayAgentName(meta.persona))}</strong>`);
         if (headerInfo.provider) parts.push(renderProviderSelector(headerInfo.provider, snap.is_running));
         if (parts.length) {
           metaEl.innerHTML = parts.join(" &nbsp;·&nbsp; ");
@@ -5911,7 +5922,7 @@
           sessionInfo.agent_id ||
           "";
         return agent
-          ? `Assistant <span class="msg-agent">${escHtml(agent)}</span>`
+          ? `Assistant <span class="msg-agent">${escHtml(displayAgentName(agent))}</span>`
           : "Assistant";
       }
 
@@ -6121,7 +6132,7 @@
               const agent = a.agent || "subagent";
               return (
                 `<div style="padding:5px 0;display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--border)">` +
-                `<span style="color:var(--green);font-size:11px;white-space:nowrap;margin-top:2px;min-width:120px">Agent ${i + 1} · ${escHtml(agent)}</span>` +
+                `<span style="color:var(--green);font-size:11px;white-space:nowrap;margin-top:2px;min-width:120px">Agent ${i + 1} · ${escHtml(displayAgentName(agent))}</span>` +
                 `<span style="font-size:12px;color:var(--text)">${escHtml(task.slice(0, 120))}${task.length > 120 ? "..." : ""}</span>` +
                 `</div>`
               );
@@ -6149,10 +6160,10 @@
             `<div class="tool-header" onclick="toggleCollapse(this)">` +
             `<span class="tool-icon">&#128295;</span>` +
             `<span class="tool-name" style="color:var(--green)">spawn_agent</span>` +
-            `<span class="tool-summary">${escHtml(agent)} · ${escHtml(task.slice(0, 60))}${task.length > 60 ? "..." : ""}</span>` +
+            `<span class="tool-summary">${escHtml(displayAgentName(agent))} · ${escHtml(task.slice(0, 60))}${task.length > 60 ? "..." : ""}</span>` +
             `<span class="tool-chevron">&#9654;</span>` +
             `</div>` +
-            `<div class="tool-body" style="padding:6px 10px;font-size:12px;color:var(--text);white-space:pre-wrap"><div style="font-size:11px;color:var(--accent);margin-bottom:4px">agent: ${escHtml(agent)}</div>${escHtml(task)}</div>`;
+            `<div class="tool-body" style="padding:6px 10px;font-size:12px;color:var(--text);white-space:pre-wrap"><div style="font-size:11px;color:var(--accent);margin-bottom:4px">agent: ${escHtml(displayAgentName(agent))}</div>${escHtml(task)}</div>`;
           return wrap;
         }
 

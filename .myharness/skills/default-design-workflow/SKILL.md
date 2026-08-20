@@ -21,28 +21,28 @@ This skill defines Dreamatic's stable built-in workflow for full design runs. It
 Use the Dreamatic runtime tools named above when coordinating the workflow.
 For this design workflow, subagent execution is serial: Research finishes before
 Planner starts, Planner finishes before Designer starts, and Designer finishes
-before Critic starts.
+before Reviewer starts.
 
 ## Workflow
 
 Use this single-path chain:
 
-`design-primary -> design-research -> design-planner -> design-designer -> design-critic -> export_package`
+`master -> researcher -> planner -> designer -> reviewer -> export_package`
 
 Each full design run produces one run with one final curated artifact set. Lightweight `/design` operations may be handled without this Skill and without a run directory.
 
 Each child must load this workflow Skill and its detailed default stage Skill:
 
-- `design-research` loads `default-research-stage`.
-- `design-planner` loads `default-planning-stage`.
-- `design-designer` loads `default-production-stage`.
-- `design-critic` loads `default-critique-stage`.
+- `researcher` loads `default-research-stage`.
+- `planner` loads `default-planning-stage`.
+- `designer` loads `default-production-stage`.
+- `reviewer` loads `default-critique-stage`.
 
-Primary must include both Skill names in each child task. The stage Skills own
+Master must include both Skill names in each child task. The stage Skills own
 the detailed default file schemas, research budget, production procedure, and
 critique rules. The base personas only provide reusable role behavior.
 
-### Primary orchestration
+### Master orchestration
 
 1. If the user explicitly named a professional Skill for a design area outside
    the built-in domains, use that Skill as the professional authority and skip
@@ -58,24 +58,24 @@ critique rules. The base personas only provide reusable role behavior.
    "default-design-workflow"`, `resolvedScope`, optional built-in
    `domainContext`, and the slug as `runIdOverride`.
 7. Capture the exact returned run paths.
-8. Spawn `design-research`. Its task must name `default-design-workflow`,
+8. Spawn `researcher`. Its task must name `default-design-workflow`,
    `default-research-stage`, and the selected domain Skill, and must include the
    run paths, brief, `resolvedScope`, optional `domainContext`, expected
    research files, and `research_done` completion signal.
 9. Verify both the Research outputs and `research_done`. A child error or
    partial files do not complete the stage.
-10. Spawn `design-planner` with `default-design-workflow`,
+10. Spawn `planner` with `default-design-workflow`,
     `default-planning-stage`, the selected domain Skill, Research outputs, and
     the five required plan files. Verify the files and `plan_done`.
-11. Spawn `design-designer` with `default-design-workflow`,
+11. Spawn `designer` with `default-design-workflow`,
     `default-production-stage`, the selected domain Skill, research/plan paths,
     and the required artifact contract. Verify PNG artifacts,
     `artifacts/00-gallery.html`, lint result, and `design_done`.
-12. Spawn `design-critic` with `default-design-workflow`,
+12. Spawn `reviewer` with `default-design-workflow`,
     `default-critique-stage`, the selected domain Skill, artifact paths, and
     review requirements.
-13. If Critic posts `evaluator_fail`, allow one Designer repair invocation with
-    the critique, followed by one more Critic invocation.
+13. If Reviewer posts `evaluator_fail`, allow one Designer repair invocation with
+    the critique, followed by one more Reviewer invocation.
 14. Call `export_package`.
 15. Report run name, run id, domain type, final folder, deliverables, verdict,
     and remaining risks.
@@ -87,7 +87,7 @@ exist.
 ## Built-In Design Domains
 
 When the user has not explicitly selected another professional Skill,
-`design-primary` infers one built-in `domain_type` from the brief. Do not ask
+`master` infers one built-in `domain_type` from the brief. Do not ask
 the user to choose or confirm it unless the user later corrects the result.
 
 Supported `domain_type` values:
@@ -123,7 +123,7 @@ and constraints. For a built-in domain it includes `domain_type`; for an
 explicit external professional Skill it includes `professional_skills`
 instead. It should not become a general professional rulebook.
 
-Primary must keep source-bound facts separate from design intent. When the
+Master must keep source-bound facts separate from design intent. When the
 brief includes a URL or official reference, save the URL in `reference_sources`
 and set `fact_status` to `pending_research`. Before Research verifies the
 source, do not fill dates, locations, organizers, editions, themes, official
@@ -303,7 +303,7 @@ Initial domain-context table:
 
 ## Clarification Contract
 
-Primary may still use `ask_user` to confirm missing user needs. The domain type
+Master may still use `ask_user` to confirm missing user needs. The domain type
 itself is not a question. Ask at most one compact clarification card before
 `run_init`, and only ask questions that materially change the design direction.
 
@@ -330,7 +330,7 @@ Clarification flow:
 
 `run_init` returns `runId` and `runDir`.
 
-Before calling `run_init`, Primary should derive a readable run slug and pass it as `runIdOverride` whenever possible. The slug should be lowercase ASCII, stable, and descriptive, such as `tongji-idvx-lab-visual-system`. Also store a human-facing `run_name` or `human_title` in `resolvedScope`. This keeps both the internal run directory and `outputs/runs/<runId>/final/` easy to find later.
+Before calling `run_init`, Master should derive a readable run slug and pass it as `runIdOverride` whenever possible. The slug should be lowercase ASCII, stable, and descriptive, such as `tongji-idvx-lab-visual-system`. Also store a human-facing `run_name` or `human_title` in `resolvedScope`. This keeps both the internal run directory and `outputs/runs/<runId>/final/` easy to find later.
 
 Expected layout:
 
@@ -378,11 +378,11 @@ Canonical message types:
 
 Sender names:
 
-- `design-primary`
-- `design-research`
-- `design-planner`
-- `design-designer`
-- `design-critic`
+- `master`
+- `researcher`
+- `planner`
+- `designer`
+- `reviewer`
 
 Use `evaluator_pass` and `evaluator_fail` for critic verdicts to stay compatible with the tool schema.
 
@@ -393,7 +393,7 @@ canonical `research_done` bus message are present. Research should include
 `official_facts` or `verified_facts` for source-bound facts when official
 sources are available, and should explicitly flag conflicts between verified
 facts and `resolvedScope.unverified_claims`. If the Research subagent returns
-`Error:`, Primary must not treat partial files as completion and must not start
+`Error:`, Master must not treat partial files as completion and must not start
 Planner until the same phase is retried/resumed or the run is reported blocked.
 
 Research should save a compact but sufficient reference image library in

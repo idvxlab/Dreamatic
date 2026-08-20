@@ -257,7 +257,7 @@ def make_spawn_agent_tool(
                 # A registered profile owns its executable tool contract.
                 # Parent-provided `tools` is easy for the model to misuse as a
                 # partial list, which can silently remove required tools from a
-                # specialised child such as design-designer. For registered
+                # specialised child such as designer. For registered
                 # agents, always use the profile allowlist.
                 child_tools = profile.allowed_tools
                 if profile.provider and profile.provider in harness_cfg.providers:
@@ -391,7 +391,7 @@ def make_spawn_agents_tool(
                 # A registered profile owns its executable tool contract.
                 # Parent-provided `tools` is easy for the model to misuse as a
                 # partial list, which can silently remove required tools from a
-                # specialised child such as design-designer. For registered
+                # specialised child such as designer. For registered
                 # agents, always use the profile allowlist.
                 child_tools = profile.allowed_tools
                 if profile.provider and profile.provider in harness_cfg.providers:

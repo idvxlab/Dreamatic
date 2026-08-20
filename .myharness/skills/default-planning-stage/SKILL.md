@@ -6,11 +6,11 @@ license: MIT
 # Role
 
 These are the detailed Planning-stage instructions for
-`default-design-workflow`. Apply them while acting as `design-planner`. Convert
+`default-design-workflow`. Apply them while acting as `planner`. Convert
 the user brief and Research evidence into:
 
 1. A **design system** (the must-use contract — palette tokens, type roles, grid, motif, voice, lockup) that every deliverable in the run will share.
-2. A **deliverable plan** that the Designer can execute and the Critic can verify, with each deliverable tied back to the design system.
+2. A **deliverable plan** that the Designer can execute and the Reviewer can verify, with each deliverable tied back to the design system.
 
 Your role is planning: define **outcomes and constraints** from the brief and research.
 
@@ -133,7 +133,7 @@ Read in order:
 3. `.design-harness/runs/<runId>/research/brand_lock.md`
 4. `.design-harness/runs/<runId>/research/assets/manifest.json` (if it exists) — list of downloaded reference assets the Designer can pass to `image_edit`. Each entry carries `id`, `kind`, `do_not_replace`, `allowed_for_edit`, `width`, `height`, `aspect_ratio`, `quality_flags`. Use this to choose which deliverables should be **edited** (`image_edit`) vs **generated** (`image_generate`), and to match deliverable aspect ratios to reference assets.
 5. `.design-harness/runs/<runId>/research/assets/validation.json` (if it exists) — Research's library health check. Read `summary.usable_assets`, `summary.flagged_assets`, `summary.protected_count`, and `ready`. If `ready: false`, prefer a smaller plan and flag the gap in `task_breakdown.md`.
-6. Any unread messages from `bus.jsonl` addressed to `design-planner`.
+6. Any unread messages from `bus.jsonl` addressed to `planner`.
 
 ## Brand-cultural input (MI / BI / VI)
 
@@ -226,7 +226,7 @@ For `brand_cultural_design`, read `brief.json::resolvedScope.domain_scope.visual
 
 - `use_reference` — if the brief's target maps to a known bundled reference under `.myharness/skills/design-system/reference/`, COPY the reference verbatim into `plan/design_system.json`, then:
   1. Rewrite the `runId` field to the current run id.
-  2. Add a `derived_from.reference` field pointing at the reference file path (e.g. `".myharness/skills/design-system/reference/sii.design_system.json"`) so Designer + Critic can trace provenance.
+  2. Add a `derived_from.reference` field pointing at the reference file path (e.g. `".myharness/skills/design-system/reference/sii.design_system.json"`) so Designer + Reviewer can trace provenance.
   3. Use the reference as the authority for palette, typography, motif, voice, and lockup.
   4. Note in `task_breakdown.md` that the design system was copied from the bundled reference.
 
@@ -272,9 +272,9 @@ use `write_file` to write a giant escaped JSON string unless `write_json` is
 impossible. If a fallback append workflow is used for any JSON file, read it
 back and verify it is valid JSON before posting `plan_done`.
 
-1. **`design_system.json`** — write FIRST. The must-use design contract (palette tokens, type roles, grid, motif, voice, lockup, asset usage policy). See the full schema in `default-design-workflow`. Designer + Critic + `artifact_lint` all anchor on this file.
+1. **`design_system.json`** — write FIRST. The must-use design contract (palette tokens, type roles, grid, motif, voice, lockup, asset usage policy). See the full schema in `default-design-workflow`. Designer + Reviewer + `artifact_lint` all anchor on this file.
 2. **`design_plan.json`** — the canonical plan (see schema below). Carries `design_system_ref: "plan/design_system.json"`.
-3. **`acceptance_criteria.md`** — what success looks like, in checklist form. Critic will grade against this. Each criterion that touches palette / type / motif / voice / lockup MUST cite the relevant token name or role name from `design_system.json`.
+3. **`acceptance_criteria.md`** — what success looks like, in checklist form. Reviewer will grade against this. Each criterion that touches palette / type / motif / voice / lockup MUST cite the relevant token name or role name from `design_system.json`.
 4. **`task_breakdown.md`** — ordered list of Designer tasks with priorities.
 5. **`deliverable_manifest.json`** — exact list of files Designer must produce, with reason and acceptance test for each, and per-deliverable token allocations. Must use this exact schema:
 
@@ -289,7 +289,7 @@ back and verify it is valid JSON before posting `plan_done`.
       "file": "artifacts/generated-images/01-primary-deliverable.png",
       "kind": "png",
       "deliverable_category": "key visual",
-      "purpose": "Primary domain deliverable selected from domainContext.deliverable_categories",
+      "purpose": "Master domain deliverable selected from domainContext.deliverable_categories",
       "acceptance_test": "The image clearly fits the selected domain, cites required design-system tokens, and satisfies the run-specific brief.",
       "required": true,
       "method": "image_edit",
@@ -366,7 +366,7 @@ The top-level field MUST be `deliverables` (not `items`). Each PNG entry MUST in
     {
       "id": "01-primary-deliverable",
       "file": "artifacts/generated-images/01-primary-deliverable.png",
-      "purpose": "Primary deliverable for the selected domain",
+      "purpose": "Master deliverable for the selected domain",
       "acceptance_test": "...",
       "method": "image_edit",
       "reference_asset_ids": ["best-reference"],
@@ -437,7 +437,7 @@ objects, applications, views, formats, or scenes. For example, if a
 brand/cultural brief asks for a tote bag, T-shirt, sticker, and badge, expand
 `application-and-merchandise` into separate PNG entries such as `04a-tote-bag`,
 `04b-t-shirt`, `04c-sticker`, and `04d-badge`. Set `deliverable_category` on
-every expanded entry so Designer and Critic can trace which category it
+every expanded entry so Designer and Reviewer can trace which category it
 fulfills.
 
 Important negative boundary: do not collapse explicitly requested multiple
@@ -567,8 +567,8 @@ When all FIVE files are written and pass a sanity check (`design_system.json` fi
 ```
 design_bus_post(
   runId,
-  from: "design-planner",
-  to: "design-primary",
+  from: "planner",
+  to: "master",
   type: "plan_done",
   phase: "PLAN",
   severity: "low" | "medium",
@@ -579,14 +579,14 @@ design_bus_post(
 )
 ```
 
-If Research evidence has critical gaps you cannot work around, instead post `type: "research_followup"`, `phase: "PLAN"`, `to: "design-primary"`, with a precise list of missing items in `requestedAction`. The Primary will route to Research and re-invoke you.
+If Research evidence has critical gaps you cannot work around, instead post `type: "research_followup"`, `phase: "PLAN"`, `to: "master"`, with a precise list of missing items in `requestedAction`. The Master will route to Research and re-invoke you.
 
-If Primary re-invokes you to issue a `plan_amendment` (typically because Designer posted a `plan_clarification`), edit only the contradictory fields. If the contradiction touches palette / typography / grid / motif / voice / lockup / asset_usage_policy, the authoritative edit lives in `design_system.json`; mirror the change downstream into the affected `design_plan.json` / `deliverable_manifest.json` / `acceptance_criteria.md` lines. Otherwise edit only the plan files. Then post:
+If Master re-invokes you to issue a `plan_amendment` (typically because Designer posted a `plan_clarification`), edit only the contradictory fields. If the contradiction touches palette / typography / grid / motif / voice / lockup / asset_usage_policy, the authoritative edit lives in `design_system.json`; mirror the change downstream into the affected `design_plan.json` / `deliverable_manifest.json` / `acceptance_criteria.md` lines. Otherwise edit only the plan files. Then post:
 
 ```
 design_bus_post(
   runId,
-  from: "design-planner",
+  from: "planner",
   to: "all",
   type: "plan_amendment",
   phase: "PLAN",
@@ -602,7 +602,7 @@ design_bus_post(
 
 1. `plan/design_system.json` is written FIRST and is the upstream contract for every other plan file. Never produce a `deliverable_manifest.json` whose `required_tokens` reference a name not present in `design_system.json::palette.tokens`.
 2. The plan must be executable: every deliverable has a file path, a purpose, an acceptance test, a `method`, and a non-empty `required_tokens` list (PNG entries only).
-3. The Critic rubric and your `acceptance_criteria.md` must line up 1:1. If the Critic checks N items, you have defined those N items here. The `system_consistency` dimension must be explicit in the acceptance criteria.
+3. The Reviewer rubric and your `acceptance_criteria.md` must line up 1:1. If the Reviewer checks N items, you have defined those N items here. The `system_consistency` dimension must be explicit in the acceptance criteria.
 4. Never introduce visual decisions that contradict `brand_lock.md` (do-not-duplicate) or that drift from `design_system.json` (must-use).
 5. Never list `spawn_agent` or any other subagent name — Planner does not delegate.
 6. Always write all FIVE output files; no partial plans. The order on disk is `design_system.json` → `design_plan.json` → `deliverable_manifest.json` → `acceptance_criteria.md` → `task_breakdown.md`.

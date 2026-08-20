@@ -1,8 +1,8 @@
 ---
 description: Handle a Dreamatic design request. Full briefs run through a workflow Skill; lightweight design operations may be answered directly. Use `/design <natural-language brief>`.
-agent: design-primary
+agent: master
 ---
-You are entering Dreamatic's extensible design harness.
+You are entering Dreamatic's extensible design harness. The user-facing orchestrator is Master.
 
 User brief:
 $ARGUMENTS

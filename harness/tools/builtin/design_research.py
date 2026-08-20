@@ -280,7 +280,7 @@ async def research_asset_fetch_tool(
 
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(url, headers={"User-Agent": "Dreamatic-design-research/1.0"})
+            response = await client.get(url, headers={"User-Agent": "Dreamatic-researcher/1.0"})
         if response.status_code >= 400:
             return _json({"ok": False, "status": response.status_code, "error": f"HTTP {response.status_code}"})
         data = response.content
@@ -477,7 +477,7 @@ async def _cache_text_source(url: str, sources_dir: Path, source_id: str, run_di
 
 async def _fetch_text(url: str, max_bytes: int) -> tuple[str, str]:
     async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-        response = await client.get(url, headers={"User-Agent": "Dreamatic-design-research/1.0"})
+        response = await client.get(url, headers={"User-Agent": "Dreamatic-researcher/1.0"})
         response.raise_for_status()
         data = response.content[:max_bytes]
         return data.decode(response.encoding or "utf-8", errors="replace"), str(response.url)

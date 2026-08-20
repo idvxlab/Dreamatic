@@ -3,7 +3,7 @@ name: image-prompting
 description: "Craft for both text-to-image (image_generate) and image-edit (image_edit) prompts. How to specify subject, framing, palette, on-image text — and, for edits, how to phrase the prompt so the result respects the reference's geometry / palette / framing."
 license: MIT
 metadata:
-  audience: design-designer
+  audience: designer
   workflow: ai-design-harness
 ---
 
@@ -137,7 +137,7 @@ Both tools write a sidecar `.png.json` automatically. The sidecar records:
 - The output sha256 + bytes
 - The model + backend + timestamp
 
-Critic uses these sidecars to compute the `reference_grounding` score. Make every prompt grounded enough that the sidecar tells a clear story.
+Reviewer uses these sidecars to compute the `reference_grounding` score. Make every prompt grounded enough that the sidecar tells a clear story.
 
 ## 8. Hard rules
 

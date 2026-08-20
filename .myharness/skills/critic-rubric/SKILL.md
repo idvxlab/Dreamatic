@@ -1,13 +1,13 @@
 ---
 name: critic-rubric
-description: "The canonical scoring rubric used by design-critic for the PNG-set + gallery shape, with thresholds and hard-fail rules. Planner and Designer load this to make sure their work targets the same bar."
+description: "The canonical scoring rubric used by reviewer for the PNG-set + gallery shape, with thresholds and hard-fail rules. Planner and Designer load this to make sure their work targets the same bar."
 license: MIT
 metadata:
-  audience: design-planner, design-designer, design-critic
+  audience: planner, designer, reviewer
   workflow: ai-design-harness
 ---
 
-# Critic Rubric Skill
+# Reviewer Rubric Skill
 
 ## 1. Dimensions, 1–5 each
 
@@ -42,7 +42,7 @@ metadata:
 5. `artifact_lint` returns `ok: false` after Designer claimed `design_done`.
 6. Gallery HTML has external `https://` references, `<script>` blocks, or other non-self-contained content.
 7. Designer rationale directly contradicts `research/evidence.json`.
-8. `plan/design_system.json` is missing, schema-invalid, or referenced by a `required_tokens` entry that does not exist in `palette.tokens` — Designer should not have entered DESIGN; route a `plan_amendment` to Planner via Primary.
+8. `plan/design_system.json` is missing, schema-invalid, or referenced by a `required_tokens` entry that does not exist in `palette.tokens` — Designer should not have entered DESIGN; route a `plan_amendment` to Planner via Master.
 9. `system_consistency < 4` — Designer drifted from the design system across the PNG set (palette splits, motif missing on > half, lockup string drift, or do_not_use violations).
 
 When `hard_fail: true`, set `verdict: "fail"` regardless of other scores.
@@ -123,16 +123,16 @@ Good patch item: `"01-primary-deliverable.png sidecar lists no references; re-ru
 
 ## 6. Nice-to-have list
 
-Use sparingly. Only items that would lift a 4 to a 5. Designer is **not** required to act on these unless Primary requests it.
+Use sparingly. Only items that would lift a 4 to a 5. Designer is **not** required to act on these unless Master requests it.
 
 ## 7. Confidence
 
-Critic must declare its own confidence in the verdict: `low | medium | high`. Low confidence is acceptable when:
+Reviewer must declare its own confidence in the verdict: `low | medium | high`. Low confidence is acceptable when:
 
 - The brief is genuinely ambiguous and Research found little evidence.
 - A creative judgment call could go either way.
 
-When confidence is `low`, Primary should consider escalating to the user with a `ask_user` tool call before triggering a revision round.
+When confidence is `low`, Master should consider escalating to the user with a `ask_user` tool call before triggering a revision round.
 
 ## 8. Regression vigilance
 
@@ -144,7 +144,7 @@ For rounds ≥ 2, additionally check:
 
 If yes to any, set `severity: "high"` in the `evaluator_fail` message and call out the regression explicitly.
 
-## 9. Critic ethics
+## 9. Reviewer ethics
 
 - Do not soften the verdict to be polite.
 - Do not invent issues to look thorough.
@@ -155,7 +155,7 @@ If yes to any, set `severity: "high"` in the `evaluator_fail` message and call o
 
 `system_consistency` is the cross-PNG coherence dimension. Score it from mechanical signals, then validate with vision.
 
-Mechanical signals (Critic computes by reading every required PNG sidecar's `prompt` field; `artifact_lint` also emits these in `report.stats`):
+Mechanical signals (Reviewer computes by reading every required PNG sidecar's `prompt` field; `artifact_lint` also emits these in `report.stats`):
 
 - `primary_token_coverage_pct` — fraction of required PNG sidecars that mention the primary token's hex OR name.
 - `palette_drift_count` — number of unique hex literals in any sidecar prompt that are NOT in `design_system.palette.tokens[].hex`.
@@ -184,6 +184,6 @@ Vision validation (mandatory): use `view_image` to confirm the mechanical signal
    - if `tool: "image_generate"` produced a PNG whose id matches a `do_not_replace` asset id, that is an automatic fail.
 2. `reference_grounding` HARD-FAILS on the lowest band when the asset library has multiple `allowed_for_edit` assets and Designer used none of them.
 3. `system_consistency` HARD-FAILS at `< 4` and MUST cite the mechanical signals — a vibes-based score is invalid.
-4. Critic does NOT regrade the PNG by re-running the model. Critic reads the sidecar, looks at the embedded image in the gallery, and judges accordingly.
+4. Reviewer does NOT regrade the PNG by re-running the model. Reviewer reads the sidecar, looks at the embedded image in the gallery, and judges accordingly.
 5. Anchor tallies on `artifact_lint`'s `stats` block — `required_png_count`, `grounded_png_count`, `edited_png_count`, `generated_png_count`, `editable_asset_count`, `protected_asset_count`, `protected_assets_edited`, `primary_token_coverage_pct`, `palette_drift_count`, `motif_usage_count`, `lockup_string_drift_count`, `do_not_use_violation_count`. These are computed directly from sidecars and should not be re-derived by counting in your head.
 

@@ -3,7 +3,7 @@ name: brand-identity
 description: "Brand identity fundamentals — what counts as identity, how to extend without replacing, palette and typography decisions, and how to avoid generic AI-design clichés."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
+  audience: researcher, planner, designer, reviewer
   workflow: ai-design-harness
   domain_type: brand_cultural_design
 ---
@@ -34,7 +34,7 @@ Before anyone writes `plan/design_system.json`, three questions must be answered
 2. **What feelings should it evoke?** — knowledge, professionalism, future-orientation, public trust, warmth, openness, authority, innovation, etc.
 3. **What should people remember and trust about it?** — the credibility signal that makes a viewer believe the organisation in 5 seconds.
 
-These are captured for `brand_cultural_design` in `brief.json::resolvedScope.domain_scope.mind_identity`: `identity_essence` (archetype), `feelings_to_evoke` (array of words), `core_mission_or_values` (1-2 lines or `let-research-infer`), and `trust_anchors` (1-2 line credibility signal or `let-research-infer`). They are part of the MI -> BI -> VI clarify flow for brand/cultural runs. Research consumes them when scoping peer references and flagging credibility signals. Planner consumes them when authoring brand/cultural `design_system.json::system_thesis` + `voice` + `acceptance_criteria.md`. Critic verifies the design reads as the chosen archetype's feelings within 2 seconds.
+These are captured for `brand_cultural_design` in `brief.json::resolvedScope.domain_scope.mind_identity`: `identity_essence` (archetype), `feelings_to_evoke` (array of words), `core_mission_or_values` (1-2 lines or `let-research-infer`), and `trust_anchors` (1-2 line credibility signal or `let-research-infer`). They are part of the MI -> BI -> VI clarify flow for brand/cultural runs. Research consumes them when scoping peer references and flagging credibility signals. Planner consumes them when authoring brand/cultural `design_system.json::system_thesis` + `voice` + `acceptance_criteria.md`. Reviewer verifies the design reads as the chosen archetype's feelings within 2 seconds.
 
 ### Domain-specific feeling palettes (use as Planner starting points)
 
@@ -53,11 +53,11 @@ These are *starting points*, not prescriptions. The user's stated `feelings_to_e
 If `resolvedScope.domain_scope.mind_identity` is absent, Planner must:
 1. Infer the archetype from research evidence + brief surface signals.
 2. Record the inferred archetype + 1-line rationale in `task_breakdown.md`.
-3. Treat the inference as low-confidence; Critic will flag any drift between the inferred positioning and the rendered set as a `system_consistency` issue.
+3. Treat the inference as low-confidence; Reviewer will flag any drift between the inferred positioning and the rendered set as a `system_consistency` issue.
 
 ## 0.5 The MI / BI / VI framework (CIS / 企业识别系统)
 
-Positioning is captured across three concrete layers — the Corporate Identity System (CIS) framework. Primary elicits all three at CLARIFY time across three sequential rounds; Planner consumes them in order; Critic verifies the rendered set reads as the stated identity.
+Positioning is captured across three concrete layers — the Corporate Identity System (CIS) framework. Master elicits all three at CLARIFY time across three sequential rounds; Planner consumes them in order; Reviewer verifies the rendered set reads as the stated identity.
 
 | Layer | Chinese | What it captures | Where it lives in `brief.json::resolvedScope` | Where it shows up in `plan/design_system.json` |
 | ----- | ------- | ---------------- | --------------------------------------------- | ---------------------------------------------- |
@@ -65,11 +65,11 @@ Positioning is captured across three concrete layers — the Corporate Identity 
 | **BI** Behavior Identity | 行为识别 | How does it act, speak, who is it talking to, what behaviors define it? | `behavior_identity.voice_register`, `primary_audience`, `behavior_signals` | `voice.register`, `voice.do_say`, `voice.do_not_say`, `imagery_strategy.approach` |
 | **VI** Visual Identity | 视觉识别 | How should it look — design system choice, style direction, constraints? | `visual_identity.design_system_preference`, `style_axis_preference`, `aesthetic_constraints` | All palette / typography / grid / motif / lockup, plus `do_not_use` (from `aesthetic_constraints`) |
 
-**Authoring order is strict.** MI is upstream of BI; BI is upstream of VI. You cannot pick palette tokens (VI) before deciding the voice register (BI), and you cannot pick the voice register before deciding the identity essence (MI). This is why Primary asks them in MI → BI → VI order, and Planner reads them in the same order.
+**Authoring order is strict.** MI is upstream of BI; BI is upstream of VI. You cannot pick palette tokens (VI) before deciding the voice register (BI), and you cannot pick the voice register before deciding the identity essence (MI). This is why Master asks them in MI → BI → VI order, and Planner reads them in the same order.
 
-**`let-the-system-derive` for BI/VI fields means "derive from the layer above".** If `behavior_identity.voice_register = "let-the-system-derive"`, Planner uses the `identity_essence` → `voice.register` map. If `visual_identity.style_axis_preference = "let-the-system-derive"`, Planner uses the combined `(identity_essence, voice_register)` → `style_axis` map. Both maps live in `design-planner.md` and are the only place this derivation logic exists.
+**`let-the-system-derive` for BI/VI fields means "derive from the layer above".** If `behavior_identity.voice_register = "let-the-system-derive"`, Planner uses the `identity_essence` → `voice.register` map. If `visual_identity.style_axis_preference = "let-the-system-derive"`, Planner uses the combined `(identity_essence, voice_register)` → `style_axis` map. Both maps live in `planner.md` and are the only place this derivation logic exists.
 
-**Why all three layers matter for `brand_cultural_design`.** A design system grounded only in MI lacks tone; one grounded only in MI + VI lacks behavioral consistency across applications (the headline copy on a poster will not match the voice of the campus signage). Critic's `system_consistency` rubric checks all three layers; missing any layer creates a "consistently wrong" output that Critic will hard-fail.
+**Why all three layers matter for `brand_cultural_design`.** A design system grounded only in MI lacks tone; one grounded only in MI + VI lacks behavioral consistency across applications (the headline copy on a poster will not match the voice of the campus signage). Reviewer's `system_consistency` rubric checks all three layers; missing any layer creates a "consistently wrong" output that Reviewer will hard-fail.
 
 ## 1. What "brand identity" actually includes
 
@@ -108,7 +108,7 @@ Pick one explicitly in `design_plan.json::mode`:
 2. **Rebrand** — User explicitly asked to replace the identity. Only triggered by user-resolved scope.
 3. **Speculative concept** — No existing identity exists, or the brief is hypothetical / academic. We invent a new system from scratch.
 
-The Critic's `non_duplication` hard gate keys off this mode. In **Extension** mode, generating a competing "official logo" is an automatic fail.
+The Reviewer's `non_duplication` hard gate keys off this mode. In **Extension** mode, generating a competing "official logo" is an automatic fail.
 
 ## 3. Palette decisions
 
@@ -147,7 +147,7 @@ SVG is NOT a deliverable in this harness. If you need a secondary mark, render i
 
 ## 6. AI-design clichés to avoid
 
-The Critic will flag these automatically. Designer must self-check:
+The Reviewer will flag these automatically. Designer must self-check:
 
 - Random radial / linear gradients without semantic purpose
 - "AI glowing nodes" or "neural net" motifs
@@ -207,4 +207,4 @@ finalizing the manifest:
 - strong official identity assets -> use key visual, logo/mark, or motif as the consistency anchor for all applications
 
 Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
+Designer and Reviewer can understand why the package has that shape.

@@ -3,7 +3,7 @@ name: visual-composition
 description: "Layout, grid, hierarchy, color contrast and whitespace principles for graphic deliverables. Used by Designer to describe composition in image_edit / image_generate prompts and in the 00-gallery.html layout so the rendered PNGs look intentional, not AI-generated."
 license: MIT
 metadata:
-  audience: design-designer
+  audience: designer
   workflow: ai-design-harness
 ---
 

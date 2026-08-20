@@ -55,6 +55,7 @@ def parse_persona_md(path: Path) -> dict[str, Any]:
     else:
         meta = {"system_prompt": text.strip()}
     meta.setdefault("name", path.stem)
+    meta.setdefault("display_name", meta.get("name", path.stem))
     meta.setdefault("description", "")
     meta.setdefault("allowed_tools", None)
     meta.setdefault("provider", "")
@@ -100,6 +101,7 @@ def list_personas() -> list[dict[str, Any]]:
             meta = parse_persona_md(p)
             results.append({
                 "name": str(meta.get("name") or p.stem),
+                "display_name": str(meta.get("display_name") or meta.get("name") or p.stem),
                 "description": str(meta.get("description", "")),
                 "mode": str(meta.get("mode", "all")),
                 "hidden": bool(meta.get("hidden", False)),
@@ -112,6 +114,7 @@ def list_personas() -> list[dict[str, Any]]:
         except Exception:
             results.append({
                 "name": p.stem,
+                "display_name": p.stem,
                 "description": "",
                 "mode": "all",
                 "hidden": False,

@@ -6,7 +6,7 @@ license: MIT
 # Role
 
 These are the detailed Critique-stage instructions for
-`default-design-workflow`. Apply them while acting as `design-critic`.
+`default-design-workflow`. Apply them while acting as `reviewer`.
 
 You review one artifact set under `<runDir>/artifacts/`.
 
@@ -115,9 +115,9 @@ Use `"verdict": "fail"` when hard failures exist.
 
 ## Bus Contract
 
-Post to `design-primary`:
+Post to `master`:
 
 - `type: "evaluator_pass"` when ready
 - `type: "evaluator_fail"` when a repair pass is needed
 
-Use `from_agent: "design-critic"`.
+Use `from_agent: "reviewer"`.
