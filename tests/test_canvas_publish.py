@@ -15,6 +15,7 @@ from api.canvas_publish import (
     finalize_publish,
     generate_published_html,
     infer_domain_skill_name,
+    normalize_authored_image_paths,
     normalize_layout_plan,
     persist_canvas_state,
     validate_published_html,
@@ -178,6 +179,19 @@ def test_designer_helpers_infer_domain_and_extract_html() -> None:
     assert "<main>continued</main>" in extract_authored_html(response_with_continuation)
     with pytest.raises(CanvasPublishError):
         extract_authored_html("not html")
+
+
+def test_designer_image_paths_are_normalized_from_publish_input() -> None:
+    publish_input = {
+        "assets": [
+            {"assetId": "D5-03", "assetPath": "artifacts/edits/D5-03.png"},
+            {"assetId": "D1-01", "assetPath": "artifacts/generated-images/D1-01.png"},
+        ]
+    }
+    html = '<img src="generated-images/D5-03.png"><img src="generated-images/D1-01.png">'
+    normalized = normalize_authored_image_paths(html, publish_input)
+    assert 'src="edits/D5-03.png"' in normalized
+    assert 'src="generated-images/D1-01.png"' in normalized
 
 
 def test_renderer_does_not_repeat_structured_captions(tmp_path: Path) -> None:

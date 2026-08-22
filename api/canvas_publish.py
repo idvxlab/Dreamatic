@@ -406,6 +406,43 @@ def extract_authored_html(response: str) -> str:
     return html + "\n"
 
 
+def normalize_authored_image_paths(html: str, publish_input: dict[str, Any]) -> str:
+    """Replace Designer-guessed image directories with authoritative paths."""
+    paths_by_filename: dict[str, str] = {}
+    ambiguous_filenames: set[str] = set()
+    for asset in publish_input.get("assets", []):
+        if not isinstance(asset, dict):
+            continue
+        expected = str(asset.get("assetPath") or "").replace("\\", "/").removeprefix("artifacts/")
+        filename = expected.rsplit("/", 1)[-1]
+        if not filename:
+            continue
+        if filename in paths_by_filename and paths_by_filename[filename] != expected:
+            ambiguous_filenames.add(filename)
+        else:
+            paths_by_filename[filename] = expected
+    for filename in ambiguous_filenames:
+        paths_by_filename.pop(filename, None)
+
+    src_re = re.compile(r"(?i)(\bsrc\s*=\s*)([\"'])(.*?)(\2)")
+    img_re = re.compile(r"(?is)<img\b[^>]*>")
+
+    def normalize_tag(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        src_match = src_re.search(tag)
+        if not src_match:
+            return tag
+        current = _html_image_path(src_match.group(3))
+        filename = current.rsplit("/", 1)[-1]
+        expected = paths_by_filename.get(filename)
+        if not expected or current == expected:
+            return tag
+        replacement = f"{src_match.group(1)}{src_match.group(2)}{expected}{src_match.group(4)}"
+        return tag[:src_match.start()] + replacement + tag[src_match.end():]
+
+    return img_re.sub(normalize_tag, html)
+
+
 def normalize_layout_plan(raw: Any, publish_input: dict[str, Any]) -> dict[str, Any]:
     """Validate and normalize a model-produced layout plan."""
     if not isinstance(raw, dict):

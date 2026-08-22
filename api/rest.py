@@ -68,6 +68,7 @@ from api.canvas_publish import (
     extract_authored_html,
     finalize_publish,
     infer_domain_skill_name,
+    normalize_authored_image_paths,
     persist_canvas_state,
     utc_now,
     validate_published_html,
@@ -2096,6 +2097,7 @@ async def _run_canvas_publish_job(
             )
         if output_html.exists():
             output_html.unlink()
+        authored_html = normalize_authored_image_paths(authored_html, publish_input)
         output_html.write_text(authored_html, encoding="utf-8")
         _update_canvas_publish_job(job_id, "validating")
         if not output_html.is_file():
