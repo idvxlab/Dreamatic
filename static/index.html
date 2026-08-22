@@ -75,6 +75,33 @@
         color: var(--accent);
       }
 
+      .topbar-settings-btn {
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      .topbar-settings-btn svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+        stroke-width: 2.5;
+      }
+
+      .topbar-settings-btn:hover {
+        color: var(--text);
+        border-color: var(--border);
+        background: var(--surface2);
+      }
+
       #main {
         display: flex;
         flex: 1;
@@ -177,6 +204,35 @@
         flex: 1;
         overflow-y: auto;
         padding: 8px 0;
+      }
+
+      .sidebar-new-chat {
+        width: calc(100% - 16px);
+        min-height: 32px;
+        margin: 2px 8px 8px;
+        padding: 0 8px;
+        border: none;
+        border-radius: 5px;
+        background: transparent;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 500;
+        text-align: left;
+      }
+
+      .sidebar-new-chat:hover {
+        background: var(--surface2);
+        color: var(--text);
+      }
+
+      .sidebar-new-chat-icon {
+        font-size: 18px;
+        font-weight: 400;
+        line-height: 1;
       }
 
       .sidebar-section {
@@ -812,32 +868,45 @@
       }
 
       #settings-panel {
-        width: 430px;
-        min-width: 430px;
-        background: var(--surface);
-        border-left: 1px solid var(--border);
+        position: fixed;
+        inset: 0;
+        z-index: 90;
         display: none;
-        flex-direction: column;
-        overflow: hidden;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(20, 18, 36, 0.42);
       }
 
       #settings-panel.open {
         display: flex;
       }
 
+      #settings-dialog {
+        width: min(880px, 94vw);
+        height: min(680px, 88vh);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: 0 20px 60px rgba(38, 35, 61, 0.22);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
       #settings-panel-header {
-        padding: 10px 14px;
+        padding: 14px 18px;
         border-bottom: 1px solid var(--border);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        font-size: 13px;
-        font-weight: 600;
+        font-size: 16px;
+        font-weight: 700;
         flex-shrink: 0;
       }
 
       #settings-body {
-        padding: 14px;
+        padding: 18px;
         overflow-y: auto;
         display: flex;
         flex-direction: column;
@@ -1239,28 +1308,43 @@
 
       .media-result-block {
         width: 100%;
-        margin: 8px 0 12px;
+        margin: 12px 0 16px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .media-result-header {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 0 2px 10px;
       }
 
       .media-result-label {
-        margin: 0 0 7px 2px;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .media-result-count {
         color: var(--text-muted);
-        font-size: 12px;
-        font-weight: 650;
+        font-size: 11px;
       }
 
       .media-result-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
       }
 
       .media-card {
         min-width: 0;
         overflow: hidden;
         border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--surface);
+        border-radius: 6px;
+        background: var(--surface2);
       }
 
       .media-card-image {
@@ -2725,8 +2809,24 @@
             style="color: var(--green); font-size: 12px"
             >● 运行中</span
           >
-          <button class="btn btn-primary btn-sm" onclick="openNewSession()">
-            + 新建会话
+          <button
+            class="topbar-settings-btn"
+            type="button"
+            onclick="toggleSettings()"
+            aria-label="打开设置"
+            title="设置"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path>
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.94 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3h4v.08A1.7 1.7 0 0 0 15.06 4.6a1.7 1.7 0 0 0 1.88-.34L17 4.2 19.83 7l-.06.06A1.7 1.7 0 0 0 19.4 9c.25.62.86 1 1.53 1H21v4h-.08a1.7 1.7 0 0 0-1.52 1Z"></path>
+            </svg>
           </button>
         </div>
       </div>
@@ -2743,10 +2843,14 @@
             <div class="sidebar-section">
               <div class="sidebar-label">
                 会话
-                <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Collapse sidebar" style="margin-left: auto">
+                <button class="sidebar-toggle-btn" style="margin-left: auto" onclick="toggleSidebar()" title="收起侧栏" aria-label="收起侧栏">
                   <span class="icon-chevron"></span>
                 </button>
               </div>
+              <button class="sidebar-new-chat" type="button" onclick="openNewSession()">
+                <span class="sidebar-new-chat-icon" aria-hidden="true">+</span>
+                <span>新建会话</span>
+              </button>
               <div id="sessions-list">
                 <div
                   class="sidebar-item"
@@ -2762,16 +2866,6 @@
             </div>
           </div>
 
-          <!-- Sidebar bottom -->
-          <div id="sidebar-bottom">
-            <button
-              class="btn btn-sm"
-              style="width: 100%"
-              onclick="toggleSettings()"
-            >
-              Settings
-            </button>
-          </div>
         </div>
 
         <!-- Chat area -->
@@ -3076,46 +3170,48 @@
         </div>
 
         <!-- Settings panel -->
-        <div id="settings-panel">
-          <div id="settings-panel-header">
-            <span>Settings</span>
-            <button class="btn-icon btn" onclick="toggleSettings()" title="Close">
-              X
-            </button>
-          </div>
-          <div id="settings-body">
-            <div class="settings-section">
-              <h3>Models & API</h3>
-              <div class="settings-help">
-                Manage saved model provider profiles for new and existing sessions.
-              </div>
-              <div class="settings-actions">
-                <button class="btn btn-primary btn-sm" onclick="openModelSettingsModal()">
-                  Open Models & API
-                </button>
-                <span id="settings-status"></span>
-              </div>
+        <div id="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title" onclick="closeSettingsFromBackdrop(event)">
+          <div id="settings-dialog">
+            <div id="settings-panel-header">
+              <span id="settings-title">Settings</span>
+              <button class="btn-icon btn" onclick="toggleSettings()" title="关闭设置" aria-label="关闭设置">
+                &times;
+              </button>
             </div>
-            <div class="settings-section">
-              <h3>Memory</h3>
-              <div class="settings-help">
-                Manage long-term memory entries.
+            <div id="settings-body">
+              <div class="settings-section">
+                <h3>Models & API</h3>
+                <div class="settings-help">
+                  Manage saved model provider profiles for new and existing sessions.
+                </div>
+                <div class="settings-actions">
+                  <button class="btn btn-primary btn-sm" onclick="openModelSettingsModal()">
+                    Open Models & API
+                  </button>
+                  <span id="settings-status"></span>
+                </div>
               </div>
-              <div class="settings-actions">
-                <button class="btn btn-sm" onclick="openMemoryPanel()">
-                  Open Memory
-                </button>
+              <div class="settings-section">
+                <h3>Memory</h3>
+                <div class="settings-help">
+                  Manage long-term memory entries.
+                </div>
+                <div class="settings-actions">
+                  <button class="btn btn-sm" onclick="openMemoryPanel()">
+                    Open Memory
+                  </button>
+                </div>
               </div>
-            </div>
-            <div class="settings-section">
-              <h3>Config Files</h3>
-              <div class="settings-help">
-                Edit skills, agents, and config.yaml.
-              </div>
-              <div class="settings-actions">
-                <button class="btn btn-sm" onclick="toggleConfig()">
-                  Open Config Files
-                </button>
+              <div class="settings-section">
+                <h3>Config Files</h3>
+                <div class="settings-help">
+                  Edit skills, agents, and config.yaml.
+                </div>
+                <div class="settings-actions">
+                  <button class="btn btn-sm" onclick="toggleConfig()">
+                    Open Config Files
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -3335,6 +3431,8 @@
       let activeThinkingGroup = null;
       let lastToolResultsBelongToThinkingGroup = false;
       const toolCallNames = new Map();
+      let snapshotIsRunning = false;
+      const queuedMediaResults = new Map();
       let runtimeEvents = [];
       let planPanelCollapsed = localStorage.getItem("plan-panel-collapsed") === "1";
       let currentSnapshotMeta = {};
@@ -5070,6 +5168,7 @@
 
       // ── Rendering ─────────────────────────────────────────────────────────
       function renderSnapshot(snap) {
+        snapshotIsRunning = !!snap.is_running;
         // Remove streaming bubble only when the engine finishes — while still running,
         // the bubble is owned by the WS token stream and must not be cleared by polling.
         if (streamEl && !snap.is_running) {
@@ -5206,6 +5305,7 @@
           activeThinkingGroup = null;
           lastToolResultsBelongToThinkingGroup = false;
           toolCallNames.clear();
+          queuedMediaResults.clear();
           lastMsgCount = 0;
           pendingUserEchoes = [];
 
@@ -5235,6 +5335,13 @@
               );
             }
           }
+        }
+
+        // Keep image results hidden while the run is active. Once the final
+        // snapshot arrives, render every queued asset as one consolidated
+        // design component per asset type.
+        if (!snap.is_running) {
+          flushQueuedMediaResults(container);
         }
 
         // If new messages were rendered while the engine is still running,
@@ -5638,16 +5745,32 @@
             );
           }
 
+          // An assistant message that also calls tools is an intermediate
+          // ReAct round. Treat its ordinary text as execution narration so
+          // main and sub-agent sessions collapse it consistently.
+          if (textBlocks.length && toolCalls.length) {
+            thinkingGroupForMessage =
+              thinkingGroupForMessage || ensureThinkingGroup(container);
+            appendThinkingText(
+              thinkingGroupForMessage,
+              textBlocks.map((b) => b.text).join("\n\n"),
+            );
+          }
+
           toolCalls.forEach((tc) => {
             if (tc.tool_call_id && tc.tool_name) {
               toolCallNames.set(tc.tool_call_id, tc.tool_name);
             }
             if (tc.tool_name === "think") {
               const thought = (tc.tool_input?.thought || "").trim();
+              thinkingGroupForMessage =
+                thinkingGroupForMessage || ensureThinkingGroup(container);
               if (thought) {
-                thinkingGroupForMessage = ensureThinkingGroup(container);
                 appendThinkingText(thinkingGroupForMessage, thought);
               }
+              // A persisted failed think call still has a following tool
+              // result. Keep that result inside the same thinking group.
+              lastToolResultsBelongToThinkingGroup = true;
               return;
             }
             // Every tool belongs to the execution details, even when the
@@ -5661,14 +5784,12 @@
             );
           });
 
-          if (textBlocks.length) {
+          if (textBlocks.length && !toolCalls.length) {
             const raw = textBlocks.map((b) => b.text).join("\n\n");
             const el = div("msg assistant");
             el.innerHTML = `<div class="msg-role">${assistantRoleLabel()}</div><div class="msg-bubble">${mdToHtml(raw)}</div><div class="msg-actions"><button class="msg-act-btn" onclick="copyMessageBubble(this)" title="Copy">📋</button></div>`;
             container.appendChild(el);
-            // A message may contain visible narration and a tool call. Keep
-            // that tool's result in this expandable execution group.
-            if (!toolCalls.length) activeThinkingGroup = null;
+            activeThinkingGroup = null;
           }
           return;
         }
@@ -5684,13 +5805,15 @@
           content
             .filter((b) => b.type === "tool_result")
             .forEach((tr) => {
-              if (tr.tool_name === "think") return;
               if (isSyntheticRecoveryToolResult(tr)) return;
               const toolName =
                 tr.tool_name || toolCallNames.get(tr.tool_call_id) || "";
+              if (toolName === "think" && !tr.is_error) return;
               const media = parseMediaToolResult(toolName, tr.content);
               if (media.length) {
-                container.appendChild(renderMediaResult(toolName, media));
+                // Always collect during a snapshot. This also consolidates
+                // assets separated by assistant narration or tool rounds.
+                queueMediaResults(toolName, media);
                 return;
               }
               resultParent.appendChild(
@@ -5817,50 +5940,101 @@
           .filter(Boolean);
       }
 
+      function createMediaCard(item, wrap, grid) {
+        const card = document.createElement("article");
+        card.className = "media-card";
+        const image = document.createElement("img");
+        image.className = "media-card-image";
+        image.src = item.url;
+        image.alt = item.label;
+        image.loading = "lazy";
+        image.addEventListener("click", () => openMediaLightbox(item.url, item.label));
+        image.addEventListener("error", () => {
+          card.remove();
+          updateMediaCount(wrap, grid);
+          if (!grid.querySelector(".media-card")) wrap.remove();
+        });
+        card.appendChild(image);
+
+        const meta = document.createElement("div");
+        meta.className = "media-card-meta";
+        const name = document.createElement("span");
+        name.textContent = item.label;
+        name.title = item.label;
+        meta.appendChild(name);
+        const download = document.createElement("a");
+        download.className = "media-card-download";
+        download.href = item.url;
+        download.download = item.label;
+        download.title = "下载图片";
+        download.textContent = "⤓";
+        meta.appendChild(download);
+        card.appendChild(meta);
+        grid.appendChild(card);
+      }
+
+      function updateMediaCount(wrap, grid) {
+        const count = wrap.querySelector(".media-result-count");
+        if (count) count.textContent = `${grid.querySelectorAll(".media-card").length} 张`;
+      }
+
       function renderMediaResult(toolName, media) {
         const wrap = document.createElement("section");
         wrap.className = "media-result-block";
+        wrap.dataset.mediaKind =
+          toolName === "research_asset_fetch" ? "reference" : "generated";
+
+        const header = document.createElement("header");
+        header.className = "media-result-header";
         const label = document.createElement("div");
         label.className = "media-result-label";
         label.textContent =
-          toolName === "research_asset_fetch" ? "参考图片" : "图片结果";
-        wrap.appendChild(label);
+          toolName === "research_asset_fetch" ? "参考图片" : "生成图片";
+        header.appendChild(label);
+        const count = document.createElement("span");
+        count.className = "media-result-count";
+        header.appendChild(count);
+        wrap.appendChild(header);
 
         const grid = document.createElement("div");
         grid.className = "media-result-grid";
-        media.forEach((item) => {
-          const card = document.createElement("article");
-          card.className = "media-card";
-          const image = document.createElement("img");
-          image.className = "media-card-image";
-          image.src = item.url;
-          image.alt = item.label;
-          image.loading = "lazy";
-          image.addEventListener("click", () => openMediaLightbox(item.url, item.label));
-          image.addEventListener("error", () => {
-            card.remove();
-            if (!grid.querySelector(".media-card")) wrap.remove();
-          });
-          card.appendChild(image);
-
-          const meta = document.createElement("div");
-          meta.className = "media-card-meta";
-          const name = document.createElement("span");
-          name.textContent = item.label;
-          name.title = item.label;
-          meta.appendChild(name);
-          const download = document.createElement("a");
-          download.className = "media-card-download";
-          download.href = item.url;
-          download.download = item.label;
-          download.title = "下载图片";
-          download.textContent = "⤓";
-          meta.appendChild(download);
-          card.appendChild(meta);
-          grid.appendChild(card);
-        });
+        media.forEach((item) => createMediaCard(item, wrap, grid));
         wrap.appendChild(grid);
+        updateMediaCount(wrap, grid);
         return wrap;
+      }
+
+      function appendMediaResult(container, toolName, media) {
+        const kind = toolName === "research_asset_fetch" ? "reference" : "generated";
+        const previous = container.lastElementChild;
+        if (previous?.classList.contains("media-result-block") && previous.dataset.mediaKind === kind) {
+          const grid = previous.querySelector(".media-result-grid");
+          media.forEach((item) => createMediaCard(item, previous, grid));
+          updateMediaCount(previous, grid);
+          return;
+        }
+        container.appendChild(renderMediaResult(toolName, media));
+      }
+
+      function queueMediaResults(toolName, media) {
+        const kind = toolName === "research_asset_fetch" ? "reference" : "generated";
+        const queued = queuedMediaResults.get(kind) || [];
+        const known = new Set(queued.map((item) => item.url));
+        media.forEach((item) => {
+          if (!known.has(item.url)) {
+            queued.push(item);
+            known.add(item.url);
+          }
+        });
+        queuedMediaResults.set(kind, queued);
+      }
+
+      function flushQueuedMediaResults(container) {
+        const reference = queuedMediaResults.get("reference") || [];
+        const generated = queuedMediaResults.get("generated") || [];
+        if (reference.length) appendMediaResult(container, "research_asset_fetch", reference);
+        if (generated.length) appendMediaResult(container, "image_generate", generated);
+        queuedMediaResults.clear();
       }
 
       function openMediaLightbox(url, alt) {
@@ -6116,6 +6290,21 @@
           setSettingsStatus("");
         }
       }
+
+      function closeSettingsFromBackdrop(event) {
+        if (event.target === event.currentTarget) {
+          document.getElementById("settings-panel")?.classList.remove("open");
+        }
+      }
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        const settings = document.getElementById("settings-panel");
+        const modelSettings = document.getElementById("model-settings-overlay");
+        if (settings?.classList.contains("open") && modelSettings?.classList.contains("hidden")) {
+          settings.classList.remove("open");
+        }
+      });
 
       function getProviderOptions() {
         const profiles = modelProfilesState.profiles || [];
