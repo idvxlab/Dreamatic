@@ -2475,6 +2475,106 @@
         flex: 1;
       }
 
+      .canvas-export-btn {
+        min-height: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 9px;
+        flex-shrink: 0;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .canvas-export-btn svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .canvas-export-modal {
+        width: min(480px, calc(100vw - 32px));
+      }
+
+      .canvas-export-modal > p {
+        margin: -4px 0 18px;
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .canvas-export-steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border-top: 1px solid var(--border);
+      }
+
+      .canvas-export-step {
+        position: relative;
+        display: flex;
+        align-items: center;
+        min-height: 48px;
+        gap: 11px;
+        padding: 0 4px;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+
+      .canvas-export-step-icon {
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 18px;
+        border: 1px solid var(--border);
+        border-radius: 50%;
+        font-size: 11px;
+      }
+
+      .canvas-export-step.is-active {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .canvas-export-step.is-active .canvas-export-step-icon {
+        border-color: var(--accent);
+        border-top-color: transparent;
+        animation: canvas-export-spin 0.8s linear infinite;
+      }
+
+      .canvas-export-step.is-done .canvas-export-step-icon {
+        border-color: var(--green);
+        background: var(--green);
+        color: #fff;
+      }
+
+      .canvas-export-error {
+        margin-top: 14px;
+        padding: 10px 12px;
+        border: 1px solid rgba(196, 62, 62, 0.28);
+        border-radius: 6px;
+        background: rgba(196, 62, 62, 0.06);
+        color: var(--red);
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      }
+
+      .canvas-export-actions a.btn {
+        text-decoration: none;
+      }
+
+      @keyframes canvas-export-spin {
+        to { transform: rotate(360deg); }
+      }
+
       .canvas-viewport {
         position: relative;
         flex: 1;
@@ -3037,6 +3137,10 @@
           <div id="design-canvas-header">
             <span>设计画布</span>
             <span class="canvas-status" id="canvas-status-text"></span>
+            <button id="canvas-export-btn" class="btn canvas-export-btn" type="button" onclick="startCanvasHtmlExport()">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M5 21h14"></path></svg>
+              <span>导出 HTML</span>
+            </button>
           </div>
           <div id="canvas-viewport" class="canvas-viewport">
             <canvas id="canvas-scene"></canvas>
@@ -3394,6 +3498,27 @@
       </div>
     </div>
 
+    <!-- Canvas HTML export status -->
+    <div id="canvas-export-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="canvas-export-title">
+      <div class="modal canvas-export-modal">
+        <h2 id="canvas-export-title">导出 HTML</h2>
+        <p id="canvas-export-message">正在整理画布内容</p>
+        <ol class="canvas-export-steps" aria-label="导出进度">
+          <li class="canvas-export-step" data-export-stage="preparing"><span class="canvas-export-step-icon">1</span><span>整理画布</span></li>
+          <li class="canvas-export-step" data-export-stage="reading"><span class="canvas-export-step-icon">2</span><span>读取图文资产</span></li>
+          <li class="canvas-export-step" data-export-stage="composing"><span class="canvas-export-step-icon">3</span><span>AI 编排页面</span></li>
+          <li class="canvas-export-step" data-export-stage="validating"><span class="canvas-export-step-icon">4</span><span>校验导出结果</span></li>
+        </ol>
+        <div id="canvas-export-error" class="canvas-export-error hidden"></div>
+        <div id="canvas-export-actions" class="modal-actions canvas-export-actions">
+          <button id="canvas-export-cancel" class="btn" type="button" onclick="cancelCanvasHtmlExport()">取消导出</button>
+          <button id="canvas-export-close" class="btn hidden" type="button" onclick="closeCanvasExportModal()">关闭</button>
+          <a id="canvas-export-preview" class="btn hidden" href="#" target="_blank" rel="noopener">预览</a>
+          <a id="canvas-export-download" class="btn btn-primary hidden" href="#" download="01-gallery-edited.html">下载 HTML</a>
+        </div>
+      </div>
+    </div>
+
     <!-- Session context menu dropdown -->
     <div id="session-dropdown"></div>
 
@@ -3438,6 +3563,10 @@
       let currentSnapshotMeta = {};
       let currentSnapshotAgentId = "";
       const autoContinuationKeys = new Set();
+      let canvasExportRunning = false;
+      let canvasExportPollTimer = null;
+      let canvasExportJobId = "";
+      let canvasExportCancelRequested = false;
       const autoRecoveryKeys = new Set();
       let allCommands = []; // command list from GET /commands
       let filteredCommands = []; // search-filtered subset
@@ -7141,6 +7270,159 @@
         return data;
       }
 
+      const CANVAS_EXPORT_STAGE_ORDER = ["preparing", "reading", "composing", "validating"];
+
+      function setCanvasExportLocked(locked) {
+        const designCanvas = document.getElementById("design-canvas");
+        const exportButton = document.getElementById("canvas-export-btn");
+        if (designCanvas) {
+          designCanvas.inert = !!locked;
+          designCanvas.setAttribute("aria-busy", locked ? "true" : "false");
+        }
+        if (exportButton) exportButton.disabled = !!locked;
+      }
+
+      function openCanvasExportModal() {
+        canvasExportRunning = true;
+        canvasExportJobId = "";
+        canvasExportCancelRequested = false;
+        setCanvasExportLocked(true);
+        const overlay = document.getElementById("canvas-export-overlay");
+        const error = document.getElementById("canvas-export-error");
+        const actions = document.getElementById("canvas-export-actions");
+        const cancel = document.getElementById("canvas-export-cancel");
+        const close = document.getElementById("canvas-export-close");
+        const preview = document.getElementById("canvas-export-preview");
+        const download = document.getElementById("canvas-export-download");
+        if (overlay) overlay.classList.remove("hidden");
+        if (error) { error.textContent = ""; error.classList.add("hidden"); }
+        if (actions) actions.classList.remove("hidden");
+        if (cancel) { cancel.disabled = false; cancel.textContent = "取消导出"; cancel.classList.remove("hidden"); }
+        close?.classList.add("hidden");
+        preview?.classList.add("hidden");
+        download?.classList.add("hidden");
+        updateCanvasExportModal({ status: "queued", stage: "preparing", message: "正在整理画布内容" });
+      }
+
+      function closeCanvasExportModal() {
+        if (canvasExportRunning) return;
+        if (canvasExportPollTimer) clearTimeout(canvasExportPollTimer);
+        canvasExportPollTimer = null;
+        canvasExportJobId = "";
+        canvasExportCancelRequested = false;
+        document.getElementById("canvas-export-overlay")?.classList.add("hidden");
+        setCanvasExportLocked(false);
+      }
+
+      function updateCanvasExportModal(job) {
+        const message = document.getElementById("canvas-export-message");
+        if (message) message.textContent = job.message || "正在导出";
+        const activeIndex = job.status === "completed"
+          ? CANVAS_EXPORT_STAGE_ORDER.length
+          : CANVAS_EXPORT_STAGE_ORDER.indexOf(job.stage);
+        document.querySelectorAll("[data-export-stage]").forEach((step) => {
+          const index = CANVAS_EXPORT_STAGE_ORDER.indexOf(step.dataset.exportStage);
+          step.classList.toggle("is-done", index < activeIndex || job.status === "completed");
+          step.classList.toggle("is-active", index === activeIndex && job.status !== "failed");
+          const icon = step.querySelector(".canvas-export-step-icon");
+          if (icon) icon.textContent = index < activeIndex || job.status === "completed" ? "✓" : String(index + 1);
+        });
+        if (!["completed", "failed", "cancelled"].includes(job.status)) return;
+
+        canvasExportRunning = false;
+        if (canvasExportPollTimer) clearTimeout(canvasExportPollTimer);
+        canvasExportPollTimer = null;
+        setCanvasExportLocked(false);
+        const actions = document.getElementById("canvas-export-actions");
+        const error = document.getElementById("canvas-export-error");
+        const cancel = document.getElementById("canvas-export-cancel");
+        const close = document.getElementById("canvas-export-close");
+        const preview = document.getElementById("canvas-export-preview");
+        const download = document.getElementById("canvas-export-download");
+        actions?.classList.remove("hidden");
+        cancel?.classList.add("hidden");
+        close?.classList.remove("hidden");
+        if (job.status === "completed") {
+          if (preview) preview.href = job.html_url || "#";
+          if (download) download.href = job.download_url || job.html_url || "#";
+          preview?.classList.remove("hidden");
+          download?.classList.remove("hidden");
+          toast("HTML 已导出");
+        } else if (job.status === "failed") {
+          if (error) {
+            error.textContent = job.error || "导出失败";
+            error.classList.remove("hidden");
+          }
+          preview?.classList.add("hidden");
+          download?.classList.add("hidden");
+        } else {
+          error?.classList.add("hidden");
+          preview?.classList.add("hidden");
+          download?.classList.add("hidden");
+        }
+      }
+
+      async function cancelCanvasHtmlExport() {
+        if (!canvasExportRunning) return;
+        canvasExportCancelRequested = true;
+        const cancel = document.getElementById("canvas-export-cancel");
+        const message = document.getElementById("canvas-export-message");
+        if (cancel) { cancel.disabled = true; cancel.textContent = "正在取消"; }
+        if (message) message.textContent = "正在取消导出";
+
+        if (!canvasExportJobId) return;
+        try {
+          const job = await api(`/canvas-publish/jobs/${encodeURIComponent(canvasExportJobId)}/cancel`, "POST");
+          updateCanvasExportModal(job);
+        } catch (error) {
+          updateCanvasExportModal({ status: "failed", stage: "failed", message: "取消失败", error: error.message });
+        }
+      }
+
+      async function pollCanvasExportJob(jobId) {
+        if (!canvasExportRunning) return;
+        try {
+          const job = await api(`/canvas-publish/jobs/${encodeURIComponent(jobId)}`);
+          updateCanvasExportModal(job);
+          if (canvasExportRunning) {
+            canvasExportPollTimer = setTimeout(() => pollCanvasExportJob(jobId), 900);
+          }
+        } catch (error) {
+          updateCanvasExportModal({ status: "failed", stage: "failed", message: "导出失败", error: error.message });
+        }
+      }
+
+      async function startCanvasHtmlExport() {
+        if (canvasExportRunning) return;
+        if (!currentSessionId) {
+          toast("请先选择一个会话", true);
+          return;
+        }
+        if (typeof window.prepareCanvasPublishPayload !== "function") {
+          toast("画布尚未初始化", true);
+          return;
+        }
+        openCanvasExportModal();
+        try {
+          const payload = await window.prepareCanvasPublishPayload();
+          if (canvasExportCancelRequested) {
+            updateCanvasExportModal({ status: "cancelled", stage: "cancelled", message: "导出已取消" });
+            return;
+          }
+          const job = await api(`/sessions/${currentSessionId}/canvas-publish`, "POST", payload);
+          canvasExportJobId = job.job_id;
+          if (canvasExportCancelRequested) {
+            const cancelledJob = await api(`/canvas-publish/jobs/${encodeURIComponent(canvasExportJobId)}/cancel`, "POST");
+            updateCanvasExportModal(cancelledJob);
+            return;
+          }
+          updateCanvasExportModal(job);
+          await pollCanvasExportJob(job.job_id);
+        } catch (error) {
+          updateCanvasExportModal({ status: "failed", stage: "failed", message: "导出失败", error: error.message });
+        }
+      }
+
       function div(cls, text = "") {
         const el = document.createElement("div");
         if (cls) el.className = cls;
@@ -7582,6 +7864,7 @@
         var elements = [];
         var assetBounds = null;
         var clipboard = [];
+        var currentCanvasRunId = "";
 
         function pasteInternalElements(cx, cy) {
           if (clipboard.length === 0) return;
@@ -8059,6 +8342,55 @@
           scheduleRender();
         }
 
+        function imageBlobToDataUrl(blob) {
+          return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(String(reader.result || "")); };
+            reader.onerror = function () { reject(new Error("无法读取画布中的粘贴图片")); };
+            reader.readAsDataURL(blob);
+          });
+        }
+
+        window.prepareCanvasPublishPayload = async function () {
+          stopTextEditing();
+          if (!currentCanvasRunId) throw new Error("当前画布没有关联的 runId");
+          var publishElements = [];
+          var embeddedAssets = [];
+          for (var i = 0; i < elements.length; i++) {
+            var original = elements[i];
+            if (!original || original.id === "__draw_preview__") continue;
+            var clone = JSON.parse(JSON.stringify(original));
+            clone.zIndex = publishElements.length;
+            if (clone.type === "image" && typeof original.src === "string") {
+              if (original.src.indexOf("blob:") === 0) {
+                var response = await fetch(original.src);
+                if (!response.ok) throw new Error("无法保存粘贴到画布的图片");
+                embeddedAssets.push({
+                  element_id: clone.id,
+                  data_url: await imageBlobToDataUrl(await response.blob()),
+                  name: clone.name || "",
+                });
+              } else if (original.src.indexOf("data:image/") === 0) {
+                embeddedAssets.push({ element_id: clone.id, data_url: original.src, name: clone.name || "" });
+              }
+            }
+            publishElements.push(clone);
+          }
+          if (publishElements.length === 0) throw new Error("画布上没有可导出的内容");
+          recomputeAssetBounds();
+          return {
+            run_id: currentCanvasRunId,
+            canvas_state: {
+              version: 1,
+              runId: currentCanvasRunId,
+              createdAt: new Date().toISOString(),
+              bounds: assetBounds ? JSON.parse(JSON.stringify(assetBounds)) : null,
+              elements: publishElements,
+            },
+            embedded_assets: embeddedAssets,
+          };
+        };
+
         function getEditingElement() {
           if (!state.editingTextId) return null;
           for (var i = 0; i < elements.length; i++) {
@@ -8139,6 +8471,7 @@
             strokeWidth: 1,
             opacity: 1,
             angle: 0,
+            role: "annotation",
           };
           elements.push(el);
           recomputeAssetBounds();
@@ -8240,6 +8573,7 @@
                 opacity: 1,
                 angle: 0,
                 isDecorative: true,
+                role: "chapter-title",
               });
             }
             y += chapter.title ? 72 : 0;
@@ -8250,14 +8584,24 @@
               var col = i % cardsPerRow;
               var imgX = marginX + col * (imgW + imgGap);
               var imgY = y + row * rowH;
+              var normalizedSrc = String(card.src || "").replace(/\\/g, "/").replace(/^\.\//, "");
+              var assetPath = normalizedSrc.indexOf("artifacts/") === 0 ? normalizedSrc : "artifacts/" + normalizedSrc;
+              var assetFile = assetPath.split("/").pop() || "asset";
+              var assetId = assetFile.replace(/\.[^.]+$/, "");
 
               result.push({
                 id: "img-" + ci + "-" + i,
                 type: "image",
                 name: card.title,
-                src: basePath + "artifacts/" + card.src,
+                src: basePath + assetPath,
                 x: imgX, y: imgY,
                 width: imgW, height: imgH,
+                assetId: assetId,
+                assetPath: assetPath,
+                sidecarPath: assetPath + ".json",
+                title: card.title,
+                description: card.desc,
+                role: "asset",
               });
 
               if (card.title) {
@@ -8274,6 +8618,8 @@
                   textAlign: "left",
                   strokeColor: "#333333",
                   isDecorative: true,
+                  role: "caption-title",
+                  relatedAssetIds: [assetId],
                 });
               }
               if (card.desc) {
@@ -8292,6 +8638,8 @@
                   textAlign: "left",
                   strokeColor: "#8a8a8a",
                   isDecorative: true,
+                  role: "caption-description",
+                  relatedAssetIds: [assetId],
                 });
               }
             }
@@ -8312,6 +8660,7 @@
             var chapters = parseGalleryHtml(html);
             if (chapters.length === 0) throw new Error("no chapters parsed");
             elements = layoutChapters(chapters, basePath);
+            currentCanvasRunId = runId;
             recomputeAssetBounds();
             if (emptyState) emptyState.style.display = "none";
             fitCanvas(assetBounds);
@@ -8562,7 +8911,7 @@
                           var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
                           var w = img.width * scale;
                           var h = img.height * scale;
-                          var el = { id: "img-" + Date.now(), type: "image", src: url, x: cx - w / 2, y: cy - h / 2, width: w, height: h, strokeColor: "#000", backgroundColor: "transparent", fillStyle: "none", strokeWidth: 0, opacity: 1, angle: 0 };
+                          var el = { id: "img-" + Date.now(), type: "image", src: url, x: cx - w / 2, y: cy - h / 2, width: w, height: h, strokeColor: "#000", backgroundColor: "transparent", fillStyle: "none", strokeWidth: 0, opacity: 1, angle: 0, role: "asset", source: "canvas_paste" };
                           pushHistory();
                           elements.push(el);
                           imageCache[url] = img;

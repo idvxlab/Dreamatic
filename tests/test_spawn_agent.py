@@ -334,6 +334,13 @@ class TestRunToCompletion:
         snap = await engine.get_snapshot()
         assert snap["state"] == "COMPLETED"
 
+    @pytest.mark.asyncio
+    async def test_run_to_completion_can_continue_after_completion(self):
+        engine = _build_engine("First.")
+        assert await engine.run_to_completion("First task") == "First."
+        engine._loop._llm = _MockLLM("Second.")
+        assert await engine.run_to_completion("Continue") == "Second."
+
 
 # ── spawn_agent tool ───────────────────────────────────────────────────────────
 

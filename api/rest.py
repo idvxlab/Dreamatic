@@ -35,7 +35,7 @@ logging.basicConfig(
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from harness.commands import CommandSystem
 from harness.commands.models import CommandContext, CommandResult, substitute_args
@@ -61,7 +61,18 @@ from harness.storage.backends.sqlite import (
     SQLitePlanStore,
     SQLiteSessionStore,
 )
-from harness.types.messages import Message, TextBlock
+from harness.types.messages import Message, TextBlock, ToolCallBlock
+
+from api.canvas_publish import (
+    CanvasPublishError,
+    extract_authored_html,
+    finalize_publish,
+    infer_domain_skill_name,
+    persist_canvas_state,
+    utc_now,
+    validate_published_html,
+    validate_run_id,
+)
 
 app = FastAPI(title="MyHarnessPy", version="0.1.0")
 api_logger = logging.getLogger("harness.api")
@@ -77,6 +88,10 @@ _session_store = MemorySessionStore()
 _memory_store = InMemoryMemoryStore()
 _plan_store = InMemoryPlanStore()
 _cmd_system: CommandSystem | None = None
+_canvas_publish_jobs: dict[str, dict[str, Any]] = {}
+_canvas_publish_tasks: set[asyncio.Task] = set()
+_canvas_publish_tasks_by_job: dict[str, asyncio.Task] = {}
+_canvas_publish_engines_by_job: dict[str, AgentEngine] = {}
 
 ENV_SETTINGS_FILE = Path(__file__).resolve().parent.parent / ".env"
 DREAMATIC_SETTINGS_FILE = Path(__file__).resolve().parent.parent / ".dreamatic" / "settings.json"
@@ -626,6 +641,18 @@ class ModelProfileRequest(BaseModel):
 
 class ActivateProfileRequest(BaseModel):
     profile_id: str = ""
+
+
+class CanvasEmbeddedAsset(BaseModel):
+    element_id: str
+    data_url: str
+    name: str = ""
+
+
+class CanvasPublishRequest(BaseModel):
+    run_id: str
+    canvas_state: dict[str, Any]
+    embedded_assets: list[CanvasEmbeddedAsset] = Field(default_factory=list)
 
 
 async def _build_session_engine(
@@ -1910,6 +1937,301 @@ async def api_save_yaml(req: ConfigWriteRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
     Path("config.yaml").write_text(req.content, encoding="utf-8")
     return {"status": "saved"}
+
+
+# ── Canvas HTML publishing ─────────────────────────────────────────────
+
+_CANVAS_PUBLISH_STAGES = {
+    "preparing": (0, "正在整理画布内容"),
+    "reading": (1, "正在读取图文资产"),
+    "composing": (2, "AI 正在重新编排页面"),
+    "validating": (3, "正在校验导出结果"),
+    "completed": (4, "HTML 已导出"),
+}
+
+
+def _update_canvas_publish_job(job_id: str, stage: str, message: str = "") -> None:
+    job = _canvas_publish_jobs.get(job_id)
+    if not job:
+        return
+    current_index = _CANVAS_PUBLISH_STAGES.get(job.get("stage", "preparing"), (0, ""))[0]
+    next_index, default_message = _CANVAS_PUBLISH_STAGES.get(stage, (current_index, message))
+    if stage != "failed" and next_index < current_index:
+        return
+    job["stage"] = stage
+    job["message"] = message or default_message
+    job["updated_at"] = utc_now()
+
+
+def _public_canvas_publish_job(job: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in job.items() if key != "session_id"}
+
+
+async def _run_canvas_publish_job(
+    job_id: str,
+    session_engine: AgentEngine,
+    persisted: dict[str, Any],
+) -> None:
+    job = _canvas_publish_jobs[job_id]
+    run_id = persisted["run_id"]
+    run_dir: Path = persisted["run_dir"]
+    input_file: Path = persisted["publish_input_file"]
+    canvas_state = persisted["state"]
+    publish_input = persisted["publish_input"]
+    output_html = run_dir / "artifacts" / "01-gallery-edited.html"
+    publisher_engine: AgentEngine | None = None
+    try:
+        job["status"] = "running"
+        _update_canvas_publish_job(job_id, "reading")
+        cfg = _require_config()
+        provider_name = (
+            session_engine._config.provider_name
+            or _engine_meta.get(job["session_id"], {}).get("provider")
+            or cfg.default_provider
+        )
+        if provider_name not in cfg.providers:
+            provider_name = cfg.default_provider
+        session_cfg = _session_config_for_provider(cfg, provider_name)
+        domain_skill_name = infer_domain_skill_name(publish_input)
+        skill_names = (
+            "canvas-html-publishing",
+            "default-production-stage",
+            "visual-composition",
+            domain_skill_name,
+        )
+        skill_prompts = []
+        for skill_name in skill_names:
+            loaded_skill = load_skill(skill_name, project_only=True)
+            skill_prompts.append(
+                f"\n\n# Loaded Skill: {skill_name}\n\n"
+                + str(loaded_skill.get("system_prompt") or "")
+            )
+        publisher_provider_cfg = deepcopy(session_cfg.providers[provider_name])
+        publisher_provider_cfg.max_tokens = max(publisher_provider_cfg.max_tokens, 8192)
+        publisher_engine = build_engine(
+                session_id=f"canvas-publish-{job_id}-designer",
+                provider_cfg=publisher_provider_cfg,
+                harness_cfg=session_cfg,
+                session_store=MemorySessionStore(),
+                memory_store=InMemoryMemoryStore(),
+                plan_store=InMemoryPlanStore(),
+                system_prompt="".join(skill_prompts),
+                allowed_tools=["think", "read_file"],
+                engine_registry={},
+                provider_name=provider_name,
+                agent_id="canvas-html-designer",
+                question_mode="noquestion",
+                approval_mode="full",
+            )
+        designer_fragments: list[str] = []
+
+        async def _collect_designer_text(message: Message) -> None:
+            if message.role != "assistant":
+                return
+            for block in message.content:
+                if isinstance(block, TextBlock) and block.text:
+                    designer_fragments.append(block.text)
+
+        publisher_engine.add_message_listener(_collect_designer_text)
+        for tool_name in ("spawn_agent", "spawn_agents", "use_skill", "list_skills", "write_file", "edit_file", "list_dir"):
+            publisher_engine._tool_registry.unregister(tool_name)
+        _canvas_publish_engines_by_job[job_id] = publisher_engine
+        _update_canvas_publish_job(job_id, "composing")
+        task = (
+            "Act as the Designer for a bounded canvas HTML export. Production of images is "
+            "already complete; apply only the gallery-presentation parts of the loaded Skills.\n\n"
+            f"Read the sole content input at: {input_file.resolve()}\n"
+            f"The final HTML will live at: {output_html.resolve()}\n\n"
+            "Author a complete, polished, standalone responsive HTML design-review gallery. "
+            "Return ONLY the full HTML document, starting with <!doctype html> and ending with "
+            "</html>; do not use markdown fences and do not call write tools. Use inline CSS, "
+            "local image paths relative to the artifacts directory (remove the leading "
+            "'artifacts/' from assetPath), no scripts, no remote resources, and no data URLs. "
+            "Derive a project-specific visual system from the supplied titles, descriptions, "
+            "domain metadata, and image metadata. Include a strong hero, a sticky table-of-"
+            "contents with working section anchors, responsive category sections, deliberate "
+            "image hierarchy, asset ids, captions, and meaningful metadata tags. Preserve every "
+            "non-decorative asset exactly once. Preserve every ordinary user text verbatim, but "
+            "do not repeat chapter-title, caption-title, or caption-description text as separate "
+            "blocks because those roles are already represented by section/card UI. Never invent "
+            "assets, paths, project claims, or user copy, and do not read the original gallery, "
+            "brief, plans, manifests, or any file other than the supplied publish input."
+        )
+        result_text = await asyncio.wait_for(publisher_engine.run_to_completion(task), timeout=300)
+        authored_html: str | None = None
+        for continuation_index in range(3):
+            if job.get("status") == "cancelling":
+                raise asyncio.CancelledError
+            candidates = list(reversed(designer_fragments))
+            candidates.append("\n".join(designer_fragments) if designer_fragments else result_text)
+            for candidate in candidates:
+                try:
+                    authored_html = extract_authored_html(candidate)
+                    break
+                except CanvasPublishError:
+                    continue
+            if authored_html is not None:
+                break
+            if continuation_index == 2:
+                break
+            _update_canvas_publish_job(
+                job_id,
+                "composing",
+                f"页面较长，正在继续生成（{continuation_index + 1}/2）",
+            )
+            await asyncio.wait_for(
+                publisher_engine.run_to_completion(
+                    "Your HTML output was truncated by the response token limit. Continue "
+                    "exactly from the last emitted character. Do not restart the document, "
+                    "do not repeat earlier markup, and finish all remaining sections plus "
+                    "the closing </body></html> tags. Return only the continuation."
+                ),
+                timeout=300,
+            )
+        if authored_html is None:
+            emitted_chars = sum(len(fragment) for fragment in designer_fragments)
+            raise CanvasPublishError(
+                "Designer output remained incomplete after continuation "
+                f"({len(designer_fragments)} fragments, {emitted_chars} characters)"
+            )
+        if output_html.exists():
+            output_html.unlink()
+        output_html.write_text(authored_html, encoding="utf-8")
+        _update_canvas_publish_job(job_id, "validating")
+        if not output_html.is_file():
+            raise CanvasPublishError("The publishing task did not create 01-gallery-edited.html")
+        validation = validate_published_html(output_html, run_dir, canvas_state)
+
+        finalize_publish(OUTPUTS_DIR, run_id, run_dir, canvas_state, output_html, validation)
+        version = uuid.uuid4().hex[:8]
+        job.update({
+            "status": "completed",
+            "html_url": f"/outputs/runs/{run_id}/final/artifacts/01-gallery-edited.html?v={version}",
+            "download_url": f"/outputs/runs/{run_id}/final/artifacts/01-gallery-edited.html?v={version}",
+            "manifest_url": f"/outputs/runs/{run_id}/final/canvas/canvas-publish-manifest.json?v={version}",
+            "error": "",
+        })
+        _update_canvas_publish_job(job_id, "completed")
+    except asyncio.TimeoutError:
+        if publisher_engine is not None:
+            await publisher_engine.cancel()
+        job.update({"status": "failed", "stage": "failed", "message": "导出超时", "error": "The publishing task timed out"})
+        job["updated_at"] = utc_now()
+    except asyncio.CancelledError:
+        if publisher_engine is not None:
+            try:
+                await publisher_engine.cancel()
+            except Exception:
+                api_logger.exception("Failed to stop canvas publisher engine (job=%s)", job_id)
+        job.update({
+            "status": "cancelled",
+            "stage": "cancelled",
+            "message": "导出已取消",
+            "error": "",
+            "updated_at": utc_now(),
+        })
+        raise
+    except Exception as exc:
+        api_logger.exception("Canvas HTML publishing failed (job=%s, run=%s)", job_id, run_id)
+        detail = str(exc).strip() or exc.__class__.__name__
+        job.update({"status": "failed", "stage": "failed", "message": "导出失败", "error": detail[:2000]})
+        job["updated_at"] = utc_now()
+    finally:
+        _canvas_publish_engines_by_job.pop(job_id, None)
+
+
+@app.post("/sessions/{session_id}/canvas-publish", status_code=202)
+async def start_canvas_publish(session_id: str, req: CanvasPublishRequest) -> dict[str, Any]:
+    session_engine = _get_engine(session_id)
+    try:
+        run_id = validate_run_id(req.run_id)
+        embedded_assets = [
+            asset.model_dump() if hasattr(asset, "model_dump") else asset.dict()
+            for asset in req.embedded_assets
+        ]
+        persisted = persist_canvas_state(ROOT_DIR, OUTPUTS_DIR, run_id, req.canvas_state, embedded_assets)
+    except CanvasPublishError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    job_id = uuid.uuid4().hex
+    now = utc_now()
+    job = {
+        "job_id": job_id,
+        "session_id": session_id,
+        "run_id": run_id,
+        "status": "queued",
+        "stage": "preparing",
+        "message": _CANVAS_PUBLISH_STAGES["preparing"][1],
+        "html_url": "",
+        "download_url": "",
+        "manifest_url": "",
+        "error": "",
+        "created_at": now,
+        "updated_at": now,
+    }
+    _canvas_publish_jobs[job_id] = job
+    task = asyncio.create_task(_run_canvas_publish_job(job_id, session_engine, persisted))
+    _canvas_publish_tasks.add(task)
+    _canvas_publish_tasks_by_job[job_id] = task
+
+    def _forget_publish_task(done_task: asyncio.Task) -> None:
+        _canvas_publish_tasks.discard(done_task)
+        if _canvas_publish_tasks_by_job.get(job_id) is done_task:
+            _canvas_publish_tasks_by_job.pop(job_id, None)
+
+    task.add_done_callback(_forget_publish_task)
+    return _public_canvas_publish_job(job)
+
+
+@app.get("/canvas-publish/jobs/{job_id}")
+async def get_canvas_publish_job(job_id: str) -> dict[str, Any]:
+    job = _canvas_publish_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Canvas publish job not found")
+    return _public_canvas_publish_job(job)
+
+
+@app.post("/canvas-publish/jobs/{job_id}/cancel")
+async def cancel_canvas_publish_job(job_id: str) -> dict[str, Any]:
+    job = _canvas_publish_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Canvas publish job not found")
+    if job.get("status") in {"completed", "failed", "cancelled"}:
+        return _public_canvas_publish_job(job)
+
+    job.update({
+        "status": "cancelling",
+        "message": "正在取消导出",
+        "updated_at": utc_now(),
+    })
+    publisher_engine = _canvas_publish_engines_by_job.get(job_id)
+    if publisher_engine is not None:
+        await publisher_engine.cancel()
+    task = _canvas_publish_tasks_by_job.get(job_id)
+    if task is None or task.done():
+        job.update({
+            "status": "cancelled",
+            "stage": "cancelled",
+            "message": "导出已取消",
+            "error": "",
+            "updated_at": utc_now(),
+        })
+        return _public_canvas_publish_job(job)
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    if job.get("status") == "cancelling":
+        job.update({
+            "status": "cancelled",
+            "stage": "cancelled",
+            "message": "导出已取消",
+            "error": "",
+            "updated_at": utc_now(),
+        })
+    return _public_canvas_publish_job(job)
 
 
 # ── Commands ───────────────────────────────────────────────────────────

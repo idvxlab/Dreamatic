@@ -807,6 +807,13 @@ class AgentEngine:
         """
         user_msg = Message(role="user", content=[TextBlock(text=task)])
         async with self._state_lock:
+            # A bounded engine may be reused for continuation turns. Mirror
+            # send_message(): terminal states must re-enter WAITING_INPUT
+            # before a new RUNNING transition.
+            if self._sm.state in (EngineState.COMPLETED, EngineState.ERROR):
+                self._sm.transition(EngineState.WAITING_INPUT)
+            self._last_error = ""
+            self._user_cancelled = False
             self._messages.append(user_msg)
             self._sm.transition(EngineState.RUNNING)
             self._emitter.emit(
@@ -816,6 +823,13 @@ class AgentEngine:
         self._parent_engine = parent_engine
         await self._run_loop_guarded()
 
+        # _run_loop_guarded handles CancelledError to restore engine state.
+        # A bounded sub-agent must still stop here; otherwise the recovery /
+        # continuation loop below can start another model request after the
+        # caller has already asked it to cancel.
+        if self._user_cancelled or self._cancel_event.is_set():
+            raise asyncio.CancelledError
+
         # Sub-agents run without an active frontend view, so browser-driven
         # continuation/recovery for the child session may never fire while the
         # parent is open. Finish those resumable states inline before returning
@@ -823,6 +837,8 @@ class AgentEngine:
         # many tool batches, so this must not stop after only a few resumes.
         resume_limit = max(30, min(80, self._config.max_rounds * 2))
         for _ in range(resume_limit):
+            if self._user_cancelled or self._cancel_event.is_set():
+                raise asyncio.CancelledError
             continuation = await self._prepare_continue_if_needed(
                 source="subagent_inline_continue"
             )
