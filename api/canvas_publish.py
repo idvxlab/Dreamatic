@@ -16,6 +16,7 @@ from urllib.parse import unquote, urlsplit
 
 SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 SAFE_ELEMENT_ID_RE = re.compile(r"[^A-Za-z0-9._-]+")
+EDITED_GALLERY_RE = re.compile(r"^(\d+)-gallery-edited\.html$", re.IGNORECASE)
 DATA_URL_RE = re.compile(
     r"^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$",
     re.IGNORECASE,
@@ -46,6 +47,23 @@ def validate_run_id(run_id: str) -> str:
     if not clean or not SAFE_RUN_ID_RE.fullmatch(clean):
         raise CanvasPublishError("Invalid run_id")
     return clean
+
+
+def next_gallery_export_name(run_dir: Path, final_artifacts: Path | None = None) -> str:
+    """Return the next historical gallery name without overwriting an export."""
+    numbers: list[int] = []
+    directories = [run_dir / "artifacts"]
+    if final_artifacts is not None:
+        directories.append(final_artifacts)
+    for directory in directories:
+        if not directory.is_dir():
+            continue
+        for path in directory.glob("*-gallery-edited.html"):
+            match = EDITED_GALLERY_RE.fullmatch(path.name)
+            if match:
+                numbers.append(int(match.group(1)))
+    next_number = max(numbers, default=0) + 1
+    return f"{next_number:02d}-gallery-edited.html"
 
 
 def _safe_element_id(value: str) -> str:
@@ -288,6 +306,26 @@ def persist_canvas_state(
         if metadata:
             element["sidecarMetadata"] = metadata
 
+    known_asset_ids: set[str] = set()
+    for asset_path, item in manifest_by_path.items():
+        asset_file = _safe_run_asset(run_dir, asset_path)
+        if asset_file and asset_file.is_file() and asset_file.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            known_asset_ids.add(str(item.get("id") or asset_file.stem))
+    for sidecar_file in (run_dir / "artifacts").rglob("*.json"):
+        image_file = Path(str(sidecar_file)[:-5])
+        if not image_file.is_file() or image_file.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
+            continue
+        metadata = _read_json_object(sidecar_file)
+        known_asset_ids.add(str(metadata.get("id") or image_file.stem))
+    visible_asset_ids = {
+        str(element.get("assetId"))
+        for element in elements
+        if isinstance(element, dict)
+        and element.get("type") == "image"
+        and element.get("assetId")
+    }
+    excluded_asset_ids = sorted(known_asset_ids - visible_asset_ids)
+
     publishing_view = _build_publishing_view(elements)
     state = {
         "version": state.get("version", 1),
@@ -295,6 +333,7 @@ def persist_canvas_state(
         "createdAt": state.get("createdAt", ""),
         "savedAt": state.get("savedAt", utc_now()),
         "bounds": state.get("bounds"),
+        "excludedAssetIds": excluded_asset_ids,
         "publishingView": publishing_view,
         "elements": elements,
     }
@@ -598,11 +637,22 @@ def validate_published_html(html_file: Path, run_dir: Path, canvas_state: dict[s
     expected_image_counts: dict[str, int] = {}
     for image in expected_images:
         expected_image_counts[image["path"]] = expected_image_counts.get(image["path"], 0) + 1
+    expected_paths = set(expected_image_counts)
+    for path in image_counts:
+        if path in expected_paths or REMOTE_REF_RE.match(path):
+            continue
+        # The Designer must not invent image filenames. A relative path that
+        # is not present in the canvas publish input cannot be packaged with
+        # this export, even if a similarly named file exists elsewhere.
+        issues.append(f"Image path '{path}' is not a canvas asset")
     for path, expected_count in expected_image_counts.items():
         actual_count = image_counts.get(path, 0)
-        if actual_count != expected_count:
+        # A gallery may intentionally reuse an asset, for example once in the
+        # hero and once in its detailed card. The canvas count is the minimum
+        # required coverage, not a strict upper bound on presentation uses.
+        if actual_count < expected_count:
             issues.append(
-                f"Image path '{path}' must appear {expected_count} time(s) (found {actual_count})"
+                f"Image path '{path}' must appear at least {expected_count} time(s) (found {actual_count})"
             )
 
     page_text = _normalize_text(" ".join(parser.text_parts))
@@ -623,18 +673,22 @@ def finalize_publish(
     canvas_state: dict[str, Any],
     source_html: Path,
     validation: dict[str, Any],
+    output_name: str | None = None,
 ) -> dict[str, str]:
     final_artifacts = outputs_dir / "runs" / run_id / "final" / "artifacts"
     final_canvas = outputs_dir / "runs" / run_id / "final" / "canvas"
     final_artifacts.mkdir(parents=True, exist_ok=True)
     final_canvas.mkdir(parents=True, exist_ok=True)
-    final_html = final_artifacts / "01-gallery-edited.html"
+    output_name = output_name or source_html.name
+    if not EDITED_GALLERY_RE.fullmatch(output_name):
+        raise CanvasPublishError("Invalid gallery export filename")
+    final_html = final_artifacts / output_name
     shutil.copy2(source_html, final_html)
     manifest = {
         "run_id": run_id,
         "generated_at": utc_now(),
         "source": "canvas-publish-input.json",
-        "output": "artifacts/01-gallery-edited.html",
+        "output": f"artifacts/{output_name}",
         "included_images": validation.get("images", []),
         "text_count": validation.get("text_count", 0),
         "canvas_version": canvas_state.get("version", 1),

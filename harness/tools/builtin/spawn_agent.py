@@ -203,6 +203,18 @@ def _augment_task_with_extra_context(task: str, extra: dict) -> str:
     return "\n".join(lines + ["", task])
 
 
+async def _inherited_run_id(session_store: "SessionStore", parent_session_id: str) -> str:
+    if not parent_session_id:
+        return ""
+    try:
+        parent = await session_store.load(parent_session_id)
+    except Exception:
+        return ""
+    if not parent or not isinstance(parent.metadata, dict):
+        return ""
+    return str(parent.metadata.get("active_run_id") or "")
+
+
 def make_spawn_agent_tool(
     harness_cfg: "HarnessConfig",
     provider_cfg: "ProviderConfig",
@@ -297,6 +309,9 @@ def make_spawn_agent_tool(
                     meta["plan_item_id"] = plan_item_id
                 if parent_session_id:
                     meta["parent_session_id"] = parent_session_id
+                active_run_id = await _inherited_run_id(session_store, parent_session_id)
+                if active_run_id:
+                    meta["active_run_id"] = active_run_id
                 await session_store.save(sub_id, [], metadata=meta)
             except Exception:
                 pass
@@ -430,6 +445,9 @@ def make_spawn_agents_tool(
                     meta["plan_item_id"] = plan_item_id
                 if parent_session_id:
                     meta["parent_session_id"] = parent_session_id
+                active_run_id = await _inherited_run_id(session_store, parent_session_id)
+                if active_run_id:
+                    meta["active_run_id"] = active_run_id
                 await session_store.save(sub_id, [], metadata=meta)
             except Exception:
                 pass

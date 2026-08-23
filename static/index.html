@@ -4026,6 +4026,9 @@
         try {
           const snap = await api(`/sessions/${id}/state`);
           renderSnapshot(snap);
+          if (typeof window.loadCanvasSession === "function") {
+            await window.loadCanvasSession(id);
+          }
           if (snap.is_running) startPolling();
         } catch (e) {
           toast("加载会话失败: " + e.message, true);
@@ -4053,6 +4056,9 @@
         pendingUserEchoes = [];
         activeThinkingGroup = null;
         clearRuntimeEvents();
+        if (typeof window.clearCanvasSession === "function") {
+          window.clearCanvasSession();
+        }
         document.getElementById("messages").innerHTML = "";
         document.getElementById("messages").classList.add("hidden");
         document.getElementById("empty-state").classList.remove("hidden");
@@ -5139,6 +5145,23 @@
           triggerPoll();
         } else if (frame.type === "runtime.event") {
           appendRuntimeEvent(frame.data || {});
+          const canvasTools = new Set([
+            "image_generate",
+            "image_edit",
+            "research_asset_fetch",
+            "export_package",
+          ]);
+          if (
+            frame.data?.phase === "tool_finished" &&
+            canvasTools.has(frame.data?.tool) &&
+            typeof window.refreshCanvasAssets === "function"
+          ) {
+            window.refreshCanvasAssets();
+          }
+        } else if (frame.type === "canvas.run_bound") {
+          if (typeof window.loadCanvasSession === "function" && currentSessionId) {
+            window.loadCanvasSession(currentSessionId, true);
+          }
         } else if (frame.type === "message_queued") {
           // Backend confirms a message was appended to _pending_commands.
           // Update the queued panel immediately; the next state/snapshot tick
@@ -5320,6 +5343,15 @@
         const meta = snap.meta || {};
         currentSnapshotMeta = meta;
         currentSnapshotAgentId = snap.agent_id || "";
+        if (
+          typeof window.syncCanvasSession === "function" &&
+          currentSessionId
+        ) {
+          window.syncCanvasSession(currentSessionId, meta.active_run_id || "");
+          if (snap.is_running && typeof window.refreshCanvasAssets === "function") {
+            window.refreshCanvasAssets();
+          }
+        }
         if (snap.question_mode && snap.question_mode !== currentQuestionMode) {
           currentQuestionMode = snap.question_mode;
         }
@@ -7345,6 +7377,7 @@
         if (job.status === "completed") {
           if (preview) preview.href = job.html_url || "#";
           if (download) download.href = job.download_url || job.html_url || "#";
+          if (download && job.output_filename) download.download = job.output_filename;
           preview?.classList.remove("hidden");
           download?.classList.remove("hidden");
           toast("HTML 已导出");
@@ -7865,6 +7898,9 @@
         var assetBounds = null;
         var clipboard = [];
         var currentCanvasRunId = "";
+        var currentCanvasSessionId = "";
+        var currentCanvasRevision = "";
+        var canvasLoadInFlight = null;
 
         function pasteInternalElements(cx, cy) {
           if (clipboard.length === 0) return;
@@ -8584,24 +8620,26 @@
               var col = i % cardsPerRow;
               var imgX = marginX + col * (imgW + imgGap);
               var imgY = y + row * rowH;
-              var normalizedSrc = String(card.src || "").replace(/\\/g, "/").replace(/^\.\//, "");
+              var normalizedSrc = String(card.assetPath || card.src || "").replace(/\\/g, "/").replace(/^\.\//, "");
               var assetPath = normalizedSrc.indexOf("artifacts/") === 0 ? normalizedSrc : "artifacts/" + normalizedSrc;
               var assetFile = assetPath.split("/").pop() || "asset";
-              var assetId = assetFile.replace(/\.[^.]+$/, "");
+              var assetId = card.assetId || assetFile.replace(/\.[^.]+$/, "");
 
               result.push({
                 id: "img-" + ci + "-" + i,
                 type: "image",
                 name: card.title,
-                src: basePath + assetPath,
+                src: card.url || basePath + assetPath,
                 x: imgX, y: imgY,
                 width: imgW, height: imgH,
                 assetId: assetId,
                 assetPath: assetPath,
-                sidecarPath: assetPath + ".json",
+                sidecarPath: card.sidecarPath || assetPath + ".json",
                 title: card.title,
                 description: card.desc,
                 role: "asset",
+                artifactMetadata: card.artifactMetadata || {},
+                sidecarMetadata: card.sidecarMetadata || {},
               });
 
               if (card.title) {
@@ -8651,6 +8689,182 @@
           return result;
         }
 
+        function chaptersFromAssets(assets) {
+          var groups = new Map();
+          for (var i = 0; i < assets.length; i++) {
+            var asset = assets[i];
+            var group = asset.group || asset.category || "新增素材";
+            if (!groups.has(group)) groups.set(group, []);
+            groups.get(group).push({
+              src: asset.assetPath,
+              url: asset.url,
+              assetId: asset.assetId,
+              assetPath: asset.assetPath,
+              sidecarPath: asset.sidecarPath,
+              title: asset.title || asset.assetId,
+              desc: asset.description || "",
+              artifactMetadata: asset.artifactMetadata || {},
+              sidecarMetadata: asset.sidecarMetadata || {},
+            });
+          }
+          return Array.from(groups, function (entry) {
+            return { title: entry[0], cards: entry[1] };
+          });
+        }
+
+        function normalizeLoadedCanvasElements(loaded) {
+          return loaded.map(function (item) {
+            var el = Object.assign({}, item);
+            if (el.type === "text") {
+              el.text = String(el.text || "");
+              el.displayText = el.displayText || wrapText(
+                el.text,
+                el.width || 0,
+                el.fontSize || 20,
+                el.fontFamily || "system-ui, sans-serif",
+              );
+            }
+            return el;
+          });
+        }
+
+        function appendNewCanvasAssets(assets) {
+          var existingIds = new Set(
+            elements.filter(function (el) { return el.type === "image"; })
+              .map(function (el) { return el.assetId; })
+              .filter(Boolean),
+          );
+          var newAssets = assets.filter(function (asset) {
+            return asset.assetId && !existingIds.has(asset.assetId);
+          });
+          if (newAssets.length === 0) return false;
+          var appended = layoutChapters(chaptersFromAssets(newAssets), "");
+          recomputeAssetBounds();
+          var offsetY = assetBounds ? assetBounds.y + assetBounds.height + 120 : 0;
+          for (var i = 0; i < appended.length; i++) {
+            appended[i].y += offsetY;
+            appended[i].id = "live-" + Date.now() + "-" + i + "-" + appended[i].id;
+          }
+          elements = elements.concat(appended);
+          return true;
+        }
+
+        function applyCanvasAssetPayload(payload, replace) {
+          var assets = Array.isArray(payload.assets) ? payload.assets : [];
+          if (replace) {
+            var saved = payload.canvasState && Array.isArray(payload.canvasState.elements)
+              ? payload.canvasState.elements
+              : null;
+            if (saved && saved.length > 0) {
+              elements = normalizeLoadedCanvasElements(saved);
+              appendNewCanvasAssets(assets);
+            } else {
+              elements = layoutChapters(chaptersFromAssets(assets), "");
+            }
+            historyStack = [JSON.stringify(elements)];
+            historyIndex = 0;
+          } else {
+            var byId = new Map(assets.map(function (asset) { return [asset.assetId, asset]; }));
+            var removedIds = new Set(
+              elements.filter(function (el) {
+                return el.type === "image" && el.assetId && el.assetPath && !byId.has(el.assetId);
+              }).map(function (el) { return el.assetId; }),
+            );
+            if (removedIds.size > 0) {
+              elements = elements.filter(function (el) {
+                if (el.type === "image" && removedIds.has(el.assetId)) return false;
+                if (Array.isArray(el.relatedAssetIds)) {
+                  return !el.relatedAssetIds.some(function (id) { return removedIds.has(id); });
+                }
+                return true;
+              });
+            }
+            elements.forEach(function (el) {
+              if (el.type !== "image" || !el.assetId || !byId.has(el.assetId)) return;
+              var asset = byId.get(el.assetId);
+              el.src = asset.url;
+              el.assetPath = asset.assetPath;
+              el.sidecarPath = asset.sidecarPath || "";
+              el.title = asset.title || el.title;
+              el.description = asset.description || el.description;
+              el.artifactMetadata = asset.artifactMetadata || {};
+              el.sidecarMetadata = asset.sidecarMetadata || {};
+            });
+            appendNewCanvasAssets(assets);
+          }
+          currentCanvasRunId = payload.runId || "";
+          currentCanvasRevision = String(payload.revision || "");
+          state.selectedId = null;
+          recomputeAssetBounds();
+          if (emptyState) emptyState.style.display = elements.length > 0 ? "none" : "";
+          if (replace && assetBounds) fitCanvas(assetBounds);
+          scheduleRender();
+        }
+
+        async function fetchCanvasAssets(sessionId, forceReplace) {
+          if (!sessionId) return;
+          var payload = await api("/sessions/" + encodeURIComponent(sessionId) + "/canvas-assets");
+          if (sessionId !== currentSessionId) return;
+          var replace = !!forceReplace || currentCanvasSessionId !== sessionId || currentCanvasRunId !== (payload.runId || "");
+          currentCanvasSessionId = sessionId;
+          if (!replace && String(payload.revision || "") === currentCanvasRevision) return;
+          if (payload.assets && payload.assets.length > 0) {
+            applyCanvasAssetPayload(payload, replace);
+            return;
+          }
+          if (payload.galleryUrl) {
+            var response = await fetch(payload.galleryUrl, { cache: "no-store" });
+            if (!response.ok) throw new Error("gallery not found");
+            var chapters = parseGalleryHtml(await response.text());
+            elements = layoutChapters(chapters, payload.galleryUrl.replace(/artifacts\/00-gallery\.html.*$/, ""));
+            currentCanvasRunId = payload.runId || "";
+            currentCanvasRevision = String(payload.revision || "");
+            recomputeAssetBounds();
+            if (assetBounds) fitCanvas(assetBounds);
+            scheduleRender();
+            return;
+          }
+          elements = [];
+          currentCanvasRunId = "";
+          currentCanvasRevision = String(payload.revision || "");
+          recomputeAssetBounds();
+          if (emptyState) emptyState.style.display = "";
+          scheduleRender();
+        }
+
+        window.loadCanvasSession = function (sessionId, forceReplace) {
+          currentCanvasSessionId = forceReplace ? "" : currentCanvasSessionId;
+          canvasLoadInFlight = fetchCanvasAssets(sessionId, !!forceReplace).catch(function (error) {
+            console.warn("Canvas: failed to load session", sessionId, error.message);
+          }).finally(function () {
+            canvasLoadInFlight = null;
+          });
+          return canvasLoadInFlight;
+        };
+
+        window.syncCanvasSession = function (sessionId, activeRunId) {
+          if (!sessionId) return;
+          if (currentCanvasSessionId !== sessionId || (activeRunId && currentCanvasRunId !== activeRunId)) {
+            window.loadCanvasSession(sessionId, true);
+          }
+        };
+
+        window.refreshCanvasAssets = function () {
+          if (!currentSessionId || canvasLoadInFlight) return canvasLoadInFlight;
+          return window.loadCanvasSession(currentSessionId, false);
+        };
+
+        window.clearCanvasSession = function () {
+          elements = [];
+          currentCanvasRunId = "";
+          currentCanvasSessionId = "";
+          currentCanvasRevision = "";
+          state.selectedId = null;
+          recomputeAssetBounds();
+          if (emptyState) emptyState.style.display = "";
+          scheduleRender();
+        };
+
         window.loadCanvasRun = async function (runId) {
           var basePath = "/outputs/runs/" + runId + "/final/";
           try {
@@ -8669,11 +8883,6 @@
             console.warn("Canvas: failed to load run", runId, e.message);
           }
         };
-
-        // Default load
-        (function loadDefault() {
-          window.loadCanvasRun("c919-xinjiang-cabin");
-        })();
 
         // ── Pointer events ──
         viewport.addEventListener("pointerdown", function (event) {

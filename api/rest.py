@@ -69,11 +69,13 @@ from api.canvas_publish import (
     finalize_publish,
     infer_domain_skill_name,
     normalize_authored_image_paths,
+    next_gallery_export_name,
     persist_canvas_state,
     utc_now,
     validate_published_html,
     validate_run_id,
 )
+from api.canvas_assets import build_canvas_asset_index
 
 app = FastAPI(title="MyHarnessPy", version="0.1.0")
 api_logger = logging.getLogger("harness.api")
@@ -589,6 +591,10 @@ class UpdateSessionRequest(BaseModel):
     provider: str | None = None
 
 
+class CanvasRunBindingRequest(BaseModel):
+    run_id: str
+
+
 class RewriteMessageRequest(BaseModel):
     text: str
 
@@ -930,9 +936,13 @@ async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
         if persona_default_approval in ("ask", "auto", "full")
         else "ask"
     )
+    restored_meta: dict[str, Any] = {}
+    restored_messages: list[Message] = []
     try:
         rec = await _session_store.load(session_id)
         if rec and isinstance(rec.metadata, dict):
+            restored_meta = dict(rec.metadata)
+            restored_messages = list(rec.messages)
             question_mode = rec.metadata.get("question_mode", "question") or "question"
             # Only honor a *stored* approval_mode when the caller didn't
             # explicitly pick one in this request body — that way the new
@@ -960,6 +970,7 @@ async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
     _engines[session_id] = engine
     _engine_mcp_clients[session_id] = mcp_clients
     _engine_meta[session_id] = {
+        **restored_meta,
         "provider": provider_name,
         "persona":  req.persona,
         "question_mode": question_mode,
@@ -967,7 +978,11 @@ async def create_session(req: CreateSessionRequest) -> dict[str, Any]:
     }
     # Ensure the session appears in the persistent store immediately
     try:
-        await _session_store.save(session_id, [], metadata=dict(_engine_meta[session_id]))
+        await _session_store.save(
+            session_id,
+            restored_messages,
+            metadata=dict(_engine_meta[session_id]),
+        )
     except Exception:
         pass
     return {
@@ -1137,6 +1152,7 @@ async def get_state(session_id: str) -> dict[str, Any]:
                 "parent_session_id",
                 "question_mode",
                 "approval_mode",
+                "active_run_id",
             ):
                 if key in store_meta and store_meta.get(key) not in (None, ""):
                     meta[key] = store_meta.get(key)
@@ -1150,6 +1166,79 @@ async def get_state(session_id: str) -> dict[str, Any]:
         _engine_meta[session_id] = {**_engine_meta.get(session_id, {}), **meta}
     snapshot["meta"] = meta
     return snapshot
+
+
+def _run_id_from_messages(messages: list[Message]) -> str:
+    """Recover bindings for sessions created before active_run_id existed."""
+    for message in reversed(messages):
+        for block in reversed(message.content):
+            if getattr(block, "tool_name", "") != "run_init":
+                continue
+            try:
+                payload = json.loads(str(getattr(block, "content", "") or ""))
+            except json.JSONDecodeError:
+                continue
+            run_id = str(payload.get("runId") or "").strip() if isinstance(payload, dict) else ""
+            if run_id:
+                return run_id
+    return ""
+
+
+@app.get("/sessions/{session_id}/canvas-assets")
+async def get_canvas_assets(session_id: str) -> dict[str, Any]:
+    record = await _session_store.load(session_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
+    run_id = str(metadata.get("active_run_id") or "")
+    if not run_id:
+        run_id = _run_id_from_messages(record.messages)
+        if run_id:
+            metadata["active_run_id"] = run_id
+            await _session_store.save(session_id, record.messages, metadata=metadata)
+            _engine_meta.setdefault(session_id, {})["active_run_id"] = run_id
+    if not run_id:
+        return {
+            "runId": "",
+            "source": "",
+            "revision": "0",
+            "assets": [],
+            "canvasState": None,
+            "galleryUrl": "",
+        }
+    try:
+        return build_canvas_asset_index(RUNS_DIR, OUTPUTS_DIR, run_id)
+    except (CanvasPublishError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.patch("/sessions/{session_id}/canvas-run")
+async def bind_canvas_run(
+    session_id: str, req: CanvasRunBindingRequest
+) -> dict[str, Any]:
+    record = await _session_store.load(session_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    try:
+        run_id = validate_run_id(req.run_id)
+        index = build_canvas_asset_index(RUNS_DIR, OUTPUTS_DIR, run_id)
+    except (CanvasPublishError, FileNotFoundError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    metadata = dict(record.metadata) if isinstance(record.metadata, dict) else {}
+    metadata["active_run_id"] = run_id
+    await _session_store.save(session_id, record.messages, metadata=metadata)
+    _engine_meta.setdefault(session_id, {})["active_run_id"] = run_id
+    engine = _engines.get(session_id)
+    if engine is not None:
+        await engine._emit_event({
+            "type": "canvas.run_bound",
+            "data": {"runId": run_id, "sourceSessionId": session_id},
+        })
+    return {
+        "session_id": session_id,
+        "active_run_id": run_id,
+        "asset_count": len(index.get("assets", [])),
+    }
 
 
 @app.post("/sessions/{session_id}/continue")
@@ -1392,6 +1481,7 @@ async def list_sessions() -> dict[str, Any]:
             "spawn_depth": meta.get("spawn_depth", store_meta.get("spawn_depth", 0)),
             "parent_session_id": meta.get("parent_session_id", store_meta.get("parent_session_id", "")),
             "question_mode": eng.get_question_mode() if eng else store_meta.get("question_mode", "noquestion"),
+            "active_run_id": meta.get("active_run_id", store_meta.get("active_run_id", "")),
         })
 
     for sid, eng in _engines.items():
@@ -1409,6 +1499,7 @@ async def list_sessions() -> dict[str, Any]:
                 "spawn_depth": meta.get("spawn_depth", 0),
                 "parent_session_id": meta.get("parent_session_id", ""),
                 "question_mode": eng.get_question_mode(),
+                "active_run_id": meta.get("active_run_id", ""),
             })
     return {"sessions": sessions}
 
@@ -1979,7 +2070,8 @@ async def _run_canvas_publish_job(
     input_file: Path = persisted["publish_input_file"]
     canvas_state = persisted["state"]
     publish_input = persisted["publish_input"]
-    output_html = run_dir / "artifacts" / "01-gallery-edited.html"
+    output_name = str(job["output_filename"])
+    output_html = run_dir / "artifacts" / output_name
     publisher_engine: AgentEngine | None = None
     try:
         job["status"] = "running"
@@ -2051,11 +2143,14 @@ async def _run_canvas_publish_job(
             "Derive a project-specific visual system from the supplied titles, descriptions, "
             "domain metadata, and image metadata. Include a strong hero, a sticky table-of-"
             "contents with working section anchors, responsive category sections, deliberate "
-            "image hierarchy, asset ids, captions, and meaningful metadata tags. Preserve every "
-            "non-decorative asset exactly once. Preserve every ordinary user text verbatim, but "
+            "image hierarchy, asset ids, captions, and meaningful metadata tags. Include every "
+            "non-decorative asset at least once; an anchor or hero image may be reused in a "
+            "prominent overview as well as its detailed card when that improves hierarchy. "
+            "Preserve every ordinary user text verbatim, but "
             "do not repeat chapter-title, caption-title, or caption-description text as separate "
-            "blocks because those roles are already represented by section/card UI. Never invent "
-            "assets, paths, project claims, or user copy, and do not read the original gallery, "
+            "blocks because those roles are already represented by section/card UI. Use only the "
+            "exact assetPath values from the supplied input; never invent image filenames, paths, "
+            "assets, project claims, or user copy, and do not read the original gallery, "
             "brief, plans, manifests, or any file other than the supplied publish input."
         )
         result_text = await asyncio.wait_for(publisher_engine.run_to_completion(task), timeout=300)
@@ -2101,15 +2196,23 @@ async def _run_canvas_publish_job(
         output_html.write_text(authored_html, encoding="utf-8")
         _update_canvas_publish_job(job_id, "validating")
         if not output_html.is_file():
-            raise CanvasPublishError("The publishing task did not create 01-gallery-edited.html")
+            raise CanvasPublishError(f"The publishing task did not create {output_name}")
         validation = validate_published_html(output_html, run_dir, canvas_state)
 
-        finalize_publish(OUTPUTS_DIR, run_id, run_dir, canvas_state, output_html, validation)
+        finalize_publish(
+            OUTPUTS_DIR,
+            run_id,
+            run_dir,
+            canvas_state,
+            output_html,
+            validation,
+            output_name=output_name,
+        )
         version = uuid.uuid4().hex[:8]
         job.update({
             "status": "completed",
-            "html_url": f"/outputs/runs/{run_id}/final/artifacts/01-gallery-edited.html?v={version}",
-            "download_url": f"/outputs/runs/{run_id}/final/artifacts/01-gallery-edited.html?v={version}",
+            "html_url": f"/outputs/runs/{run_id}/final/artifacts/{output_name}?v={version}",
+            "download_url": f"/outputs/runs/{run_id}/final/artifacts/{output_name}?v={version}",
             "manifest_url": f"/outputs/runs/{run_id}/final/canvas/canvas-publish-manifest.json?v={version}",
             "error": "",
         })
@@ -2157,10 +2260,13 @@ async def start_canvas_publish(session_id: str, req: CanvasPublishRequest) -> di
 
     job_id = uuid.uuid4().hex
     now = utc_now()
+    final_artifacts = OUTPUTS_DIR / "runs" / run_id / "final" / "artifacts"
+    output_filename = next_gallery_export_name(persisted["run_dir"], final_artifacts)
     job = {
         "job_id": job_id,
         "session_id": session_id,
         "run_id": run_id,
+        "output_filename": output_filename,
         "status": "queued",
         "stage": "preparing",
         "message": _CANVAS_PUBLISH_STAGES["preparing"][1],

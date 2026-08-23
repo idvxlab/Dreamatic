@@ -17,6 +17,7 @@ from api.canvas_publish import (
     infer_domain_skill_name,
     normalize_authored_image_paths,
     normalize_layout_plan,
+    next_gallery_export_name,
     persist_canvas_state,
     validate_published_html,
     validate_run_id,
@@ -121,6 +122,27 @@ def test_persist_canvas_state_saves_embedded_image_and_rewrites_element(tmp_path
     assert (outputs / "runs" / "run-1" / "final" / pasted["assetPath"]).is_file()
 
 
+def test_persist_canvas_state_records_assets_removed_from_canvas(tmp_path: Path) -> None:
+    root, outputs, run_dir = _make_run(tmp_path)
+    state = {
+        "elements": [
+            {
+                "id": "text-1",
+                "type": "text",
+                "text": "Keep this note",
+                "x": 0,
+                "y": 0,
+                "width": 200,
+                "height": 30,
+            }
+        ]
+    }
+
+    result = persist_canvas_state(root, outputs, "run-1", state, [])
+
+    assert result["state"]["excludedAssetIds"] == ["D1-01"]
+
+
 def test_validate_and_finalize_published_html(tmp_path: Path) -> None:
     root, outputs, run_dir = _make_run(tmp_path)
     persisted = persist_canvas_state(root, outputs, "run-1", _canvas_state(), [])
@@ -140,6 +162,16 @@ def test_validate_and_finalize_published_html(tmp_path: Path) -> None:
     assert validation["text_count"] == 1
     assert Path(finalized["html_file"]).is_file()
     assert (outputs / "runs" / "run-1" / "final" / "canvas" / "canvas-publish-manifest.json").is_file()
+
+
+def test_gallery_exports_use_next_available_number(tmp_path: Path) -> None:
+    root, outputs, run_dir = _make_run(tmp_path)
+    final_artifacts = outputs / "runs" / "run-1" / "final" / "artifacts"
+    final_artifacts.mkdir(parents=True)
+    (run_dir / "artifacts" / "01-gallery-edited.html").write_text("one", encoding="utf-8")
+    (final_artifacts / "02-gallery-edited.html").write_text("two", encoding="utf-8")
+
+    assert next_gallery_export_name(run_dir, final_artifacts) == "03-gallery-edited.html"
 
 
 def test_layout_plan_and_renderer_preserve_canvas_content(tmp_path: Path) -> None:
@@ -215,6 +247,7 @@ def test_renderer_does_not_repeat_structured_captions(tmp_path: Path) -> None:
     [
         ("<html><head><title>x</title></head><body><script>alert(1)</script></body></html>", "script"),
         ("<html><head><title>x</title></head><body><img src='https://example.com/a.png'></body></html>", "remote"),
+        ("<html><head><title>x</title></head><body><img src='generated-images/not-on-canvas.png'></body></html>", "not a canvas asset"),
         ("<html><head><title>x</title></head><body><p>用户修改后的设计说明</p></body></html>", "must appear"),
         ("<html><head><title>x</title></head><body><img src='generated-images/D1-01.png'></body></html>", "Canvas text is missing"),
     ],

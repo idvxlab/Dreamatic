@@ -13,6 +13,7 @@ for calling ``await client.close()`` on each MCPClient when done.
 from __future__ import annotations
 
 import asyncio
+import json
 
 import logging
 from pathlib import Path
@@ -69,6 +70,53 @@ from harness.tools.overflow import OverflowStore
 from harness.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+async def _bind_run_to_session_tree(
+    session_store: SessionStore,
+    engine_registry: dict | None,
+    session_id: str,
+    run_id: str,
+) -> None:
+    """Persist a run binding on the creating session and all of its parents."""
+    current_id = session_id
+    visited: set[str] = set()
+    while current_id and current_id not in visited:
+        visited.add(current_id)
+        record = await session_store.load(current_id)
+        metadata = dict(record.metadata) if record and isinstance(record.metadata, dict) else {}
+        metadata["active_run_id"] = run_id
+        messages = record.messages if record else []
+        await session_store.save(current_id, messages, metadata=metadata)
+        if engine_registry is not None:
+            engine = engine_registry.get(current_id)
+            if engine is not None:
+                await engine._emit_event({
+                    "type": "canvas.run_bound",
+                    "data": {"runId": run_id, "sourceSessionId": session_id},
+                })
+        current_id = str(metadata.get("parent_session_id") or "")
+
+
+def _make_bound_run_init_tool(
+    session_store: SessionStore,
+    engine_registry: dict | None,
+    session_id: str,
+):
+    async def bound_run_init_tool(**kwargs) -> str:
+        result = await run_init_tool(**kwargs)
+        try:
+            payload = json.loads(result)
+        except (TypeError, json.JSONDecodeError):
+            return result
+        run_id = str(payload.get("runId") or "").strip()
+        if payload.get("ok") is not False and run_id:
+            await _bind_run_to_session_tree(
+                session_store, engine_registry, session_id, run_id
+            )
+        return result
+
+    return bound_run_init_tool
 
 # ── Question-mode prompt blocks (module-level so the engine can re-stamp
 # the system message at runtime when the user toggles question_mode). ──────
@@ -368,6 +416,10 @@ def build_engine(
                 )
             elif name == "memory":
                 handler = make_memory_tool(memory_store)
+            elif name == "run_init":
+                handler = _make_bound_run_init_tool(
+                    session_store, engine_registry, session_id
+                )
             registry.register(schema, handler)
             logger.info("[build_engine] registered tool: %s", name)
         elif name == "ask_user":

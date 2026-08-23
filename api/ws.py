@@ -54,6 +54,7 @@ _FORWARDED_EVENT_TYPES = {
     "subagent.created",
     "subagent.waiting_approval",
     "runtime.event",
+    "canvas.run_bound",
     # Rewrite history ("edit and regenerate"): the engine emits these on
     # success (message_rewritten) and on refusal (message_rewrite_refused).
     # Forwarding them lets the frontend react without polling.
