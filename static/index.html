@@ -2239,6 +2239,18 @@
         display: none;
       }
 
+      #runtime-panel .runtime-header {
+        transition: margin-bottom 0.15s ease;
+      }
+
+      #runtime-panel.is-collapsed .runtime-header {
+        margin-bottom: 0;
+      }
+
+      #runtime-panel.is-collapsed #runtime-list {
+        display: none;
+      }
+
       .panel-collapse-btn {
         width: 24px;
         height: 24px;
@@ -3068,6 +3080,16 @@
               <span>&#25191;&#34892;&#36807;&#31243;</span>
               <span class="runtime-badge" id="runtime-badge">0</span>
               <span class="runtime-hint">&#23454;&#26102;&#26356;&#26032;</span>
+              <button
+                class="panel-collapse-btn"
+                id="runtime-toggle"
+                type="button"
+                aria-label="收起执行过程"
+                aria-expanded="true"
+                title="收起执行过程"
+              >
+                <span class="panel-collapse-icon" aria-hidden="true"></span>
+              </button>
             </div>
             <div id="runtime-list"></div>
           </div>
@@ -3560,6 +3582,7 @@
       const queuedMediaResults = new Map();
       let runtimeEvents = [];
       let planPanelCollapsed = localStorage.getItem("plan-panel-collapsed") === "1";
+      let runtimePanelCollapsed = localStorage.getItem("runtime-panel-collapsed") === "1";
       let currentSnapshotMeta = {};
       let currentSnapshotAgentId = "";
       const autoContinuationKeys = new Set();
@@ -4709,6 +4732,7 @@
           return;
         }
         panel.classList.remove("hidden");
+        syncRuntimePanelState();
         runtimeEvents.slice(-12).forEach((evt) => {
           const row = document.createElement("div");
           row.className = "runtime-item";
@@ -4791,6 +4815,17 @@
         toggle.title = label;
       }
 
+      function syncRuntimePanelState() {
+        const panel = document.getElementById("runtime-panel");
+        const toggle = document.getElementById("runtime-toggle");
+        if (!panel || !toggle) return;
+        panel.classList.toggle("is-collapsed", runtimePanelCollapsed);
+        toggle.setAttribute("aria-expanded", String(!runtimePanelCollapsed));
+        const label = runtimePanelCollapsed ? "展开执行过程" : "收起执行过程";
+        toggle.setAttribute("aria-label", label);
+        toggle.title = label;
+      }
+
       const planToggle = document.getElementById("plan-toggle");
       if (planToggle) {
         planToggle.addEventListener("click", function () {
@@ -4800,6 +4835,16 @@
         });
       }
       syncPlanPanelState();
+
+      const runtimeToggle = document.getElementById("runtime-toggle");
+      if (runtimeToggle) {
+        runtimeToggle.addEventListener("click", function () {
+          runtimePanelCollapsed = !runtimePanelCollapsed;
+          localStorage.setItem("runtime-panel-collapsed", runtimePanelCollapsed ? "1" : "0");
+          syncRuntimePanelState();
+        });
+      }
+      syncRuntimePanelState();
 
       async function cancelPendingCommand(index) {
         if (typeof index !== "number") return;
