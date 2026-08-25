@@ -984,120 +984,114 @@
         color: var(--text-muted);
       }
 
-      .model-profile-item {
-        border: 1px solid transparent;
-        background: transparent;
-        border-radius: 6px;
-        padding: 10px 11px;
-        cursor: pointer;
-      }
-
-      .model-profile-item:hover {
-        background: var(--surface);
-        border-color: var(--border);
-      }
-
-      .model-profile-item.active {
-        border-color: var(--accent);
-        background: rgba(91, 75, 255, 0.08);
-      }
-
-      #model-profile-list {
-        border: 1px solid var(--border);
-        background: rgba(247, 247, 252, 0.72);
-        border-radius: 7px;
-        padding: 5px;
+      .model-settings-toolbar {
         display: flex;
-        flex-direction: column;
-        gap: 4px;
-      }
-
-      .model-profile-head {
-        display: flex;
-        gap: 8px;
-        align-items: baseline;
-        justify-content: space-between;
-      }
-
-      .model-profile-title {
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--text);
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .model-profile-pill {
-        border: 1px solid rgba(91, 75, 255, 0.35);
-        border-radius: 999px;
-        color: var(--accent);
-        font-size: 10px;
-        padding: 1px 7px;
-        flex-shrink: 0;
-      }
-
-      .model-profile-badge {
-        border: 1px solid rgba(30, 170, 104, 0.35);
-        border-radius: 999px;
-        color: var(--green);
-        font-size: 10px;
-        padding: 1px 7px;
-        flex-shrink: 0;
-        font-weight: 500;
-      }
-
-      .model-profile-active {
-        border-color: var(--green) !important;
-        background: rgba(30, 170, 104, 0.06) !important;
-      }
-
-      .model-profile-actions {
-        display: flex;
-        justify-content: space-between;
         align-items: center;
-        gap: 8px;
-        margin-top: 9px;
+        gap: 10px;
+        padding: 10px 0 14px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 14px;
       }
 
-      .model-profile-delete {
-        border: none;
-        background: transparent;
-        color: var(--text-muted);
-        padding: 4px 2px;
+      .model-settings-toolbar input[type="file"] {
+        max-width: 280px;
+        font-size: 12px;
       }
 
-      .model-profile-delete:hover {
-        color: var(--red);
-        background: transparent;
+      #model-module-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        align-items: start;
       }
 
-      .inline-provider-select {
+      .model-module-card {
         border: 1px solid var(--border);
-        border-radius: 999px;
+        border-radius: 7px;
         background: var(--surface);
-        color: var(--text-muted);
-        font-family: var(--mono);
-        font-size: 11px;
-        padding: 2px 7px;
-        outline: none;
-        max-width: 220px;
+        overflow: hidden;
       }
 
-      .inline-provider-select:focus {
+      .model-module-card[open] {
         border-color: var(--accent);
+      }
+
+      .model-module-summary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 62px;
+        padding: 10px 12px;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .model-module-summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .model-module-title {
+        font-size: 13px;
+        font-weight: 650;
         color: var(--text);
       }
 
-      .model-profile-meta {
-        font-size: 11px;
+      .model-module-meta {
+        margin-top: 3px;
         color: var(--text-muted);
-        margin-top: 4px;
-        font-family: var(--mono);
+        font: 11px/1.35 var(--mono);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+      }
+
+      .model-module-state {
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      .model-module-state.configured {
+        color: var(--green);
+      }
+
+      .model-module-form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 12px;
+        border-top: 1px solid var(--border);
+      }
+
+      .model-module-form .settings-field.wide,
+      .model-module-form .model-module-actions {
+        grid-column: 1 / -1;
+      }
+
+      .model-module-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        padding-top: 2px;
+      }
+
+      .model-module-save-state {
+        margin-right: auto;
+        color: var(--text-muted);
+        font-size: 11px;
+      }
+
+      @media (max-width: 760px) {
+        #model-module-list,
+        .model-module-form {
+          grid-template-columns: 1fr;
+        }
+
+        .model-settings-toolbar {
+          align-items: stretch;
+          flex-direction: column;
+        }
       }
 
       /* ── Message Bubbles ──────────────────────────────────────────────── */
@@ -3308,35 +3302,13 @@
               <div class="settings-section">
                 <h3>Models & API</h3>
                 <div class="settings-help">
-                  Manage saved model provider profiles for new and existing sessions.
+                  Configure each model-powered capability independently.
                 </div>
                 <div class="settings-actions">
                   <button class="btn btn-primary btn-sm" onclick="openModelSettingsModal()">
                     Open Models & API
                   </button>
                   <span id="settings-status"></span>
-                </div>
-              </div>
-              <div class="settings-section">
-                <h3>Memory</h3>
-                <div class="settings-help">
-                  Manage long-term memory entries.
-                </div>
-                <div class="settings-actions">
-                  <button class="btn btn-sm" onclick="openMemoryPanel()">
-                    Open Memory
-                  </button>
-                </div>
-              </div>
-              <div class="settings-section">
-                <h3>Config Files</h3>
-                <div class="settings-help">
-                  Edit skills, agents, and config.yaml.
-                </div>
-                <div class="settings-actions">
-                  <button class="btn btn-sm" onclick="toggleConfig()">
-                    Open Config Files
-                  </button>
                 </div>
               </div>
             </div>
@@ -3349,120 +3321,22 @@
 
     <!-- Models & API Settings Modal -->
     <div id="model-settings-overlay" class="overlay hidden">
-      <div class="modal" style="width: min(920px, 92vw); height: min(760px, 88vh); overflow: hidden; display:flex; flex-direction:column">
+      <div class="modal" style="width: min(1040px, 94vw); height: min(820px, 90vh); overflow: hidden; display:flex; flex-direction:column">
         <h2>Models & API</h2>
-        <div style="display:grid;grid-template-columns:280px minmax(0,1fr);gap:14px;min-height:0;flex:1;overflow:hidden">
-          <div style="border-right:1px solid var(--border);padding-right:12px;overflow:auto">
-            <div class="settings-help">Saved profiles</div>
-            <div id="model-profile-list"></div>
-            <div class="settings-actions" style="margin-top:12px">
-              <button class="btn btn-primary btn-sm" onclick="startNewModelProfile()">
-                Add custom profile
-              </button>
-            </div>
-          </div>
-          <div style="overflow-y:auto;overflow-x:hidden;padding-right:6px;min-height:0">
-            <div id="model-profile-empty" class="settings-help">
-              Select a saved profile or add a custom provider profile.
-            </div>
-            <div id="model-profile-form" class="hidden">
-              <div class="settings-section" style="margin-bottom:12px">
-                <h3>Import .env</h3>
-                <div class="settings-help">
-                  Upload an .env file to prefill this profile.
-                </div>
-                <div class="settings-field">
-                  <label>.env file</label>
-                  <input id="model-profile-file" type="file" accept=".env,text/plain" onchange="loadModelProfileEnvFile(event)" />
-                </div>
-                <div class="settings-actions" style="margin-top:8px">
-                  <button class="btn btn-sm" onclick="recognizeModelProfileEnvFile()">
-                    Recognize .env
-                  </button>
-                  <span id="model-profile-file-status" style="font-size:12px;color:var(--text-muted)"></span>
-                </div>
-              </div>
-              <div class="settings-grid">
-                <div class="settings-field">
-                  <label>Profile name</label>
-                  <input id="profile-name" type="text" placeholder="OpenAI Hub" />
-                </div>
-                <div class="settings-field">
-                  <label>Provider type</label>
-                  <select id="profile-provider-type">
-                    <option value="openai-compatible">OpenAI compatible</option>
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                </div>
-                <div class="settings-field">
-                  <label>API key</label>
-                  <input id="profile-api-key" type="password" autocomplete="off" />
-                </div>
-                <div class="settings-field">
-                  <label>Base URL</label>
-                  <input id="profile-base-url" type="text" placeholder="https://api.openai-hub.com/v1" />
-                </div>
-                <div class="settings-field">
-                  <label>Model</label>
-                  <input id="profile-model" type="text" placeholder="gpt-4o" />
-                </div>
-                <div class="settings-field">
-                  <label>Compression model</label>
-                  <input id="profile-summary-model" type="text" placeholder="optional, e.g. gpt-4o-mini" />
-                </div>
-                <div class="settings-field">
-                  <label>Compression base URL</label>
-                  <input id="profile-summary-base-url" type="text" placeholder="defaults to Base URL" />
-                </div>
-                <div class="settings-field">
-                  <label>Compression API key</label>
-                  <input id="profile-summary-api-key" type="password" autocomplete="off" placeholder="defaults to API key" />
-                </div>
-                <div class="settings-field">
-                  <label>Image API key</label>
-                  <input id="profile-image-api-key" type="password" autocomplete="off" />
-                </div>
-                <div class="settings-field">
-                  <label>Image base URL</label>
-                  <input id="profile-image-base-url" type="text" />
-                </div>
-                <div class="settings-field">
-                  <label>Image model</label>
-                  <input id="profile-image-model" type="text" placeholder="gpt-image-2" />
-                </div>
-                <div class="settings-field">
-                  <label>Image generation endpoint</label>
-                  <input id="profile-image-generation-endpoint" type="text" />
-                </div>
-                <div class="settings-field">
-                  <label>Image edit endpoint</label>
-                  <input id="profile-image-edit-endpoint" type="text" />
-                </div>
-                <div class="settings-field">
-                  <label>Default image size</label>
-                  <input id="profile-image-default-size" type="text" placeholder="1024x1024" />
-                </div>
-                <div class="settings-field">
-                  <label>Search provider</label>
-                  <select id="profile-search-provider">
-                    <option value="">None / env fallback</option>
-                    <option value="serper">Serper</option>
-                    <option value="brave">Brave Search</option>
-                  </select>
-                </div>
-                <div class="settings-field">
-                  <label>Search API key</label>
-                  <input id="profile-search-api-key" type="password" autocomplete="off" />
-                </div>
-              </div>
-            </div>
-          </div>
+        <div class="settings-help" style="margin-bottom:0">
+          Each capability uses its own service configuration. Saved changes apply globally.
+        </div>
+        <div class="model-settings-toolbar">
+          <input id="model-modules-file" type="file" accept=".env,text/plain" onchange="loadModelModulesEnvFile(event)" />
+          <button class="btn btn-sm" onclick="recognizeModelModulesEnvFile()">Recognize .env</button>
+          <span id="model-modules-file-status" class="settings-help" style="margin:0"></span>
+        </div>
+        <div style="min-height:0;flex:1;overflow-y:auto;padding-right:6px">
+          <div id="model-module-list"></div>
         </div>
         <div class="modal-actions">
-          <span id="model-profile-status" style="font-size:12px;color:var(--text-muted);margin-right:auto"></span>
+          <span id="model-module-status" style="font-size:12px;color:var(--text-muted);margin-right:auto"></span>
           <button class="btn" onclick="closeModelSettingsModal()">Close</button>
-          <button class="btn hidden" id="model-profile-save-btn" onclick="saveModelProfile(false)">Save</button>
         </div>
       </div>
     </div>
@@ -3471,10 +3345,6 @@
     <div id="modal-overlay" class="overlay hidden">
       <div class="modal">
         <h2>新建会话</h2>
-        <div class="form-group">
-          <label>Provider</label>
-          <select id="sel-provider"></select>
-        </div>
         <div class="form-group">
           <label>权限模式（本次会话）</label>
           <select id="sel-approval-mode">
@@ -3601,9 +3471,73 @@
       // Poll deduplication: at most one doPoll in-flight + one queued
       let doPollInFlight = false;
       let doPollQueued = false;
-      let modelProfilesState = { profiles: [], active_profile_id: "" };
-      let editingModelProfileId = "";
-      let pendingModelProfileEnvText = "";
+      let modelModulesState = { modules: {} };
+      let pendingModelModulesEnvText = "";
+      const MODEL_MODULE_DEFINITIONS = {
+        agent: {
+          title: "Agent Model",
+          description: "Primary reasoning model for the main agent and subagents.",
+          fields: [
+            { key: "provider_type", label: "Provider type", type: "provider" },
+            { key: "model", label: "Model", placeholder: "gpt-5.4" },
+            { key: "base_url", label: "Base URL", placeholder: "https://api.example.com/v1", wide: true },
+            { key: "api_key", label: "API key", type: "password", wide: true },
+          ],
+        },
+        compression: {
+          title: "Context Compression",
+          description: "Summarizes long conversations before the next model call.",
+          fields: [
+            { key: "provider_type", label: "Provider type", type: "provider" },
+            { key: "model", label: "Model", placeholder: "gpt-4o-mini" },
+            { key: "base_url", label: "Base URL", wide: true },
+            { key: "api_key", label: "API key", type: "password", wide: true },
+          ],
+        },
+        image: {
+          title: "Image Generation & Editing",
+          description: "Creates and edits visual assets for design runs.",
+          fields: [
+            { key: "model", label: "Model", placeholder: "gpt-image-2" },
+            { key: "backend", label: "Backend", placeholder: "codex" },
+            { key: "base_url", label: "Base URL", wide: true },
+            { key: "generation_endpoint", label: "Generation endpoint", wide: true },
+            { key: "edit_endpoint", label: "Edit endpoint", wide: true },
+            { key: "default_size", label: "Default image size", placeholder: "1024x1024" },
+            { key: "api_key", label: "API key", type: "password", wide: true },
+          ],
+        },
+        search: {
+          title: "Web Search",
+          description: "Supplies live web results to research workflows.",
+          fields: [
+            { key: "provider", label: "Search provider", type: "search-provider" },
+            { key: "api_key", label: "API key", type: "password", wide: true },
+          ],
+        },
+        video: {
+          title: "Video Generation",
+          description: "Runs text-to-video and image-to-video generation tasks.",
+          fields: [
+            { key: "model", label: "Model", placeholder: "seedance-1-5-pro-251215" },
+            { key: "backend", label: "Backend", placeholder: "codex" },
+            { key: "base_url", label: "Base URL", wide: true },
+            { key: "endpoint", label: "Task endpoint", wide: true },
+            { key: "default_resolution", label: "Default resolution", type: "resolution" },
+            { key: "default_duration", label: "Default duration (seconds)", type: "number" },
+            { key: "api_key", label: "API key", type: "password", wide: true },
+          ],
+        },
+        model3d: {
+          title: "3D Generation",
+          description: "Generates Hunyuan 3D assets from text or reference images.",
+          fields: [
+            { key: "model", label: "Model", placeholder: "hy-3d-3.1" },
+            { key: "base_url", label: "Base URL", wide: true },
+            { key: "api_key", label: "API key", type: "password", wide: true },
+          ],
+        },
+      };
 
       // ── Chat Auto-Scroll State ─────────────────────────────────────────────
       // Core state: whether new content should auto-follow to bottom
@@ -3756,7 +3690,6 @@
         try {
           const r = await api("/config/overview");
           overview = r;
-          await loadModelProfiles({ silent: true });
           renderSidebar();
           populateModal();
         } catch (e) {
@@ -3775,7 +3708,7 @@
       // ── Render Sidebar ───────────────────────────────────────────────────
       function renderSidebar() {
         // Sidebar focuses on sessions only. Skills/personas still load for
-        // config editing and internal design workflow profiles.
+        // config editing and internal design workflows.
       }
 
       function getSessionLabel(s) {
@@ -3950,25 +3883,6 @@
         }
       }
       function populateModal() {
-        const provSel = document.getElementById("sel-provider");
-        provSel.innerHTML = "";
-        const providerOptions = getProviderOptions();
-        if (!providerOptions.length) {
-          const opt = document.createElement("option");
-          opt.value = "";
-          opt.textContent = "No provider profiles";
-          opt.disabled = true;
-          opt.selected = true;
-          provSel.appendChild(opt);
-        }
-        providerOptions.forEach((profile) => {
-          const opt = document.createElement("option");
-          opt.value = profile.id;
-          opt.textContent = profile.label;
-          if (profile.id === overview.default_provider) opt.selected = true;
-          provSel.appendChild(opt);
-        });
-
         const approvalSel = document.getElementById("sel-approval-mode");
         const designPersona = (overview.personas || []).find(
           (p) => p.name === DEFAULT_DESIGN_PERSONA,
@@ -3991,17 +3905,9 @@
         btn.disabled = true;
         btn.textContent = "创建中…";
 
-        const provider = document.getElementById("sel-provider").value;
         const approvalMode = document.getElementById("sel-approval-mode").value;
-        if (!provider) {
-          toast("Please add a provider profile in Settings first.", true);
-          btn.disabled = false;
-          btn.textContent = "创建";
-          return;
-        }
 
         const body = {
-          provider,
           approval_mode: approvalMode,
           persona: DEFAULT_DESIGN_PERSONA,
         };
@@ -5415,17 +5321,17 @@
         if (meta.title) headerInfo.title = meta.title;
         if (Object.prototype.hasOwnProperty.call(meta, "persona"))
           headerInfo.persona = meta.persona;
-        if (meta.provider) headerInfo.provider = meta.provider;
         titleEl.textContent = getSessionLabel(headerInfo);
         const parts = [];
         if (meta.skill) parts.push(`Skill: <strong>${meta.skill}</strong>`);
         if (meta.persona && meta.persona !== DEFAULT_DESIGN_PERSONA)
           parts.push(`\u667a\u80fd\u4f53: <strong>${meta.persona}</strong>`);
-        if (headerInfo.provider) parts.push(renderProviderSelector(headerInfo.provider, snap.is_running));
         if (parts.length) {
           metaEl.innerHTML = parts.join(" &nbsp;·&nbsp; ");
           metaEl.classList.remove("hidden");
-          bindSessionProviderSelector();
+        } else {
+          metaEl.innerHTML = "";
+          metaEl.classList.add("hidden");
         }
 
         // Running indicator (hide during confirmation — user sees the approval panel instead)
@@ -6512,59 +6418,6 @@
         }
       });
 
-      function getProviderOptions() {
-        const profiles = modelProfilesState.profiles || [];
-        if (profiles.length) {
-          return profiles.map((p) => ({
-            id: p.id,
-            label: `${p.name || p.id} · ${p.model || ""}`,
-          }));
-        }
-        return (overview.providers || []).map((id) => ({ id, label: id }));
-      }
-
-      function renderProviderSelector(currentProvider, isRunning = false) {
-        const options = getProviderOptions();
-        if (!options.length) return escHtml(currentProvider || "");
-        const optionHtml = options
-          .map((p) => {
-            const selected = p.id === currentProvider ? " selected" : "";
-            return `<option value="${escHtml(p.id)}"${selected}>${escHtml(p.label)}</option>`;
-          })
-          .join("");
-        return (
-          `<span>Provider: </span>` +
-          `<select id="session-provider-select" class="inline-provider-select" ${isRunning ? "disabled" : ""}>` +
-          optionHtml +
-          `</select>`
-        );
-      }
-
-      function bindSessionProviderSelector() {
-        const sel = document.getElementById("session-provider-select");
-        if (!sel) return;
-        sel.onchange = () => switchSessionProvider(sel.value);
-      }
-
-      async function switchSessionProvider(provider) {
-        if (!currentSessionId || !provider) return;
-        const current = allSessions.find((s) => s.session_id === currentSessionId);
-        if (current?.provider === provider) return;
-        const sel = document.getElementById("session-provider-select");
-        if (sel) sel.disabled = true;
-        try {
-          const r = await api("/sessions/" + currentSessionId, "PATCH", { provider });
-          toast("Provider switched: " + (r.provider || provider));
-          await refreshSessions();
-          triggerPoll();
-        } catch (e) {
-          toast("Provider switch failed: " + e.message, true);
-          if (sel && current?.provider) sel.value = current.provider;
-        } finally {
-          if (sel) sel.disabled = false;
-        }
-      }
-
       function setSettingsStatus(text, isError = false) {
         const el = document.getElementById("settings-status");
         if (!el) return;
@@ -6572,8 +6425,8 @@
         el.style.color = isError ? "var(--red)" : "var(--text-muted)";
       }
 
-      function setModelProfileStatus(text, isError = false) {
-        const el = document.getElementById("model-profile-status");
+      function setModelModuleStatus(text, isError = false) {
+        const el = document.getElementById("model-module-status");
         if (!el) return;
         el.textContent = text || "";
         el.style.color = isError ? "var(--red)" : "var(--text-muted)";
@@ -6581,412 +6434,180 @@
 
       async function openModelSettingsModal() {
         document.getElementById("model-settings-overlay")?.classList.remove("hidden");
-        hideModelProfileForm();
-        await loadModelProfiles();
+        await loadModelModules();
       }
 
       function closeModelSettingsModal() {
         document.getElementById("model-settings-overlay")?.classList.add("hidden");
       }
 
-      function hideModelProfileForm() {
-        document.getElementById("model-profile-empty")?.classList.remove("hidden");
-        document.getElementById("model-profile-form")?.classList.add("hidden");
-        document.getElementById("model-profile-save-btn")?.classList.add("hidden");
-        setModelProfileStatus("");
-      }
-
-      async function loadModelProfiles(options = {}) {
-        const silent = !!options.silent;
-        if (!silent) setModelProfileStatus("Loading...");
+      async function loadModelModules() {
+        setModelModuleStatus("Loading...");
         try {
-          const r = await api("/settings/model-profiles");
-          modelProfilesState = r || { profiles: [], active_profile_id: "" };
-          renderModelProfileList();
-          populateModal();
-          if (!silent) setModelProfileStatus("");
+          modelModulesState = await api("/settings/model-modules");
+          renderModelModules();
+          setModelModuleStatus("");
         } catch (e) {
-          console.warn("[model-profile] failed to load profiles", e);
-          if (!silent) {
-            setModelProfileStatus(
-              "Backend settings API is unavailable. Restart the backend from the project root, then reload this panel.",
-              true,
-            );
-            toast("Model settings load failed: " + e.message, true);
-          }
+          console.warn("[model-modules] failed to load", e);
+          setModelModuleStatus("Model settings could not be loaded. Restart the backend and try again.", true);
         }
       }
 
-      function renderModelProfileList() {
-        const list = document.getElementById("model-profile-list");
+      function moduleIsConfigured(moduleId, value) {
+        if (moduleId === "search") return !!value.provider && !!value.has_api_key;
+        return !!value.model;
+      }
+
+      function moduleSummary(moduleId, value) {
+        if (moduleId === "search") return value.provider || "No provider";
+        return value.model || "No model configured";
+      }
+
+      function moduleSelectOptions(type) {
+        if (type === "provider") {
+          return [["openai-compatible", "OpenAI compatible"], ["openai", "OpenAI"], ["anthropic", "Anthropic"]];
+        }
+        if (type === "search-provider") {
+          return [["", "Not configured"], ["serper", "Serper"], ["brave", "Brave Search"]];
+        }
+        if (type === "resolution") {
+          return [["480p", "480p"], ["720p", "720p"], ["1080p", "1080p"], ["4K", "4K"]];
+        }
+        return [];
+      }
+
+      function renderModuleField(moduleId, field, value) {
+        const id = `model-module-${moduleId}-${field.key}`;
+        const wide = field.wide ? " wide" : "";
+        const current = field.key === "api_key" ? value.api_key || "" : value[field.key] ?? "";
+        const options = moduleSelectOptions(field.type);
+        let control = "";
+        if (options.length) {
+          const optionHtml = options
+            .map(([optionValue, label]) => `<option value="${escHtml(optionValue)}"${String(current) === optionValue ? " selected" : ""}>${escHtml(label)}</option>`)
+            .join("");
+          control = `<select id="${id}" data-field="${field.key}">${optionHtml}</select>`;
+        } else {
+          const type = field.type || "text";
+          const placeholder = field.key === "api_key" && value.has_api_key
+            ? `Leave blank to keep ${value.api_key_hint || "saved key"}`
+            : field.placeholder || "";
+          control = `<input id="${id}" data-field="${field.key}" type="${type}" value="${escHtml(String(current))}" placeholder="${escHtml(placeholder)}" autocomplete="${type === "password" ? "new-password" : "off"}" />`;
+        }
+        return `<div class="settings-field${wide}"><label for="${id}">${escHtml(field.label)}</label>${control}</div>`;
+      }
+
+      function renderModelModules(openModuleId = "agent") {
+        const list = document.getElementById("model-module-list");
         if (!list) return;
         list.innerHTML = "";
-        const profiles = modelProfilesState.profiles || [];
-        if (!profiles.length) {
-          const empty = div("settings-help", "No saved profiles yet.");
-          list.appendChild(empty);
-          return;
-        }
-        const activeId = modelProfilesState.active_profile_id || "";
-        profiles.forEach((profile) => {
-          const isActive = activeId === profile.id;
-          const item = document.createElement("div");
-          item.className = "model-profile-item" + (isActive ? " model-profile-active" : "");
-          item.onclick = () => editModelProfile(profile.id);
-          item.innerHTML =
-            `<div class="model-profile-head">` +
-            `<div class="model-profile-title">${escHtml(profile.name || profile.id)}` +
-            (isActive ? ` <span class="model-profile-badge">Active</span>` : ``) +
-            `</div>` +
-            `</div>` +
-            `<div class="model-profile-meta">${escHtml(profile.provider_type || "")} · ${escHtml(profile.model || "")}</div>` +
-            `<div class="model-profile-meta">${escHtml(profile.base_url || "")}</div>` +
-            `<div class="model-profile-actions">` +
-            `<span class="model-profile-meta" style="margin-top:0">Click to edit</span>` +
-            (isActive
-              ? `<span class="model-profile-meta" style="margin-top:0;color:var(--green)">Activated</span>`
-              : `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); activateModelProfile('${escHtml(profile.id)}')">Activate</button>`) +
-            `<button class="btn btn-sm model-profile-delete" onclick="event.stopPropagation(); deleteModelProfile('${escHtml(profile.id)}')">Delete</button>` +
+        Object.entries(MODEL_MODULE_DEFINITIONS).forEach(([moduleId, definition], index) => {
+          const value = modelModulesState.modules?.[moduleId] || {};
+          const configured = moduleIsConfigured(moduleId, value);
+          const card = document.createElement("details");
+          card.className = "model-module-card";
+          if (moduleId === openModuleId || (!openModuleId && index === 0)) card.open = true;
+          card.innerHTML =
+            `<summary class="model-module-summary">` +
+              `<div><div class="model-module-title">${escHtml(definition.title)}</div>` +
+              `<div class="model-module-meta">${escHtml(moduleSummary(moduleId, value))}</div></div>` +
+              `<span class="model-module-state${configured ? " configured" : ""}">${configured ? "Configured" : "Needs setup"}</span>` +
+            `</summary>` +
+            `<div class="model-module-form">` +
+              `<div class="settings-help" style="grid-column:1/-1;margin:0">${escHtml(definition.description)}</div>` +
+              definition.fields.map((field) => renderModuleField(moduleId, field, value)).join("") +
+              `<div class="model-module-actions"><span id="model-module-save-state-${moduleId}" class="model-module-save-state"></span>` +
+              `<button class="btn btn-sm btn-primary" onclick="saveModelModule('${moduleId}')">Save module</button></div>` +
             `</div>`;
-          list.appendChild(item);
+          list.appendChild(card);
         });
+        bindImageModuleAutofill();
       }
 
-      function startNewModelProfile() {
-        editingModelProfileId = "";
-        showModelProfileForm({
-          id: "",
-          name: "",
-          provider_type: "openai-compatible",
-          api_key: "",
-          base_url: "",
-          model: "gpt-4o",
-          summary_api_key: "",
-          summary_base_url: "",
-          summary_model: "",
-          image_api_key: "",
-          image_base_url: "",
-          image_model: "gpt-image-2",
-          image_generation_endpoint: "",
-          image_edit_endpoint: "",
-          image_default_size: "1024x1024",
-          search_provider: "",
-          search_api_key: "",
+      function collectModelModule(moduleId) {
+        const definition = MODEL_MODULE_DEFINITIONS[moduleId];
+        const result = {};
+        definition.fields.forEach((field) => {
+          const element = document.getElementById(`model-module-${moduleId}-${field.key}`);
+          const value = element?.value ?? "";
+          result[field.key] = field.type === "number" ? Number(value || 0) : String(value).trim();
         });
+        return result;
       }
 
-      function editModelProfile(profileId) {
-        const profile = (modelProfilesState.profiles || []).find((p) => p.id === profileId);
-        if (!profile) return;
-        editingModelProfileId = profile.id;
-        showModelProfileForm(profile);
-      }
-
-      function showModelProfileForm(profile) {
-        document.getElementById("model-profile-empty")?.classList.add("hidden");
-        document.getElementById("model-profile-form")?.classList.remove("hidden");
-        document.getElementById("model-profile-save-btn")?.classList.remove("hidden");
-        setProfileValue("profile-name", profile.name || "");
-        setProfileValue("profile-provider-type", profile.provider_type || "openai-compatible");
-        setProfileValue("profile-api-key", profile.api_key || "");
-        setProfileValue("profile-base-url", profile.base_url || "");
-        setProfileValue("profile-model", profile.model || "gpt-4o");
-        setProfileValue("profile-summary-api-key", profile.summary_api_key || profile.api_key || "");
-        setProfileValue("profile-summary-base-url", profile.summary_base_url || profile.base_url || "");
-        setProfileValue("profile-summary-model", profile.summary_model || "");
-        setProfileValue("profile-image-api-key", profile.image_api_key || profile.api_key || "");
-        setProfileValue("profile-image-base-url", profile.image_base_url || profile.base_url || "");
-        setProfileValue("profile-image-model", profile.image_model || "gpt-image-2");
-        setProfileValue("profile-image-generation-endpoint", profile.image_generation_endpoint || "");
-        setProfileValue("profile-image-edit-endpoint", profile.image_edit_endpoint || "");
-        setProfileValue("profile-image-default-size", profile.image_default_size || "1024x1024");
-        setProfileValue("profile-search-provider", profile.search_provider || "");
-        setProfileValue("profile-search-api-key", profile.search_api_key || "");
-        const fileInput = document.getElementById("model-profile-file");
-        if (fileInput) fileInput.value = "";
-        bindProfileEndpointAutofill();
-      }
-
-      function setProfileValue(id, value) {
-        const el = document.getElementById(id);
-        if (el) el.value = value || "";
-      }
-
-      function getProfileValue(id) {
-        return (document.getElementById(id)?.value || "").trim();
-      }
-
-      function bindProfileEndpointAutofill() {
-        const imageBase = document.getElementById("profile-image-base-url");
-        const base = document.getElementById("profile-base-url");
-        const gen = document.getElementById("profile-image-generation-endpoint");
-        const edit = document.getElementById("profile-image-edit-endpoint");
-        const imageKey = document.getElementById("profile-image-api-key");
-        const apiKey = document.getElementById("profile-api-key");
-        const summaryBase = document.getElementById("profile-summary-base-url");
-        const summaryKey = document.getElementById("profile-summary-api-key");
-        const fill = () => {
-          if (imageBase && !imageBase.value && base?.value) imageBase.value = base.value;
-          if (imageKey && !imageKey.value && apiKey?.value) imageKey.value = apiKey.value;
-          if (summaryBase && !summaryBase.value && base?.value) summaryBase.value = base.value;
-          if (summaryKey && !summaryKey.value && apiKey?.value) summaryKey.value = apiKey.value;
-          const root = (imageBase?.value || "").replace(/\/+$/, "");
-          if (!root) return;
-          if (gen && (!gen.value || gen.dataset.auto === "true")) {
-            gen.value = `${root}/images/generations`;
-            gen.dataset.auto = "true";
+      async function saveModelModule(moduleId) {
+        const state = document.getElementById(`model-module-save-state-${moduleId}`);
+        if (state) state.textContent = "Saving...";
+        try {
+          const result = await api(`/settings/model-modules/${moduleId}`, "PUT", {
+            module: collectModelModule(moduleId),
+          });
+          modelModulesState.modules[moduleId] = result.module;
+          renderModelModules(moduleId);
+          setModelModuleStatus(`${MODEL_MODULE_DEFINITIONS[moduleId].title} saved.`);
+          toast("Model module saved");
+        } catch (e) {
+          if (state) {
+            state.textContent = e.message;
+            state.style.color = "var(--red)";
           }
-          if (edit && (!edit.value || edit.dataset.auto === "true")) {
+          setModelModuleStatus(e.message, true);
+        }
+      }
+
+      function bindImageModuleAutofill() {
+        const base = document.getElementById("model-module-image-base_url");
+        const generation = document.getElementById("model-module-image-generation_endpoint");
+        const edit = document.getElementById("model-module-image-edit_endpoint");
+        if (!base || !generation || !edit) return;
+        const fill = () => {
+          const root = base.value.trim().replace(/\/+$/, "");
+          if (!root) return;
+          if (!generation.value || generation.dataset.auto === "true") {
+            generation.value = `${root}/images/generations`;
+            generation.dataset.auto = "true";
+          }
+          if (!edit.value || edit.dataset.auto === "true") {
             edit.value = `${root}/images/edits`;
             edit.dataset.auto = "true";
           }
         };
-        [gen, edit].forEach((el) => {
-          if (el) el.oninput = () => (el.dataset.auto = "false");
-        });
-        if (base) base.oninput = fill;
-        if (imageBase) imageBase.oninput = fill;
-        if (apiKey) apiKey.oninput = fill;
-        fill();
+        generation.oninput = () => (generation.dataset.auto = "false");
+        edit.oninput = () => (edit.dataset.auto = "false");
+        base.oninput = fill;
       }
 
-      function collectModelProfile() {
-        return {
-          id: editingModelProfileId,
-          name: getProfileValue("profile-name"),
-          provider_type: getProfileValue("profile-provider-type") || "openai-compatible",
-          api_key: getProfileValue("profile-api-key"),
-          base_url: getProfileValue("profile-base-url"),
-          model: getProfileValue("profile-model"),
-          summary_api_key: getProfileValue("profile-summary-api-key"),
-          summary_base_url: getProfileValue("profile-summary-base-url"),
-          summary_model: getProfileValue("profile-summary-model"),
-          image_api_key: getProfileValue("profile-image-api-key"),
-          image_base_url: getProfileValue("profile-image-base-url"),
-          image_model: getProfileValue("profile-image-model"),
-          image_generation_endpoint: getProfileValue("profile-image-generation-endpoint"),
-          image_edit_endpoint: getProfileValue("profile-image-edit-endpoint"),
-          image_default_size: getProfileValue("profile-image-default-size"),
-          search_provider: getProfileValue("profile-search-provider"),
-          search_api_key: getProfileValue("profile-search-api-key"),
-        };
-      }
-
-      async function saveModelProfile(activate) {
-        const profile = collectModelProfile();
-        if (!profile.name || !profile.api_key || !profile.model) {
-          setModelProfileStatus("Profile name, API key, and model are required.", true);
-          return;
-        }
-        setModelProfileStatus("Saving...");
-        try {
-          const r = await api("/settings/model-profiles", "POST", { profile, activate });
-          editingModelProfileId = r.profile?.id || editingModelProfileId;
-          await loadModelProfiles();
-          await loadOverview();
-          setModelProfileStatus("Saved.");
-          toast("Profile saved");
-        } catch (e) {
-          setModelProfileStatus(e.message, true);
-          toast("Profile save failed: " + e.message, true);
-        }
-      }
-
-      async function activateModelProfile(profileId) {
-        try {
-          const r = await api("/settings/model-profiles/activate", "POST", { profile_id: profileId });
-          modelProfilesState.active_profile_id = r.active_profile_id || "";
-          await loadModelProfiles();
-          await loadOverview();
-          toast("Profile activated");
-        } catch (e) {
-          toast("Profile activation failed: " + e.message, true);
-        }
-      }
-
-      async function deleteModelProfile(profileId) {
-        if (!(await showConfirm("Delete profile", `Delete profile ${profileId}?`))) return;
-        try {
-          await api(`/settings/model-profiles/${encodeURIComponent(profileId)}`, "DELETE");
-          if (editingModelProfileId === profileId) editingModelProfileId = "";
-          await loadModelProfiles();
-          hideModelProfileForm();
-          await loadOverview();
-          toast("Profile deleted");
-        } catch (e) {
-          toast("Profile delete failed: " + e.message, true);
-        }
-      }
-
-      function parseModelProfileEnv(content) {
-        const parsed = {};
-        String(content || "")
-          .split(/\r?\n/)
-          .forEach((line) => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) return;
-            const idx = trimmed.indexOf("=");
-            const key = trimmed.slice(0, idx).trim();
-            let value = trimmed.slice(idx + 1).trim();
-            if (
-              (value.startsWith('"') && value.endsWith('"')) ||
-              (value.startsWith("'") && value.endsWith("'"))
-            ) {
-              value = value.slice(1, -1);
-            }
-            if (key) parsed[key] = value;
-          });
-        return parsed;
-      }
-
-      function modelProfileFromEnvValues(values) {
-        const name =
-          values.DREAMATIC_PROVIDER_NAME ||
-          values.HARNESS_DEFAULT_PROVIDER ||
-          values.DREAMATIC_ACTIVE_PROFILE ||
-          "Imported Provider";
-        const baseUrl =
-          values.DREAMATIC_BASE_URL ||
-          values.OPENAI_HUB_BASE_URL ||
-          values.OPENAI_BASE_URL ||
-          values.THREE_SIX_ONE_BASE_URL ||
-          "";
-        const apiKey =
-          values.DREAMATIC_API_KEY ||
-          values.OPENAI_HUB_API_KEY ||
-          values.OPENAI_API_KEY ||
-          values.THREE_SIX_ONE_API_KEY ||
-          values.API_CZ_KEY ||
-          values.ANTHROPIC_API_KEY ||
-          "";
-        const imageBaseUrl =
-          values.DREAMATIC_IMAGE_BASE_URL ||
-          values.DESIGN_IMAGE_BASE_URL ||
-          values.DREAMATIC_BASE_URL ||
-          baseUrl;
-        const imageApiKey =
-          values.DREAMATIC_IMAGE_API_KEY ||
-          values.DESIGN_IMAGE_API_KEY ||
-          values.DREAMATIC_API_KEY ||
-          values.API_CZ_KEY ||
-          apiKey;
-        const summaryBaseUrl =
-          values.DREAMATIC_SUMMARY_BASE_URL ||
-          values.SUMMARY_BASE_URL ||
-          values.DREAMATIC_BASE_URL ||
-          baseUrl;
-        const summaryApiKey =
-          values.DREAMATIC_SUMMARY_API_KEY ||
-          values.SUMMARY_API_KEY ||
-          values.DREAMATIC_API_KEY ||
-          values.API_CZ_KEY ||
-          apiKey;
-        const searchProvider =
-          values.DREAMATIC_SEARCH_PROVIDER ||
-          (values.SERPER_API_KEY ? "serper" : "") ||
-          (values.BRAVE_SEARCH_API_KEY ? "brave" : "");
-        return {
-          id: values.DREAMATIC_ACTIVE_PROFILE || name,
-          name,
-          provider_type: values.DREAMATIC_PROVIDER_TYPE || "openai-compatible",
-          api_key: apiKey,
-          base_url: baseUrl,
-          model:
-            values.DREAMATIC_MODEL ||
-            values.OPENAI_HUB_MODEL ||
-            values.OPENAI_MODEL ||
-            values.THREE_SIX_ONE_MODEL ||
-            values.ANTHROPIC_MODEL ||
-            "gpt-4o",
-          summary_api_key: summaryApiKey,
-          summary_base_url: summaryBaseUrl,
-          summary_model:
-            values.DREAMATIC_SUMMARY_MODEL ||
-            values.SUMMARY_MODEL ||
-            "",
-          image_api_key: imageApiKey,
-          image_base_url: imageBaseUrl,
-          image_model:
-            values.DREAMATIC_IMAGE_MODEL ||
-            values.DESIGN_IMAGE_MODEL ||
-            "gpt-image-2",
-          image_generation_endpoint:
-            values.DREAMATIC_IMAGE_GENERATION_ENDPOINT ||
-            values.DESIGN_IMAGE_ENDPOINT ||
-            "",
-          image_edit_endpoint:
-            values.DREAMATIC_IMAGE_EDIT_ENDPOINT ||
-            values.DESIGN_IMAGE_EDIT_ENDPOINT ||
-            "",
-          image_default_size:
-            values.DREAMATIC_IMAGE_DEFAULT_SIZE ||
-            values.DESIGN_IMAGE_DEFAULT_SIZE ||
-            "1024x1024",
-          search_provider: searchProvider,
-          search_api_key:
-            values.DREAMATIC_SEARCH_API_KEY ||
-            values.SERPER_API_KEY ||
-            values.BRAVE_SEARCH_API_KEY ||
-            "",
-        };
-      }
-
-      async function loadModelProfileEnvFile(event) {
+      async function loadModelModulesEnvFile(event) {
         const file = event?.target?.files?.[0];
         if (!file) return;
+        const status = document.getElementById("model-modules-file-status");
         try {
-          const text = await file.text();
-          pendingModelProfileEnvText = text;
-          const status = document.getElementById("model-profile-file-status");
-          if (status) status.textContent = `${file.name} loaded`;
-          console.debug("[model-profile] env file loaded", {
-            name: file.name,
-            size: file.size,
-            chars: text.length,
-          });
-          setModelProfileStatus(`Loaded ${file.name}. Click Recognize .env to fill the form.`);
+          pendingModelModulesEnvText = await file.text();
+          if (status) status.textContent = `${file.name} ready`;
+          setModelModuleStatus("File loaded. Select Recognize .env to prefill all six modules.");
         } catch (e) {
-          console.warn("[model-profile] failed to read env file", e);
-          setModelProfileStatus("Failed to read file: " + e.message, true);
+          if (status) status.textContent = "Could not read file";
+          setModelModuleStatus(e.message, true);
         }
       }
 
-      async function importModelProfileFromEnvText(content) {
-        if (!content.trim()) return;
-        setModelProfileStatus("Recognizing .env...");
-        try {
-          const parsed = parseModelProfileEnv(content);
-          const profile = modelProfileFromEnvValues(parsed);
-          editingModelProfileId = profile.id || "";
-          showModelProfileForm(profile);
-          console.debug("[model-profile] env recognized", {
-            keys: Object.keys(parsed),
-            profile: {
-              ...profile,
-              api_key: profile.api_key ? "[redacted]" : "",
-              summary_api_key: profile.summary_api_key ? "[redacted]" : "",
-              image_api_key: profile.image_api_key ? "[redacted]" : "",
-              search_api_key: profile.search_api_key ? "[redacted]" : "",
-            },
-          });
-          setModelProfileStatus("Profile fields filled from .env.");
-          toast("Env loaded into profile form");
-        } catch (e) {
-          console.warn("[model-profile] env recognition failed", e);
-          setModelProfileStatus(e.message, true);
-          toast("Env import failed: " + e.message, true);
-        }
-      }
-
-      function recognizeModelProfileEnvFile() {
-        const status = document.getElementById("model-profile-file-status");
-        if (!pendingModelProfileEnvText?.trim()) {
-          if (status) status.textContent = "Choose an .env file first.";
-          setModelProfileStatus("Choose an .env file first.", true);
-          console.warn("[model-profile] recognize requested without env text");
+      async function recognizeModelModulesEnvFile() {
+        if (!pendingModelModulesEnvText.trim()) {
+          setModelModuleStatus("Choose an .env file first.", true);
           return;
         }
-        importModelProfileFromEnvText(pendingModelProfileEnvText);
+        setModelModuleStatus("Recognizing .env...");
+        try {
+          const result = await api("/settings/model-modules/import-env", "POST", {
+            content: pendingModelModulesEnvText,
+          });
+          modelModulesState = { modules: result.modules || {} };
+          renderModelModules();
+          setModelModuleStatus("Configuration recognized. Review and save each module you want to use.");
+          toast("Env fields loaded into model modules");
+        } catch (e) {
+          setModelModuleStatus(e.message, true);
+        }
       }
 
       function toggleConfig() {

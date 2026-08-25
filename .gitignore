@@ -38,3 +38,9 @@ env-profiles/
 # Server logs
 server.log
 *.log
+
+designspace/
+
+.agents/skills/chinatravel-infographic/
+
+.myharness/skills/chinatravel-infographic/

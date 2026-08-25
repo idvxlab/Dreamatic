@@ -16,7 +16,7 @@ WEB_SEARCH_SCHEMA = ToolSchema(
     description=(
         "Search the public web and return structured search results with title, URL, "
         "snippet, rank, and provider metadata. Provider priority: "
-        "1) Dreamatic search profile (DREAMATIC_SEARCH_PROVIDER + DREAMATIC_SEARCH_API_KEY), "
+        "1) Dreamatic search module (DREAMATIC_SEARCH_PROVIDER + DREAMATIC_SEARCH_API_KEY), "
         "2) Serper (Google results, requires SERPER_API_KEY), "
         "3) Brave Search (requires BRAVE_SEARCH_API_KEY), "
         "4) DuckDuckGo Instant Answer (free fallback, only answers factual/definition queries)."
