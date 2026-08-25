@@ -16,6 +16,7 @@ from harness.storage.backends.memory import (
 from harness.tools.builtin.design_image import (
     IMAGE_EDIT_SCHEMA,
     IMAGE_GENERATE_SCHEMA,
+    _coerce_size,
     image_edit_tool,
     image_generate_tool,
 )
@@ -68,6 +69,23 @@ def test_image_tool_schemas_hide_batch_and_accept_domain_metadata():
     assert {"domainType", "deliverableCategory"}.issubset(edit_params)
 
 
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [
+        ("1024x1024", "2048x2048"),
+        ("1792x1024", "2560x1440"),
+        ("1024x1792", "1440x2560"),
+        ("2048x2048", "2048x2048"),
+    ],
+)
+def test_seedream_sizes_are_upgraded_to_provider_minimum(requested, expected):
+    assert _coerce_size(requested, "doubao-seedream-4-5-251128") == expected
+
+
+def test_non_seedream_size_is_not_changed():
+    assert _coerce_size("1024x1024", "gpt-image-2") == "1024x1024"
+
+
 @pytest.mark.asyncio
 async def test_image_generate_mock_writes_file(monkeypatch, tmp_path):
     monkeypatch.setenv("DESIGN_IMAGE_BACKEND", "mock")
@@ -88,6 +106,29 @@ async def test_image_generate_mock_writes_file(monkeypatch, tmp_path):
     sidecar = json.loads(out.with_suffix(out.suffix + ".json").read_text(encoding="utf-8"))
     assert sidecar["domain_type"] == "product_design"
     assert sidecar["deliverable_category"] == "hero render"
+
+
+@pytest.mark.asyncio
+async def test_image_generate_reports_seedream_size_adjustment(monkeypatch, tmp_path):
+    monkeypatch.setenv("DESIGN_IMAGE_BACKEND", "mock")
+
+    raw = await image_generate_tool(
+        prompt="product sketch",
+        runDir=str(tmp_path),
+        id="seedream-sketch",
+        model="doubao-seedream-4-5-251128",
+        size="1024x1024",
+    )
+
+    payload = json.loads(raw)
+    assert payload["ok"] is True
+    assert payload["size"] == "2048x2048"
+    assert payload["size_adjusted_from"] == "1024x1024"
+    sidecar = json.loads(
+        Path(payload["items"][0]["file"]).with_suffix(".png.json").read_text(encoding="utf-8")
+    )
+    assert sidecar["size"] == "2048x2048"
+    assert sidecar["size_adjusted_from"] == "1024x1024"
 
 
 @pytest.mark.asyncio

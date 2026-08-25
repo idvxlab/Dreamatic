@@ -6476,10 +6476,27 @@
         return [];
       }
 
+      const SAVED_API_KEY_MASK = "****************";
+
+      function beginSavedApiKeyEdit(input) {
+        if (input?.dataset.savedKey === "true") {
+          input.value = "";
+          input.dataset.savedKey = "editing";
+        }
+      }
+
+      function restoreSavedApiKeyMask(input) {
+        if (input?.dataset.savedKey === "editing" && !input.value) {
+          input.value = SAVED_API_KEY_MASK;
+          input.dataset.savedKey = "true";
+        }
+      }
+
       function renderModuleField(moduleId, field, value) {
         const id = `model-module-${moduleId}-${field.key}`;
         const wide = field.wide ? " wide" : "";
         const current = field.key === "api_key" ? value.api_key || "" : value[field.key] ?? "";
+        const hasSavedApiKey = field.key === "api_key" && value.has_api_key && !current;
         const options = moduleSelectOptions(field.type);
         let control = "";
         if (options.length) {
@@ -6489,10 +6506,11 @@
           control = `<select id="${id}" data-field="${field.key}">${optionHtml}</select>`;
         } else {
           const type = field.type || "text";
-          const placeholder = field.key === "api_key" && value.has_api_key
-            ? `Leave blank to keep ${value.api_key_hint || "saved key"}`
-            : field.placeholder || "";
-          control = `<input id="${id}" data-field="${field.key}" type="${type}" value="${escHtml(String(current))}" placeholder="${escHtml(placeholder)}" autocomplete="${type === "password" ? "new-password" : "off"}" />`;
+          const displayValue = hasSavedApiKey ? SAVED_API_KEY_MASK : current;
+          const savedKeyAttributes = hasSavedApiKey
+            ? ` data-saved-key="true" onfocus="beginSavedApiKeyEdit(this)" onblur="restoreSavedApiKeyMask(this)"`
+            : "";
+          control = `<input id="${id}" data-field="${field.key}" type="${type}" value="${escHtml(String(displayValue))}" placeholder="${escHtml(field.placeholder || "")}" autocomplete="${type === "password" ? "new-password" : "off"}"${savedKeyAttributes} />`;
         }
         return `<div class="settings-field${wide}"><label for="${id}">${escHtml(field.label)}</label>${control}</div>`;
       }
@@ -6530,7 +6548,11 @@
         definition.fields.forEach((field) => {
           const element = document.getElementById(`model-module-${moduleId}-${field.key}`);
           const value = element?.value ?? "";
-          result[field.key] = field.type === "number" ? Number(value || 0) : String(value).trim();
+          if (field.key === "api_key" && element?.dataset.savedKey === "true") {
+            result[field.key] = "";
+          } else {
+            result[field.key] = field.type === "number" ? Number(value || 0) : String(value).trim();
+          }
         });
         return result;
       }

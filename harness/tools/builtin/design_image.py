@@ -31,7 +31,15 @@ IMAGE_GENERATE_SCHEMA = ToolSchema(
         ToolParam(name="domainType", type="string", description="Optional design domain type for sidecar metadata.", required=False),
         ToolParam(name="deliverableCategory", type="string", description="Optional deliverable category for sidecar metadata.", required=False),
         ToolParam(name="negativePrompt", type="string", description="Optional negative prompt.", required=False),
-        ToolParam(name="size", type="string", description="Image size, default 1024x1024.", required=False),
+        ToolParam(
+            name="size",
+            type="string",
+            description=(
+                "Requested image size, default 1024x1024. Seedream requests below "
+                "the provider minimum are upgraded automatically while preserving orientation."
+            ),
+            required=False,
+        ),
         ToolParam(name="count", type="integer", description="Number of images, default 1.", required=False),
         ToolParam(name="model", type="string", description="Image model override.", required=False),
         ToolParam(name="background", type="string", description="Optional background setting.", required=False),
@@ -62,7 +70,15 @@ IMAGE_EDIT_SCHEMA = ToolSchema(
         ToolParam(name="domainType", type="string", description="Optional design domain type for sidecar metadata.", required=False),
         ToolParam(name="deliverableCategory", type="string", description="Optional deliverable category for sidecar metadata.", required=False),
         ToolParam(name="maskPath", type="string", description="Optional mask image path.", required=False),
-        ToolParam(name="size", type="string", description="Image size, default 1024x1024.", required=False),
+        ToolParam(
+            name="size",
+            type="string",
+            description=(
+                "Requested image size, default 1024x1024. Seedream requests below "
+                "the provider minimum are upgraded automatically while preserving orientation."
+            ),
+            required=False,
+        ),
         ToolParam(name="count", type="integer", description="Number of edited images, default 1.", required=False),
         ToolParam(name="model", type="string", description="Image model override.", required=False),
     ],
@@ -78,7 +94,16 @@ VALID_SIZES = {
     "1536x1024",
     "1024x1792",
     "1792x1024",
+    "1440x2560",
+    "1920x1920",
     "2048x2048",
+    "2560x1440",
+}
+SEEDREAM_MIN_PIXELS = 3_686_400
+SEEDREAM_SAFE_SIZES = {
+    "square": "2048x2048",
+    "landscape": "2560x1440",
+    "portrait": "1440x2560",
 }
 
 
@@ -176,16 +201,48 @@ def _coerce_count(value: int | None) -> int:
     return max(1, min(count, 4))
 
 
-def _coerce_size(value: str | None) -> str:
-    size = (
+def _requested_size(value: str | None) -> str:
+    return (
         value
         or os.getenv("DREAMATIC_IMAGE_DEFAULT_SIZE")
         or os.getenv("DESIGN_IMAGE_DEFAULT_SIZE")
         or "1024x1024"
     ).strip()
+
+
+def _size_dimensions(size: str) -> tuple[int, int]:
+    width, height = size.lower().split("x", maxsplit=1)
+    return int(width), int(height)
+
+
+def _is_seedream_model(model: str) -> bool:
+    return "seedream" in model.casefold()
+
+
+def _coerce_size(value: str | None, model: str | None = None) -> str:
+    size = _requested_size(value)
     if size not in VALID_SIZES:
         raise ValueError(f"Invalid size {size!r}. Use one of: {', '.join(sorted(VALID_SIZES))}")
+    width, height = _size_dimensions(size)
+    if _is_seedream_model(model or "") and width * height < SEEDREAM_MIN_PIXELS:
+        orientation = "square" if width == height else "landscape" if width > height else "portrait"
+        return SEEDREAM_SAFE_SIZES[orientation]
     return size
+
+
+def _size_result_fields(requested_size: str, actual_size: str) -> dict[str, Any]:
+    fields: dict[str, Any] = {"size": actual_size}
+    if requested_size != actual_size:
+        fields.update(
+            {
+                "size_adjusted_from": requested_size,
+                "size_adjustment_reason": (
+                    f"Seedream requires at least {SEEDREAM_MIN_PIXELS} pixels; "
+                    "the request was upgraded while preserving orientation."
+                ),
+            }
+        )
+    return fields
 
 
 def _output_dir(runDir: str | None, subdir: str) -> Path:
@@ -283,10 +340,13 @@ async def image_generate_tool(
     if not prompt or not prompt.strip():
         return _json({"ok": False, "error": "prompt is required"})
     try:
+        image_model = _model(model)
         image_count = _coerce_count(count)
-        image_size = _coerce_size(size)
+        requested_size = _requested_size(size)
+        image_size = _coerce_size(size, image_model)
     except ValueError as exc:
         return _json({"ok": False, "error": str(exc)})
+    size_fields = _size_result_fields(requested_size, image_size)
 
     out_paths = _output_paths(
         explicit_path=path,
@@ -309,16 +369,18 @@ async def image_generate_tool(
                 "deliverable_category": deliverableCategory,
                 "purpose": purpose,
                 "prompt": prompt,
+                "model": image_model,
+                **size_fields,
             },
         )
-        return _json({"ok": True, "backend": "mock", "items": written})
+        return _json({"ok": True, "backend": "mock", "model": image_model, **size_fields, "items": written})
 
     key = _api_key()
     if not key:
         return _json({"ok": False, "error": "Missing DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, DESIGN_IMAGE_API_KEY, or OPENAI_HUB_API_KEY"})
 
     payload: dict[str, Any] = {
-        "model": _model(model),
+        "model": image_model,
         "prompt": prompt if not negativePrompt else f"{prompt}\n\nAvoid: {negativePrompt}",
         "n": image_count,
         "size": image_size,
@@ -367,10 +429,12 @@ async def image_generate_tool(
             "purpose": purpose,
             "prompt": prompt,
             "negative_prompt": negativePrompt,
-            "size": image_size,
+            **size_fields,
         },
     )
-    return _json({"ok": True, "backend": "codex", "model": payload["model"], "items": written})
+    return _json(
+        {"ok": True, "backend": "codex", "model": payload["model"], **size_fields, "items": written}
+    )
 
 
 async def image_edit_tool(
@@ -399,10 +463,13 @@ async def image_edit_tool(
     if maskPath and not Path(maskPath).exists():
         return _json({"ok": False, "error": f"maskPath not found: {maskPath}"})
     try:
+        image_model = _model(model)
         image_count = _coerce_count(count)
-        image_size = _coerce_size(size)
+        requested_size = _requested_size(size)
+        image_size = _coerce_size(size, image_model)
     except ValueError as exc:
         return _json({"ok": False, "error": str(exc)})
+    size_fields = _size_result_fields(requested_size, image_size)
 
     out_paths = _output_paths(
         explicit_path=path,
@@ -425,16 +492,18 @@ async def image_edit_tool(
                 "deliverable_category": deliverableCategory,
                 "purpose": purpose,
                 "prompt": prompt,
+                "model": image_model,
+                **size_fields,
             },
         )
-        return _json({"ok": True, "backend": "mock", "items": written})
+        return _json({"ok": True, "backend": "mock", "model": image_model, **size_fields, "items": written})
 
     key = _api_key()
     if not key:
         return _json({"ok": False, "error": "Missing DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, DESIGN_IMAGE_API_KEY, or OPENAI_HUB_API_KEY"})
 
     form = {
-        "model": _model(model),
+        "model": image_model,
         "prompt": prompt,
         "n": str(image_count),
         "size": image_size,
@@ -480,12 +549,14 @@ async def image_edit_tool(
             "deliverable_category": deliverableCategory,
             "purpose": purpose,
             "prompt": prompt,
-            "size": image_size,
+            **size_fields,
             "references": ref_meta,
             "maskPath": maskPath,
         },
     )
-    return _json({"ok": True, "backend": "codex", "model": form["model"], "items": written})
+    return _json(
+        {"ok": True, "backend": "codex", "model": form["model"], **size_fields, "items": written}
+    )
 
 
 def _mime_for(path: Path) -> str:
