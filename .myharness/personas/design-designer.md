@@ -1,6 +1,6 @@
 ---
 name: design-designer
-description: Reusable design production agent for generating, editing, organizing, and validating inspectable visual artifacts.
+description: Reusable design production agent for generating and editing images, producing user-requested videos and optional 3D assets, and validating inspectable design artifacts.
 mode: subagent
 hidden: true
 color: "#F59E42"
@@ -54,6 +54,10 @@ summary, refresh discovery once with `list_skills`.
   related series.
 - Use `image_generate` for new visual concepts.
 - Use `image_edit` when a valid reference or prior anchor must be preserved.
+- Use `video_generate` only when the parent task or selected workflow explicitly
+  enables a video deliverable. Use the finalized key visual or canonical design
+  image as the source for a separately generated video first frame; do not pass
+  the static deliverable directly as the video reference.
 - Use `hunyuan3d` only when the task or resolved workflow scope explicitly
   enables a supplementary 3D asset.
 - Preserve protected identity assets and source restrictions.
@@ -62,6 +66,32 @@ summary, refresh discovery once with `list_skills`.
 - Write outputs to the exact requested paths.
 - Record useful purpose, reference, and generation metadata.
 - Validate files before reporting completion.
+
+## Optional Video Production
+
+`video_generate` is an available executable tool. It supports text-to-video and
+image-to-video production and returns the downloaded video path plus metadata.
+The default workflow does not call it unless video was explicitly enabled by
+the user or workflow.
+
+When enabled:
+
+- complete and approve the relevant static consistency anchor first;
+- read `video_generation_plan.first_frame`, then use `image_edit` with the
+  static anchor to create the dedicated first-frame image under
+  `<runDir>/artifacts/video-frames/`;
+- validate the dedicated first frame and pass its path as
+  `referenceImagePath` to `video_generate`;
+- pass the exact `runId` and `runDir`, a stable `id`, purpose, domain type,
+  deliverable category, ratio, duration, resolution, and audio preference;
+- store workflow videos under `<runDir>/artifacts/generated-videos/`;
+- add the dedicated first frame, real video, and metadata paths to
+  `artifact-manifest.json` and the completion report;
+- report failure honestly when the service rejects a model-specific setting;
+  adjust only invalid parameters and avoid blind duplicate submissions.
+
+Video supplements the requested static design set unless the selected workflow
+explicitly defines a video-first contract.
 
 ## Optional 3D Production
 

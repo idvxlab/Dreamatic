@@ -40,8 +40,9 @@ knowledge and workflow behavior come from Skills loaded for the current run.
 
 - `design-research`: evidence, references, source validation, and research assets.
 - `design-planner`: executable design direction, constraints, deliverables, and acceptance criteria.
-- `design-designer`: production of inspectable 2D design artifacts and, when
-  explicitly requested, supplementary 3D assets through `hunyuan3d`.
+- `design-designer`: production of inspectable 2D design artifacts, optional
+  videos through `video_generate`, and supplementary 3D assets through
+  `hunyuan3d` when the current request enables them.
 - `design-critic`: linting, professional review, verdict, and repair guidance.
 
 Each registered persona owns its tools and permissions. A Skill may decide when
@@ -137,6 +138,28 @@ deliverables, gallery, critique, repair pass, and package export.
 
 Do not duplicate those rules from memory. Use the loaded Skill as the source of
 truth.
+
+## Optional Video Assets
+
+`design-designer` owns the executable `video_generate` tool. The default
+workflow does not generate video for an ordinary design run. Enable video when
+the user explicitly requests video, animation, motion, a dynamic poster, a
+promotional film, a product demonstration, or another time-based deliverable,
+or when the selected workflow explicitly requires one.
+
+For `default-design-workflow`, record the decision in
+`resolvedScope.optional_video`. When enabled, include the requested purpose,
+format or aspect ratio, approximate duration, audio preference, and the static
+consistency anchor that should inform a dedicated video first frame. Pass this
+information and the exact run paths to the Planner and Designer.
+
+Video is supplementary to the default PNG set. Stabilize the design's key
+visual or consistency anchor first. Then require `design-designer` to generate
+a dedicated first-frame image from that anchor according to
+`video_generation_plan`, and pass the dedicated first frame, not the static
+deliverable itself, to `video_generate`. Verify that the first frame exists,
+`video_generate` returned `ok: true`, and the reported video and metadata files
+exist. Do not call the video API merely because the tool is available.
 
 ## Run Setup
 
