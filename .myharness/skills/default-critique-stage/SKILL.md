@@ -53,6 +53,8 @@ against their instructions and the run-specific acceptance criteria.
    - manifest/gallery path consistency
    - presentation-page narrative quality
    - production readiness
+   - requested video completeness and anchor consistency when
+     `resolvedScope.optional_video.enabled` is true
 5. Write `<runDir>/review/critique.md`.
 6. Write `<runDir>/review/critique.json`.
 7. Post `evaluator_pass` if the package is ready.
@@ -75,6 +77,9 @@ Fail the artifact set if:
 - protected identity assets are replaced or misused
 - the output is only prose and no image artifact exists
 - final PNGs visibly drift from the run's declared consistency anchor
+- `resolvedScope.optional_video.enabled` is true but the dedicated first frame,
+  planned video, or metadata is missing, unplayable, absent from
+  `artifact-manifest.json`, or the video is not presented in the gallery
 
 For `architecture_space_design`, treat missing explanatory spatial logic as a
 serious domain issue: if the plan required plan/zoning, circulation/user

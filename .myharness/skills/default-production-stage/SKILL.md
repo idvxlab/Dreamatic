@@ -1,6 +1,6 @@
 ---
 name: default-production-stage
-description: "Detailed production-stage instructions used by default-design-workflow, including manifest execution, image generation/editing, visual consistency, gallery presentation, lint, and handoff."
+description: "Detailed production-stage instructions used by default-design-workflow, including manifest execution, image generation/editing, optional user-requested video, visual consistency, gallery presentation, lint, and handoff."
 license: MIT
 ---
 # Role
@@ -105,13 +105,57 @@ Read:
 7. Use `image_edit` from the anchor for derived deliverables that need continuity: color-system boards, typography/system boards, merchandise or application mockups, product scenes, product detail images, form-language boards, function annotation boards, spatial views, advertising adaptations, and any image that should preserve the same product/form/logo/space/key visual.
 8. For each `image_generate` or `image_edit` call, pass `domainType` from `brief.json::resolvedScope.domain_type` and pass `deliverableCategory` from the manifest item or `domainContext.deliverable_categories`.
 9. Write each generated PNG to the exact `file` path declared for that item in `plan/deliverable_manifest.json`. Do not invent a second filename scheme. If the manifest says `artifacts/generated-images/02-plan-zoning.png`, that is the file to create, the sidecar base name, the gallery reference, and the artifact-manifest path.
-10. Create `<runDir>/artifacts/00-gallery.html` and reference every final PNG with local relative paths.
+10. If `brief.json::resolvedScope.optional_video.enabled` is true, execute the
+    matching `design_plan.json::video_generation_plan` after its referenced
+    static anchor exists. First generate and validate the plan's dedicated
+    first-frame image, then use that image for `video_generate`. Verify the
+    first-frame, video, and metadata paths.
+11. Create `<runDir>/artifacts/00-gallery.html` and reference every final PNG with local relative paths.
    Shape the gallery as a polished presentation page with a clear hierarchy: final generated/edited deliverables as the main section, and research references as a secondary provenance/reference section when useful.
    When adding research references, first read `<runDir>/research/assets/manifest.json` and/or list `<runDir>/research/assets/`. Use the exact stored filenames from `assets[].file`; do not invent numbered names or renamed aliases.
-11. Write `<runDir>/artifacts/artifact-manifest.json`.
-12. Run `artifact_lint` with `requireGallery: true`.
-13. If lint fails, fix the files once if possible.
-14. Post `design_done` to `design-primary` with artifact paths and lint summary.
+12. Write `<runDir>/artifacts/artifact-manifest.json`.
+13. Run `artifact_lint` with `requireGallery: true`.
+14. If lint fails, fix the files once if possible.
+15. Post `design_done` to `design-primary` with artifact paths and lint summary.
+
+## Optional Video Supplement
+
+The default production contract does not generate video unless
+`resolvedScope.optional_video.enabled` is true or the parent task explicitly
+requires it. Video supplements the required PNG set.
+
+When enabled:
+
+1. Read `design_plan.json::video_generation_plan` and produce only its requested
+   video entries.
+2. Finish the referenced key visual, product render, poster, spatial view, or
+   other consistency anchor before preparing motion.
+3. Read the plan entry's mandatory `first_frame` object. Resolve its
+   `source_deliverable_id` to the real static artifact, expand its prompt with
+   the video narrative and consistency lock, and call `image_edit` to create
+   the exact dedicated PNG at `first_frame.file` under
+   `<runDir>/artifacts/video-frames/`.
+4. Verify the dedicated first frame preserves the static design while setting
+   the planned opening composition, camera framing, subject state, and
+   motion-ready scene. Do not use the unadapted static deliverable directly as
+   `referenceImagePath`.
+5. Call `video_generate` with the dedicated first-frame path as
+   `referenceImagePath`, plus the canonical `runId` and `runDir`, stable `id`,
+   purpose, domain type, deliverable category, ratio, duration, resolution,
+   audio preference, and the expanded motion prompt.
+6. Preserve the established subject, palette, typography, motif, form, spatial
+   language, or key visual while adding deliberate motion and camera behavior.
+7. Confirm `ok: true` and verify the returned video and sidecar metadata files
+   exist under `<runDir>/artifacts/generated-videos/`.
+8. Add the dedicated first frame, video, and metadata to
+   `artifact-manifest.json::supplementary_assets` and include a playable local
+   `<video controls>` element in `00-gallery.html`.
+9. Include the real first-frame, video, and metadata paths in the `design_done`
+   bus message.
+
+If a model rejects duration, ratio, resolution, audio, or another setting,
+adjust the rejected parameter to a supported value and retry once. Do not start
+multiple identical paid jobs or claim success from a task id alone.
 
 ## Optional 3D Supplement
 
@@ -163,6 +207,11 @@ When optional 3D production is enabled, additionally include the real model,
 preview render, and metadata as `supplementary_assets`. These do not change the
 required PNG count used by `artifact_lint`.
 
+When optional video production is enabled, additionally include the real video,
+its dedicated first-frame image, and sidecar metadata as
+`supplementary_assets`. These also do not change the required PNG count used by
+`artifact_lint`.
+
 Use `write_json` for `artifact-manifest.json` and any side metadata you write
 manually. Use `write_file` for `00-gallery.html` and other plain text files.
 
@@ -174,6 +223,8 @@ All outputs belong directly to this run's `artifacts` directory.
 
 - First section: run title, short brief, design-system summary, palette swatches if available.
 - Main section: final generated/edited deliverables, grouped by `deliverable_category` from the manifest and sidecars.
+- Optional motion section: user-requested videos shown with local
+  `<video controls>` elements and concise purpose captions.
 - Optional supplementary section: show each 3D preview render and provide a
   local download link to its model file; do not present the model as a required
   PNG deliverable.
@@ -194,6 +245,9 @@ Use a presentation narrative, not a raw file-browser order:
 Before posting `design_done`, self-check the gallery:
 
 - every required PNG file from `plan/deliverable_manifest.json` is embedded exactly once or intentionally shown in a coherent series;
+- when optional video is enabled, every planned video path exists and is
+  embedded in the motion section, and every video uses its planned dedicated
+  first-frame image rather than the unadapted static anchor;
 - every embedded image path exists relative to `artifacts/00-gallery.html`;
 - every Reference Appendix image path exists and matches an actual filename in `research/assets/manifest.json` or the `research/assets/` directory;
 - no research image appears in the final-deliverables section;

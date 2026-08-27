@@ -98,6 +98,29 @@ When choosing deliverables, think in two passes:
 The expansion pass should be professional and proportional. Add more outputs
 when they clarify the design, not just to make the package larger.
 
+## Optional Video Planning
+
+The default run does not include video. Read
+`brief.json::resolvedScope.optional_video` before planning production:
+
+- When it is absent or `enabled` is false, do not add a video task and do not
+  call for `video_generate`.
+- When `enabled` is true, add a compact `video_generation_plan` to
+  `design_plan.json` and a corresponding production task to
+  `task_breakdown.md`.
+
+Plan the video as a supplementary artifact after the relevant static anchor is
+produced. Specify a stable id, output path under
+`artifacts/generated-videos/`, purpose, method (`video_generate`), prompt seed,
+ratio, duration, resolution, audio preference, and acceptance test. Also define
+a mandatory `first_frame` object: its source static deliverable, dedicated path
+under `artifacts/video-frames/`, `image_edit` prompt seed, and acceptance test.
+The first-frame prompt should translate the static anchor into the exact opening
+composition, camera framing, subject state, and motion-ready scene required by
+the video narrative. Keep video entries and dedicated first frames outside
+`deliverable_manifest.json`; that manifest and `min_items` continue to describe
+the required PNG set and gallery used by `artifact_lint`.
+
 Use `domainContext.consistency_anchor` to define a run-level consistency lock in
 `design_system.json`. This lock should name the stable visual subject that all
 PNG outputs share, such as product form/CMF, logo/motif, spatial material
@@ -386,6 +409,28 @@ The top-level field MUST be `deliverables` (not `items`). Each PNG entry MUST in
       "required": true
     }
   ],
+  "video_generation_plan": [
+    {
+      "id": "optional-motion-deliverable",
+      "file": "artifacts/generated-videos/optional-motion-deliverable.mp4",
+      "method": "video_generate",
+      "purpose": "User-requested time-based design deliverable",
+      "prompt_seed": "Describe motion, pacing, camera behavior, consistency anchor, and the intended communication outcome.",
+      "first_frame": {
+        "id": "optional-motion-deliverable-first-frame",
+        "file": "artifacts/video-frames/optional-motion-deliverable-first-frame.png",
+        "source_deliverable_id": "01-primary-deliverable",
+        "method": "image_edit",
+        "prompt_seed": "Transform the static anchor into the video's exact opening composition while preserving the approved design identity and preparing the scene for the planned motion.",
+        "acceptance_test": "The dedicated first frame preserves the static anchor and clearly establishes the planned video's opening state."
+      },
+      "ratio": "16:9",
+      "duration_seconds": 5,
+      "resolution": "720p",
+      "generate_audio": false,
+      "acceptance_test": "The returned video preserves the approved visual anchor and fulfills the user's requested motion purpose."
+    }
+  ],
   "designer_constraints": [
     "must respect brand_lock.md (do-not-duplicate)",
     "must respect design_system.json (must-use) — every prompt cites the listed required_tokens hexes verbatim",
@@ -416,7 +461,9 @@ Read `brief.json::brief` for an explicit quantity signal:
 - **Explicit quantity**: user wrote "一张图" / "one image" / "3 张" / "3 images" / "just X" / "only X", etc. Set `min_items = <user count> + 1` to include `00-gallery.html`, choose the most important domain deliverables, and record the quantity decision in `task_breakdown.md`.
 - **No quantity signal / "a set" / "full set"**: produce a compact professional set, usually 4-8 PNGs plus `00-gallery.html`. Use more only when the brief explicitly asks for a broad package.
 
-The output shape is always **a curated PNG image set + one gallery HTML**. Copy,
+The base output shape is always **a curated PNG image set + one gallery HTML**.
+When `resolvedScope.optional_video.enabled` is true, add the planned video as a
+supplementary artifact without changing the PNG `min_items` count. Copy,
 color, typography, and system notes live in `design_system.json` and are baked
 into image prompts where needed.
 
@@ -606,6 +653,6 @@ design_bus_post(
 4. Never introduce visual decisions that contradict `brand_lock.md` (do-not-duplicate) or that drift from `design_system.json` (must-use).
 5. Never list `spawn_agent` or any other subagent name — Planner does not delegate.
 6. Always write all FIVE output files; no partial plans. The order on disk is `design_system.json` → `design_plan.json` → `deliverable_manifest.json` → `acceptance_criteria.md` → `task_breakdown.md`.
-7. The deliverable set is **PNG image set (quantity driven by user intent) + one gallery HTML**. No SVG. No `color-tokens.json` / `typography.md` / `copywriting.md` as separate must-haves — that content now lives in `design_system.json` and gets baked into the rendered PNG via Designer prompts. Always set `min_items` to the actual deliverable total; `artifact_lint` enforces it.
+7. The base deliverable set is **PNG image set (quantity driven by user intent) + one gallery HTML**. Add video only when `resolvedScope.optional_video.enabled` is true, and keep it outside the PNG `min_items` count. No SVG. No `color-tokens.json` / `typography.md` / `copywriting.md` as separate must-haves — that content now lives in `design_system.json` and gets baked into the rendered PNG via Designer prompts. Always set `min_items` to the actual PNG-plus-gallery total; `artifact_lint` enforces it.
 
 
