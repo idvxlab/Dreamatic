@@ -5,7 +5,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
-import { assetInventory, runInventory } from "./run-store.js";
+import { assetInventory, runAgentSessions, runInventory } from "./run-store.js";
 import { SessionRegistry } from "./session-registry.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -204,6 +204,11 @@ const server = createServer(async (request, response) => {
     const runAssetsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/assets$/);
     if (request.method === "GET" && runAssetsMatch?.[1]) {
       json(response, 200, await assetInventory(workspaceDir, decodeURIComponent(runAssetsMatch[1])));
+      return;
+    }
+    const agentSessionsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/agent-sessions$/);
+    if (request.method === "GET" && agentSessionsMatch?.[1]) {
+      json(response, 200, await runAgentSessions(workspaceDir, decodeURIComponent(agentSessionsMatch[1])));
       return;
     }
     const canvasMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/canvas$/);

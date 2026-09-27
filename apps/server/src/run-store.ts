@@ -24,6 +24,30 @@ export interface TimelineView {
   retryCount?: number;
 }
 
+export interface AgentActionView {
+  id: string;
+  tool: string;
+  status: "running" | "completed" | "error";
+  input?: string;
+  output?: string;
+  at?: string;
+}
+
+export interface AgentSessionView {
+  id: string;
+  agent: string;
+  title: string;
+  status: "running" | "completed" | "interrupted";
+  createdAt?: string;
+  updatedAt?: string;
+  task?: string;
+  followUps?: string[];
+  output?: string;
+  actionCount: number;
+  actions: AgentActionView[];
+  errors: string[];
+}
+
 export interface RunNoteView {
   id: "research" | "plan" | "critique";
   title: string;
@@ -42,6 +66,7 @@ export interface RunView {
   documents: string[];
   notes: RunNoteView[];
   activity: TimelineView[];
+  agentSessions: AgentSessionView[];
   showcasePath?: string;
   sessionId?: string;
 }
@@ -152,6 +177,175 @@ interface SessionFileIndex {
 }
 
 const sessionFileCache = new Map<string, SessionFileIndex>();
+
+const AGENT_TITLES: Record<string, string> = {
+  "design-research": "Research agent",
+  "design-planner": "Planning agent",
+  "design-designer": "Design agent",
+  "design-critic": "Critic agent",
+};
+
+function limitedText(value: string, limit = 1_200): string {
+  const compact = value.replace(/data:[^;]+;base64,[a-zA-Z0-9+/=]+/gu, "[image payload omitted]").trim();
+  return compact.length > limit ? `${compact.slice(0, limit).trimEnd()}…` : compact;
+}
+
+function contentText(value: unknown): string {
+  if (typeof value === "string") return limitedText(value);
+  if (!Array.isArray(value)) return "";
+  return limitedText(value.map(record).flatMap((part) => typeof part.text === "string" ? [part.text] : []).join("\n"));
+}
+
+function compactArguments(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  try {
+    const text = JSON.stringify(value, (key, item) => {
+      if (["data", "imageData", "base64"].includes(key) && typeof item === "string") return `[payload omitted · ${item.length} chars]`;
+      return item;
+    }, 2);
+    return text ? limitedText(text, 900) : undefined;
+  } catch {
+    return limitedText(String(value), 900);
+  }
+}
+
+interface AgentSessionCacheEntry {
+  mtimeMs: number;
+  session: AgentSessionView;
+}
+
+const agentSessionCache = new Map<string, AgentSessionCacheEntry>();
+
+async function indexAgentSession(path: string, agent: string): Promise<AgentSessionView> {
+  const info = await stat(path);
+  const cached = agentSessionCache.get(path);
+  if (cached?.mtimeMs === info.mtimeMs) return cached.session;
+
+  const source = await readFile(path, "utf8").catch(() => "");
+  const actions = new Map<string, AgentActionView>();
+  const tasks: string[] = [];
+  const assistantOutputs: string[] = [];
+  const errors: string[] = [];
+  let id = basename(path, extname(path));
+  let createdAt: string | undefined;
+  let updatedAt: string | undefined;
+  let finalAssistantState: "running" | "completed" | "interrupted" = "running";
+
+  for (const [index, line] of source.split(/\r?\n/).filter(Boolean).entries()) {
+    try {
+      const envelope = record(JSON.parse(line) as unknown);
+      const at = typeof envelope.timestamp === "string" ? envelope.timestamp : undefined;
+      if (at) {
+        createdAt ??= at;
+        updatedAt = at;
+      }
+      if (envelope.type === "session" && typeof envelope.id === "string") id = envelope.id;
+      if (envelope.type !== "message") continue;
+      const message = record(envelope.message);
+      const role = typeof message.role === "string" ? message.role : "";
+      if (role === "user") {
+        const text = contentText(message.content);
+        if (text) tasks.push(text);
+        finalAssistantState = "running";
+      }
+      if (role === "assistant") {
+        const content = Array.isArray(message.content) ? message.content : [];
+        const text = contentText(content);
+        if (text) assistantOutputs.push(text);
+        for (const [partIndex, rawPart] of content.entries()) {
+          const part = record(rawPart);
+          if (part.type !== "toolCall" || typeof part.name !== "string") continue;
+          const actionId = typeof part.id === "string" ? part.id : `${id}-${index}-${partIndex}`;
+          const input = compactArguments(part.arguments);
+          actions.set(actionId, {
+            id: actionId,
+            tool: part.name,
+            status: "running",
+            ...(input ? { input } : {}),
+            ...(at ? { at } : {}),
+          });
+        }
+        if (message.stopReason === "error") {
+          const error = typeof message.errorMessage === "string" ? limitedText(message.errorMessage, 700) : "Agent execution was interrupted";
+          errors.push(error);
+          finalAssistantState = "interrupted";
+        } else if (message.stopReason === "stop") {
+          finalAssistantState = "completed";
+        }
+      }
+      if (role === "toolResult") {
+        const actionId = typeof message.toolCallId === "string" ? message.toolCallId : `${id}-result-${index}`;
+        const previous = actions.get(actionId);
+        const output = contentText(message.content);
+        const isError = message.isError === true;
+        const actionAt = previous?.at ?? at;
+        actions.set(actionId, {
+          id: actionId,
+          tool: typeof message.toolName === "string" ? message.toolName : previous?.tool ?? "tool",
+          status: isError ? "error" : "completed",
+          ...(previous?.input ? { input: previous.input } : {}),
+          ...(output ? { output: limitedText(output, 900) } : {}),
+          ...(actionAt ? { at: actionAt } : {}),
+        });
+        if (isError && output) errors.push(limitedText(output, 700));
+      }
+    } catch {
+      // Ignore partial records while Pi is appending to the session.
+    }
+  }
+
+  const task = tasks[0];
+  const output = assistantOutputs.at(-1);
+  const session: AgentSessionView = {
+    id,
+    agent,
+    title: AGENT_TITLES[agent] ?? agent.replaceAll("-", " "),
+    status: finalAssistantState,
+    ...(createdAt ? { createdAt } : {}),
+    ...(updatedAt ? { updatedAt } : {}),
+    ...(task ? { task } : {}),
+    ...(tasks.length > 1 ? { followUps: tasks.slice(1).slice(-4) } : {}),
+    ...(output ? { output } : {}),
+    actionCount: actions.size,
+    actions: [...actions.values()].slice(-60),
+    errors: [...new Set(errors)].slice(-8),
+  };
+  agentSessionCache.set(path, { mtimeMs: info.mtimeMs, session });
+  return session;
+}
+
+async function agentSessions(runDir: string): Promise<AgentSessionView[]> {
+  const root = join(runDir, "sessions");
+  const sessions: AgentSessionView[] = [];
+  for (const agentEntry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (!agentEntry.isDirectory()) continue;
+    const directory = join(root, agentEntry.name);
+    for (const file of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+      if (!file.isFile() || !file.name.endsWith(".jsonl")) continue;
+      sessions.push(await indexAgentSession(join(directory, file.name), agentEntry.name));
+    }
+  }
+  return sessions.sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
+}
+
+export async function runAgentSessions(workspaceDir: string, runId: string): Promise<AgentSessionView[]> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) throw new Error("Invalid run id");
+  return agentSessions(join(workspaceDir, "runs", runId));
+}
+
+function agentSessionSummary(session: AgentSessionView): AgentSessionView {
+  return {
+    id: session.id,
+    agent: session.agent,
+    title: session.title,
+    status: session.status,
+    ...(session.createdAt ? { createdAt: session.createdAt } : {}),
+    ...(session.updatedAt ? { updatedAt: session.updatedAt } : {}),
+    actionCount: session.actionCount,
+    actions: [],
+    errors: [],
+  };
+}
 
 async function indexSessionFile(path: string, label: "CLI task" | "Design brief"): Promise<SessionFileIndex> {
   const info = await stat(path);
@@ -289,6 +483,7 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
       })
       .map((path) => relative(runDir, path).replaceAll("\\", "/"));
     const session = await sessionActivity(workspaceDir, entry.name);
+    const childSessions = await agentSessions(runDir);
     const activity = [...await busActivity(runDir), ...session.activity]
       .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")))
       .slice(-40);
@@ -315,6 +510,7 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
       documents,
       notes: await runNotes(runDir),
       activity,
+      agentSessions: childSessions.map(agentSessionSummary),
       ...(path ? { showcasePath: relative(workspaceDir, path).replaceAll("\\", "/") } : {}),
       ...(session.sessionId ? { sessionId: session.sessionId } : {}),
     });

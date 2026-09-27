@@ -1,11 +1,11 @@
 import { Cloud, Grid2X2, Menu, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createSession, getHealth, getRuntimeConfig, listAssets, listRuns, listSessions, saveRuntimeConfig, streamPrompt, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
+import { createSession, getHealth, getRuntimeConfig, listAgentSessions, listAssets, listRuns, listSessions, saveRuntimeConfig, streamPrompt, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
 import { Canvas } from "./components/Canvas";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
-import type { Asset, RunView, SessionView, TimelineItem } from "./types";
+import type { AgentSession, Asset, RunView, SessionView, TimelineItem } from "./types";
 
 function eventName(event: Record<string, unknown>): string {
   return typeof event.type === "string" ? event.type : "agent_event";
@@ -24,6 +24,7 @@ export function App() {
   const [runs, setRuns] = useState<RunView[]>([]);
   const [activeRunId, setActiveRunId] = useState<string>();
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [agentSessions, setAgentSessions] = useState<AgentSession[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<string>();
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [streamingText, setStreamingText] = useState("");
@@ -96,6 +97,23 @@ export function App() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!activeRunId) {
+      setAgentSessions([]);
+      return;
+    }
+    let disposed = false;
+    const refresh = () => void listAgentSessions(activeRunId).then((next) => {
+      if (!disposed) setAgentSessions(next);
+    }).catch(() => undefined);
+    refresh();
+    const timer = activeRun?.status === "active" ? window.setInterval(refresh, 4000) : undefined;
+    return () => {
+      disposed = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [activeRunId, activeRun?.status, activeRun?.updatedAt]);
+
   async function addSession() {
     setCreating(true);
     try {
@@ -103,6 +121,7 @@ export function App() {
       setSessions((current) => [session, ...current]);
       setActiveId(session.id);
       setActiveRunId(undefined);
+      setAgentSessions([]);
       setTimeline([]);
       setStreamingText("");
       setConnectionError(undefined);
@@ -219,7 +238,7 @@ export function App() {
           </aside>
         )}
       </section>
-      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} streamingText={activeRun ? "" : streamingText} running={running} references={visibleAssets.filter((asset) => asset.role === "reference")} onSend={send} />}
+      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} streamingText={activeRun ? "" : streamingText} running={running} references={visibleAssets.filter((asset) => asset.role === "reference")} agentSessions={activeRun ? (agentSessions.length ? agentSessions : activeRun.agentSessions) : []} onSend={send} />}
       {navigationOpen && <button className="navigation-scrim" aria-label="Close project navigation" onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label="Close agent panel" onClick={() => setPanelOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>Server unavailable</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? "Connecting…" : "Reconnect"}</button></div>}

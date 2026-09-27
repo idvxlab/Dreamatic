@@ -1169,10 +1169,19 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const busPath = join(runDir, "bus.jsonl");
         if (await stat(busPath).then(() => true).catch(() => false)) await cp(busPath, join(finalDir, "bus.jsonl"), { force: true });
         const files = await listFiles(finalDir);
-        const images = files.filter((file) => /\.(png|jpe?g|webp)$/i.test(file));
         await writeFile(join(finalDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), files }, null, 2), "utf8");
-        const cards = images.map((file) => `<figure><img src="${escapeHtml(file)}" alt=""><figcaption>${escapeHtml(basename(file))}</figcaption></figure>`).join("\n");
-        const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${runId}</title><style>body{margin:0;background:#ebe9e2;color:#24251f;font:15px system-ui;padding:6vw}header{max-width:800px;margin-bottom:5vw}h1{font-size:clamp(36px,7vw,86px);letter-spacing:-.06em;margin:.2em 0}p{color:#74766d;line-height:1.6}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px}figure{margin:0;background:#f9f7f0;padding:12px;box-shadow:0 12px 30px #302f2920}img{display:block;width:100%}figcaption{padding:12px 2px 2px;font-size:12px}</style></head><body><header><small>DREAMATIC / ${runId}</small><h1>Design delivery</h1><p>${escapeHtml(params.brief ?? "A complete, inspectable design run.")}</p></header><main class="grid">${cards}</main></body></html>`;
+
+        // The Designer-authored gallery is the reviewed design narrative. Keep it as the
+        // package entry instead of flattening the delivery back into a filename grid.
+        // The base element preserves its artifact-relative image paths after the page is
+        // promoted from final/artifacts/00-gallery.html to final/00-index.html.
+        const galleryPath = join(finalDir, "artifacts", "00-gallery.html");
+        const gallery = await readFile(galleryPath, "utf8").catch(() => "");
+        const html = gallery
+          ? /<base\b/i.test(gallery)
+            ? gallery
+            : gallery.replace(/<head([^>]*)>/i, '<head$1><base href="artifacts/">')
+          : `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${escapeHtml(runId)}</title><style>body{margin:0;background:#ebe9e2;color:#24251f;font:15px system-ui;padding:6vw}header{max-width:800px}h1{font-size:clamp(36px,7vw,86px);letter-spacing:-.06em;margin:.2em 0}p{color:#74766d;line-height:1.6}</style></head><body><header><small>DREAMATIC / ${escapeHtml(runId)}</small><h1>Design delivery</h1><p>${escapeHtml(params.brief ?? "A complete, inspectable design run.")}</p></header></body></html>`;
         await writeFile(join(finalDir, "00-index.html"), html, "utf8");
         await updateRunState(workspaceDir, runId, "export_done");
         return textResult({ ok: true, runId, finalDir, files: await listFiles(finalDir) });

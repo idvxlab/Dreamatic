@@ -32,8 +32,33 @@ export interface RunView {
     path: string;
   }>;
   activity: TimelineItem[];
+  agentSessions: AgentSession[];
   showcasePath?: string;
   sessionId?: string;
+}
+
+export interface AgentAction {
+  id: string;
+  tool: string;
+  status: "running" | "completed" | "error";
+  input?: string;
+  output?: string;
+  at?: string;
+}
+
+export interface AgentSession {
+  id: string;
+  agent: string;
+  title: string;
+  status: "running" | "completed" | "interrupted";
+  createdAt?: string;
+  updatedAt?: string;
+  task?: string;
+  followUps?: string[];
+  output?: string;
+  actionCount: number;
+  actions: AgentAction[];
+  errors: string[];
 }
 
 export interface TimelineItem {

@@ -94,6 +94,27 @@ test("select_artifact persists a run-scoped decision", async () => {
   }
 });
 
+test("export_package promotes the reviewed gallery as the showcase entry", async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-export-"));
+  try {
+    const runDir = join(workspaceDir, "runs", "demo");
+    await mkdir(join(runDir, "artifacts", "generated-images"), { recursive: true });
+    await writeFile(join(runDir, "artifacts", "generated-images", "hero.png"), PNG_1X1);
+    await writeFile(join(runDir, "artifacts", "00-gallery.html"), '<!doctype html><html><head><title>Reviewed gallery</title></head><body><section><h1>Design story</h1><img src="generated-images/hero.png"></section></body></html>');
+    const { tools } = await registeredTools(workspaceDir);
+    const exportPackage = tools.get("export_package");
+    assert.ok(exportPackage);
+    await exportPackage.execute("test", { runId: "demo", runDir });
+    const index = await readFile(join(runDir, "final", "00-index.html"), "utf8");
+    assert.match(index, /<base href="artifacts\/">/);
+    assert.match(index, /Design story/);
+    assert.match(index, /generated-images\/hero\.png/);
+    assert.doesNotMatch(index, /Design delivery/);
+  } finally {
+    await rm(workspaceDir, { recursive: true, force: true });
+  }
+});
+
 test("context keeps only the newest generated visual observation", async () => {
   const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-context-"));
   try {

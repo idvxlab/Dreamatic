@@ -1,4 +1,4 @@
-import type { Asset, CanvasState, RunView, SessionView } from "./types";
+import type { AgentSession, Asset, CanvasState, RunView, SessionView } from "./types";
 
 async function parse<T>(response: Response): Promise<T> {
   const value = (await response.json()) as T | { error: string };
@@ -36,6 +36,10 @@ export async function saveCanvasState(runId: string, state: CanvasState): Promis
 
 export async function listRuns(): Promise<RunView[]> {
   return parse(await fetch("/api/runs"));
+}
+
+export async function listAgentSessions(runId: string): Promise<AgentSession[]> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/agent-sessions`));
 }
 
 export interface HealthView {
