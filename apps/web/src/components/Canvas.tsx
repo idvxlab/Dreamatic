@@ -1,4 +1,4 @@
-import { ExternalLink, FileImage, Hand, LayoutDashboard, Minus, MousePointer2, Plus, Scan, ZoomIn } from "lucide-react";
+import { ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCanvasState, saveCanvasState } from "../api";
 import { assetUrl } from "../asset-url";
@@ -17,9 +17,23 @@ type Gesture =
   | { kind: "element"; pointerId: number; startX: number; startY: number; id: string; x: number; y: number };
 
 const DEFAULT_CAMERA: Camera = { x: 72, y: 72, zoom: .78 };
+const LAYOUT_MARKER = "canvas-overview-v2";
+const BOARD_X = 40;
+const BOARD_WIDTH = 1098;
+const CARD_GAP = 24;
+const CARD_WIDTH = 350;
+
+function overviewText(run: RunView, visualCount: number) {
+  const stages = Object.entries(run.stages)
+    .map(([name, status]) => `${name}  ·  ${status.replaceAll("_", " ")}`)
+    .join("\n");
+  return `${run.title}\n\n${stages}\n\n${visualCount} visual assets  ·  ${run.notes.length} design notes  ·  ${run.status}`;
+}
 
 function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
-  const visual = assets.filter((asset) => /^(png|jpg|jpeg|webp|gif)$/.test(asset.kind));
+  const visual = assets
+    .filter((asset) => /^(png|jpg|jpeg|webp|gif)$/.test(asset.kind))
+    .sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true }));
   const candidates: Array<{ role: Asset["role"]; title: string; items: Asset[] }> = [
     { role: "reference", title: "Reference library", items: visual.filter((asset) => asset.role === "reference") },
     { role: "generated", title: "Design development", items: visual.filter((asset) => asset.role === "generated") },
@@ -29,25 +43,40 @@ function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
   const groups = candidates.filter((group) => group.items.length > 0);
   const elements: CanvasElementState[] = [];
   let y = 40;
+  if (run) {
+    elements.push({ id: "group-overview", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Project overview", role: "overview" });
+    y += 62;
+    elements.push({
+      id: LAYOUT_MARKER,
+      kind: "text",
+      role: "overview",
+      x: BOARD_X,
+      y,
+      width: BOARD_WIDTH,
+      height: 264,
+      text: overviewText(run, visual.length),
+    });
+    y += 304;
+  }
   if (run?.notes.length) {
-    elements.push({ id: "group-rationale", kind: "group", x: 40, y, width: 980, height: 42, text: "Project thinking", role: "rationale" });
+    elements.push({ id: "group-rationale", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Design record", role: "rationale" });
     y += 62;
     run.notes.forEach((note, index) => {
       elements.push({
         id: `note-${note.id}`,
         kind: "text",
         role: note.id,
-        x: 40 + (index % 3) * 330,
-        y,
-        width: 300,
-        height: 220,
+        x: BOARD_X + (index % 3) * (CARD_WIDTH + CARD_GAP),
+        y: y + Math.floor(index / 3) * 324,
+        width: CARD_WIDTH,
+        height: 284,
         text: `${note.title}\n\n${note.text}`,
       });
     });
-    y += 274;
+    y += Math.ceil(run.notes.length / 3) * 324 + 38;
   }
   for (const group of groups) {
-    elements.push({ id: `group-${group.role}`, kind: "group", x: 40, y, width: 980, height: 42, text: group.title, role: group.role });
+    elements.push({ id: `group-${group.role}`, kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: group.title, role: group.role });
     y += 62;
     group.items.forEach((asset, index) => {
       const column = index % 3;
@@ -57,13 +86,13 @@ function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
         kind: "image",
         assetPath: asset.path,
         role: asset.role,
-        x: 40 + column * 330,
-        y: y + row * 286,
-        width: 300,
-        height: 244,
+        x: BOARD_X + column * (CARD_WIDTH + CARD_GAP),
+        y: y + row * 320,
+        width: CARD_WIDTH,
+        height: 280,
       });
     });
-    y += Math.ceil(group.items.length / 3) * 286 + 54;
+    y += Math.ceil(group.items.length / 3) * 320 + 54;
   }
   return elements;
 }
@@ -98,7 +127,8 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
     }
     void getCanvasState(run.id).then((saved) => {
       if (cancelled) return;
-      setElements(saved?.elements.length ? saved.elements : autoLayout(assets, run));
+      const savedIsCurrent = saved?.elements.some((item) => item.id === LAYOUT_MARKER);
+      setElements(savedIsCurrent ? saved!.elements : autoLayout(assets, run));
       setCamera(saved?.camera ?? DEFAULT_CAMERA);
       loadedRun.current = run.id;
     }).catch(() => {
@@ -112,17 +142,20 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
 
   useEffect(() => {
     if (!run || loadedRun.current !== run.id) return;
-    const known = new Set(elements.filter((item) => item.assetPath).map((item) => item.assetPath));
-    const available = new Set(visualAssets.map((asset) => asset.path));
-    const missingAssets = visualAssets.filter((asset) => !known.has(asset.path));
-    const staleAssets = elements.filter((item) => item.assetPath && !available.has(item.assetPath));
-    const knownIds = new Set(elements.map((item) => item.id));
-    const missingNotes = run.notes.some((note) => !knownIds.has(`note-${note.id}`));
-    if (!missingAssets.length && !staleAssets.length && !missingNotes) return;
     const next = autoLayout(assets, run);
-    const persistedByPath = new Map(elements.filter((item) => item.assetPath).map((item) => [item.assetPath, item]));
-    setElements(next.map((item) => item.assetPath && persistedByPath.has(item.assetPath) ? persistedByPath.get(item.assetPath)! : item));
-  }, [assets, run?.id, run?.notes]);
+    const currentIds = new Set(elements.map((item) => item.id));
+    const nextIds = new Set(next.map((item) => item.id));
+    const membershipChanged = currentIds.size !== nextIds.size || [...nextIds].some((id) => !currentIds.has(id));
+    if (membershipChanged) {
+      setElements(next);
+      return;
+    }
+    const nextById = new Map(next.map((item) => [item.id, item]));
+    const contentChanged = elements.some((item) => item.text !== nextById.get(item.id)?.text);
+    if (contentChanged) {
+      setElements((current) => current.map((item) => ({ ...item, text: nextById.get(item.id)?.text ?? item.text })));
+    }
+  }, [assets, elements, run]);
 
   useEffect(() => {
     if (!run || loadedRun.current !== run.id) return;
@@ -142,6 +175,12 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
     const zoom = Math.max(.2, Math.min(1.25, Math.min((viewport.clientWidth - padding * 2) / box.width, (viewport.clientHeight - padding * 2) / box.height)));
     setCamera({ zoom, x: (viewport.clientWidth - box.width * zoom) / 2 - box.x * zoom, y: (viewport.clientHeight - box.height * zoom) / 2 - box.y * zoom });
   }, [elements]);
+
+  function reflow() {
+    if (!run) return;
+    setElements(autoLayout(assets, run));
+    setCamera(DEFAULT_CAMERA);
+  }
 
   const zoomAt = useCallback((nextZoom: number, clientX?: number, clientY?: number) => {
     const viewport = viewportRef.current;
@@ -230,8 +269,15 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
                   <div><img draggable={false} src={assetUrl(item.assetPath)} alt="" /></div>
                   <figcaption><span><strong>{item.assetPath.split("/").at(-1)}</strong><small>{item.role}</small></span><a aria-label="Open asset" href={assetUrl(item.assetPath)} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
                 </figure>
+              ) : item.kind === "text" && item.id === LAYOUT_MARKER && run ? (
+                <section key={item.id} className="canvas-project-overview" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
+                  <p className="eyebrow">{run.status === "interrupted" ? "Run interrupted — work preserved" : run.status === "completed" ? "Design run completed" : "Design run in progress"}</p>
+                  <h1>{run.title}</h1>
+                  <div className="stage-track">{Object.entries(run.stages).map(([name, status]) => <div className={`stage ${status}`} key={name}><span /><strong>{name}</strong><small>{status.replaceAll("_", " ")}</small></div>)}</div>
+                  <footer><span>{visualAssets.length} visual assets</span><span>{run.notes.length} design notes</span><span>{run.status}</span></footer>
+                </section>
               ) : item.kind === "text" ? (
-                <article key={item.id} className="canvas-note" style={{ left: item.x, top: item.y, width: item.width, minHeight: item.height }} onPointerDown={(event) => beginElement(event, item)}>{item.text}</article>
+                <article key={item.id} className={`canvas-note role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>{item.text}</article>
               ) : null)}
             </div>
           )}
@@ -246,6 +292,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
           <button className="zoom-label" title="Reset to 100%" onClick={() => zoomAt(1)}>{Math.round(camera.zoom * 100)}%</button>
           <button aria-label="Zoom in" onClick={() => zoomAt(camera.zoom + .1)}><Plus size={15} /></button>
           <button aria-label="Fit project" onClick={fit}><Scan size={16} /></button>
+          <button aria-label="Reflow project cards" title="Reflow project cards" onClick={reflow}><LayoutGrid size={16} /></button>
           {saving && <span className="canvas-saving">Saving…</span>}
         </div>
       )}

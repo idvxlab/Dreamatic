@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
 
 export type TimelineKind = "thought" | "tool" | "result" | "error";
@@ -22,6 +22,41 @@ export interface TimelineView {
   stage?: string;
   artifactRefs?: string[];
   retryCount?: number;
+}
+
+function checkedRunId(runId: string): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) throw new Error("Invalid run id");
+  return runId;
+}
+
+export async function renameRun(workspaceDir: string, unsafeRunId: string, unsafeTitle: string): Promise<{ id: string; title: string }> {
+  const runId = checkedRunId(unsafeRunId);
+  const title = unsafeTitle.trim();
+  if (!title || title.length > 120) throw new Error("Project title must contain 1–120 characters");
+  const runDir = join(workspaceDir, "runs", runId);
+  const info = await stat(runDir).catch(() => null);
+  if (!info?.isDirectory()) throw new Error("Project not found");
+  const briefPath = join(runDir, "brief.json");
+  const brief: Record<string, unknown> = await readFile(briefPath, "utf8").then((source) => record(JSON.parse(source) as unknown)).catch(() => ({}));
+  brief.title = title;
+  brief.resolvedScope = { ...record(brief.resolvedScope), human_title: title };
+  const temporary = `${briefPath}.${process.pid}.tmp`;
+  await writeFile(temporary, JSON.stringify(brief, null, 2), "utf8");
+  await rename(temporary, briefPath);
+  return { id: runId, title };
+}
+
+export async function deleteRun(workspaceDir: string, unsafeRunId: string): Promise<{ id: string; trashedPath: string }> {
+  const runId = checkedRunId(unsafeRunId);
+  const run = (await runInventory(workspaceDir)).find((candidate) => candidate.id === runId);
+  if (!run) throw new Error("Project not found");
+  if (run.status === "active") throw new Error("An active project cannot be deleted while its agent is running");
+  const source = join(workspaceDir, "runs", runId);
+  const trashDir = join(workspaceDir, ".trash", "runs");
+  await mkdir(trashDir, { recursive: true });
+  const trashedPath = join(trashDir, `${runId}-${new Date().toISOString().replace(/[:.]/gu, "-")}`);
+  await rename(source, trashedPath);
+  return { id: runId, trashedPath: relative(workspaceDir, trashedPath).replaceAll("\\", "/") };
 }
 
 export interface AgentActionView {

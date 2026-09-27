@@ -129,22 +129,25 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
     const actor = typeof event.from_agent === "string" ? event.from_agent : typeof event.from === "string" ? event.from : "Workflow";
     const failed = type.includes("fail") || type.includes("interrupted") || event.severity === "error";
     const kind = type === "operation_retry" ? "retry" : failed ? "error" : "milestone";
+    const operation = typeof event.operation === "string" ? event.operation : "operation";
+    const scope = typeof event.scope === "string" ? event.scope : "default";
+    const attempt = typeof event.nextAttempt === "number" ? event.nextAttempt : undefined;
     const node: WorkflowEvent = {
-      id: typeof event.id === "string" ? event.id : `bus-${type}-${at}`,
+      id: type === "operation_retry" ? `retry-${operation}-${scope}` : typeof event.id === "string" ? event.id : `bus-${type}-${at}`,
       kind,
-      status: failed ? "error" : "completed",
+      status: type === "operation_retry" ? "running" : failed ? "error" : "completed",
       actor,
-      label: typeof event.summary === "string" ? event.summary : type.replaceAll("_", " "),
+      label: type === "operation_retry" ? `Retrying ${toolTitles[operation] ?? operation.replaceAll("_", " ")}${scope === "default" ? "" : ` · ${scope}`}${attempt ? ` · attempt ${attempt}` : ""}` : typeof event.summary === "string" ? event.summary : type.replaceAll("_", " "),
       detail: text(event.requestedAction) ?? text(event.error),
       at,
       stage: typeof event.phase === "string" ? event.phase : undefined,
       artifactRefs: artifactRefs(event.artifactRefs),
     };
-    const ownerIndex = [...workflow].reverse().findIndex((candidate) => candidate.kind === "agent" && candidate.agent === actor && candidate.status === "running");
+    const ownerIndex = [...workflow].reverse().findIndex((candidate) => candidate.kind === "agent" && candidate.status === "running" && (actor === "Workflow" || candidate.agent === actor));
     if (ownerIndex >= 0) {
       const index = workflow.length - 1 - ownerIndex;
-      return workflow.map((candidate, candidateIndex) => candidateIndex === index && !candidate.children?.some((child) => child.id === node.id)
-        ? { ...candidate, children: sorted([...(candidate.children ?? []), node]) }
+      return workflow.map((candidate, candidateIndex) => candidateIndex === index
+        ? { ...candidate, children: sorted([...(candidate.children ?? []).filter((child) => child.id !== node.id), node]) }
         : candidate);
     }
     return workflow.some((candidate) => candidate.id === node.id) ? workflow : sorted([...workflow, node]);

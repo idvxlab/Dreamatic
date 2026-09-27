@@ -471,26 +471,32 @@ function primaryLifecycleEvents(records: Record<string, unknown>[], runId: strin
 }
 
 function busEvents(records: Record<string, unknown>[], runId: string): WorkflowEventView[] {
-  return records.flatMap((event, index) => {
+  const result = records.flatMap((event, index) => {
     try {
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       if (LIFECYCLE_TYPES.has(type)) return [];
       const failed = type.includes("fail") || type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";
       const refs = [...collectPaths(event.artifactRefs, runId)];
+      const operation = typeof event.operation === "string" ? event.operation : "operation";
+      const scope = typeof event.scope === "string" ? event.scope : "default";
+      const attempt = typeof event.nextAttempt === "number" ? event.nextAttempt : undefined;
       return [{
-        id: typeof event.id === "string" ? event.id : `bus-${index}`,
+        id: retry ? `retry-${operation}-${scope}` : typeof event.id === "string" ? event.id : `bus-${index}`,
         kind: retry ? "retry" as const : failed ? "error" as const : "milestone" as const,
-        status: failed ? "error" as const : "completed" as const,
+        status: retry ? "running" as const : failed ? "error" as const : "completed" as const,
         actor: typeof event.from_agent === "string" ? event.from_agent : typeof event.from === "string" ? event.from : "Workflow",
-        label: typeof event.summary === "string" ? event.summary : type.replaceAll("_", " "),
-        ...(typeof event.requestedAction === "string" ? { detail: event.requestedAction } : {}),
+        label: retry ? `Retrying ${toolLabel(operation)}${scope === "default" ? "" : ` · ${scope}`}${attempt ? ` · attempt ${attempt}` : ""}` : typeof event.summary === "string" ? event.summary : type.replaceAll("_", " "),
+        ...(typeof event.requestedAction === "string" ? { detail: event.requestedAction } : typeof event.error === "string" ? { detail: compact(event.error) } : {}),
         ...(typeof event.at === "string" ? { at: event.at } : {}),
         ...(typeof event.phase === "string" ? { stage: event.phase } : {}),
         ...(refs.length ? { artifactRefs: refs } : {}),
       }];
     } catch { return []; }
   });
+  const deduplicated = new Map<string, WorkflowEventView>();
+  for (const event of result) deduplicated.set(event.id, event);
+  return [...deduplicated.values()];
 }
 
 async function referenceAssets(workspaceDir: string, runId: string): Promise<Array<WorkflowAssetView & { at: string }>> {
@@ -517,25 +523,44 @@ async function rootSessionFiles(workspaceDir: string, runId: string): Promise<st
   return result;
 }
 
+async function runBriefEvent(runDir: string, runId: string): Promise<WorkflowEventView | undefined> {
+  const brief: Record<string, unknown> = await readFile(join(runDir, "brief.json"), "utf8").then((source) => record(JSON.parse(source) as unknown)).catch(() => ({}));
+  if (typeof brief.brief !== "string" || !brief.brief.trim()) return undefined;
+  return {
+    id: `${runId}-brief`,
+    kind: "message",
+    status: "completed",
+    actor: "User / CLI",
+    label: "Design brief",
+    detail: compact(brief.brief, 1_200),
+    ...(typeof brief.createdAt === "string" ? { at: brief.createdAt } : {}),
+  };
+}
+
 export async function workflowInventory(workspaceDir: string, runId: string): Promise<WorkflowEventView[]> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) throw new Error("Invalid run id");
   const runDir = join(workspaceDir, "runs", runId);
   const busRecords = await readBusRecords(runDir);
   const liveInvocations = lifecycleInvocations(busRecords, runId);
+  const hasLifecycleHistory = liveInvocations.length > 0;
   const invocations: SessionInvocation[] = [];
   const sessionsRoot = join(runDir, "sessions");
-  for (const agentEntry of await readdir(sessionsRoot, { withFileTypes: true }).catch(() => [])) {
-    if (!agentEntry.isDirectory()) continue;
-    const directory = join(sessionsRoot, agentEntry.name);
-    for (const file of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
-      if (file.isFile() && file.name.endsWith(".jsonl")) invocations.push(...await childInvocations(join(directory, file.name), agentEntry.name, runId));
+  if (!hasLifecycleHistory) {
+    for (const agentEntry of await readdir(sessionsRoot, { withFileTypes: true }).catch(() => [])) {
+      if (!agentEntry.isDirectory()) continue;
+      const directory = join(sessionsRoot, agentEntry.name);
+      for (const file of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+        if (file.isFile() && file.name.endsWith(".jsonl")) invocations.push(...await childInvocations(join(directory, file.name), agentEntry.name, runId));
+      }
     }
   }
   sortEvents(invocations);
 
-  const primary = (await Promise.all((await rootSessionFiles(workspaceDir, runId)).map((path) => primaryEvents(path, runId)))).flat();
+  const primary = hasLifecycleHistory
+    ? [await runBriefEvent(runDir, runId), ...primaryLifecycleEvents(busRecords, runId)].filter((event): event is WorkflowEventView => Boolean(event))
+    : (await Promise.all((await rootSessionFiles(workspaceDir, runId)).map((path) => primaryEvents(path, runId)))).flat();
   sortEvents(primary);
-  for (const liveTool of primaryLifecycleEvents(busRecords, runId)) {
+  for (const liveTool of hasLifecycleHistory ? [] : primaryLifecycleEvents(busRecords, runId)) {
     const persisted = primary.find((event) => event.id === liveTool.id);
     if (persisted) Object.assign(persisted, liveTool);
     else primary.push(liveTool);
@@ -594,7 +619,7 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
     const time = eventTime(milestone);
     const owner = allInvocations.find((invocation) => {
       const start = eventTime(invocation);
-      const end = Date.parse(invocation.endedAt ?? invocation.at ?? "");
+      const end = invocation.status === "running" ? Number.MAX_SAFE_INTEGER : Date.parse(invocation.endedAt ?? invocation.at ?? "");
       return time >= start && time <= (Number.isFinite(end) ? end + 2_000 : Number.MAX_SAFE_INTEGER);
     });
     if (owner) owner.children.push(milestone);

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { readCanvasState, writeCanvasState } from "../dist/canvas-store.js";
-import { assetInventory, runAgentSessions, runInventory } from "../dist/run-store.js";
+import { assetInventory, deleteRun, renameRun, runAgentSessions, runInventory } from "../dist/run-store.js";
 import { workflowInventory } from "../dist/workflow-store.js";
 
 test("canvas state and run assets share one durable Run", async () => {
@@ -20,7 +20,11 @@ test("canvas state and run assets share one durable Run", async () => {
     await writeFile(join(runDir, "brief.json"), JSON.stringify({ createdAt: "2026-01-01T00:00:00.000Z", brief: "Sample product" }));
     await writeFile(join(runDir, "run-state.json"), JSON.stringify({ status: "active", updatedAt: "2026-01-01T00:00:01.000Z", stages: { research: "completed", design: "in_progress" } }));
     await writeFile(join(runDir, "bus.jsonl"), [
+      { type: "agent_started", invocationId: "spawn-research", agent: "design-research", task: "Research the audience and references", status: "running", at: "2026-01-01T00:00:00.500Z" },
+      { type: "tool_started", invocationId: "spawn-research", agent: "design-research", toolCallId: "tool-1", toolName: "web_search", input: "product reference", status: "running", at: "2026-01-01T00:00:02.000Z" },
+      { type: "tool_finished", invocationId: "spawn-research", agent: "design-research", toolCallId: "tool-1", toolName: "web_search", output: "Three references found", status: "completed", at: "2026-01-01T00:00:03.000Z" },
       { id: "evt-1", type: "research_done", phase: "research", summary: "References ready", artifactRefs: ["runs/sample-run/research/assets/ref.png"], at: "2026-01-01T00:00:01.000Z" },
+      { type: "agent_finished", invocationId: "spawn-research", agent: "design-research", output: "Research complete with traceable references.", status: "completed", at: "2026-01-01T00:00:05.000Z" },
       { type: "agent_started", invocationId: "spawn-custom", agent: "visual-historian", task: "Check the visual lineage", status: "running", at: "2026-01-01T00:00:06.000Z" },
       { type: "tool_started", invocationId: "spawn-custom", agent: "visual-historian", toolCallId: "custom-tool", toolName: "view_image", input: "{}", status: "running", at: "2026-01-01T00:00:06.200Z" },
       { type: "tool_finished", invocationId: "spawn-custom", agent: "visual-historian", toolCallId: "custom-tool", toolName: "view_image", output: "inspected", status: "completed", at: "2026-01-01T00:00:06.800Z" },
@@ -86,6 +90,13 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.match(agentCards[1]?.output ?? "", /Visual lineage checked live/);
     assert.equal(agentCards[1]?.children?.filter((event) => event.id === "custom-tool").length, 1);
     assert.equal(agentCards[1]?.children?.find((event) => event.id === "custom-tool")?.status, "completed");
+    await renameRun(workspace, "sample-run", "Renamed design project");
+    assert.equal((await runInventory(workspace))[0]?.title, "Renamed design project");
+    await writeFile(join(runDir, "run-state.json"), JSON.stringify({ status: "complete", updatedAt: "2026-01-01T00:00:08.000Z", stages: { research: "completed", design: "completed" } }));
+    const deleted = await deleteRun(workspace, "sample-run");
+    assert.match(deleted.trashedPath, /^\.trash\/runs\/sample-run-/);
+    assert.equal(await stat(join(workspace, "runs", "sample-run")).then(() => true).catch(() => false), false);
+    assert.equal(await stat(join(workspace, deleted.trashedPath)).then(() => true).catch(() => false), true);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

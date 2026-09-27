@@ -5,7 +5,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
-import { assetInventory, runAgentSessions, runInventory } from "./run-store.js";
+import { assetInventory, deleteRun, renameRun, runAgentSessions, runInventory } from "./run-store.js";
 import { workflowInventory } from "./workflow-store.js";
 import { SessionRegistry } from "./session-registry.js";
 
@@ -260,6 +260,17 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && url.pathname === "/api/runs") {
       json(response, 200, await runInventory(workspaceDir));
+      return;
+    }
+    const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+    if (request.method === "PATCH" && runMatch?.[1]) {
+      const input = await body(request) as { title?: unknown };
+      if (typeof input.title !== "string") throw new Error("Project title is required");
+      json(response, 200, await renameRun(workspaceDir, decodeURIComponent(runMatch[1]), input.title));
+      return;
+    }
+    if (request.method === "DELETE" && runMatch?.[1]) {
+      json(response, 200, await deleteRun(workspaceDir, decodeURIComponent(runMatch[1])));
       return;
     }
     const runAssetsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/assets$/);

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createDreamaticSession, dreamaticSessionFailure, prepareDreamaticPrompt, withRetry, type DreamaticPromptImage } from "@dreamatic/design-agent";
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { readFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
@@ -15,6 +16,7 @@ interface CliOptions {
   interactive: boolean;
   help: boolean;
   workspace?: string;
+  resumeRunId?: string;
 }
 
 const MIME_TYPES = new Map([
@@ -33,6 +35,7 @@ function parseArgs(args: string[]): CliOptions {
   let interactive = false;
   let help = false;
   let workspace: string | undefined;
+  let resumeRunId: string | undefined;
 
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index]!;
@@ -48,6 +51,11 @@ function parseArgs(args: string[]): CliOptions {
       const path = args[++index];
       if (!path) throw new Error("--workspace requires a directory");
       workspace = path;
+    } else if (value === "--resume") {
+      const runId = args[++index];
+      if (!runId) throw new Error("--resume requires a Run id");
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) throw new Error("Invalid Run id");
+      resumeRunId = runId;
     } else if (value === "--json") {
       json = true;
     } else if (value === "--interactive") {
@@ -64,7 +72,7 @@ function parseArgs(args: string[]): CliOptions {
     }
   }
 
-  return { task: task.join(" ").trim(), images, persona, json, interactive, help, ...(workspace ? { workspace } : {}) };
+  return { task: task.join(" ").trim(), images, persona, json, interactive, help, ...(workspace ? { workspace } : {}), ...(resumeRunId ? { resumeRunId } : {}) };
 }
 
 function printHelp(): void {
@@ -72,15 +80,42 @@ function printHelp(): void {
   stdout.write(`Usage:\n`);
   stdout.write(`  dreamatic "设计一个展览主视觉和海报系统"\n`);
   stdout.write(`  dreamatic --image reference.png "基于参考图设计品牌海报"\n`);
+  stdout.write(`  dreamatic --resume <runId>        Resume an interrupted Run\n`);
   stdout.write(`  dreamatic                         Start an interactive session\n`);
   stdout.write(`  Get-Content brief.md | dreamatic  Read a task from stdin\n\n`);
   stdout.write(`Options:\n`);
   stdout.write(`  -i, --image <path>       Attach a reference image; repeatable\n`);
   stdout.write(`  -p, --persona <name>     Persona to run; default design-primary\n`);
   stdout.write(`      --workspace <path>   Override the runtime workspace directory\n`);
+  stdout.write(`      --resume <runId>     Reopen the latest CLI session for an interrupted Run\n`);
   stdout.write(`      --interactive        Continue interactively after the first task\n`);
   stdout.write(`      --json               Emit newline-delimited Pi events\n`);
   stdout.write(`  -h, --help               Show this help\n`);
+}
+
+async function fileContains(path: string, needle: string): Promise<boolean> {
+  const stream = createReadStream(path, { encoding: "utf8" });
+  let tail = "";
+  for await (const chunk of stream) {
+    const value = tail + String(chunk);
+    if (value.includes(needle)) return true;
+    tail = value.slice(-Math.max(needle.length - 1, 0));
+  }
+  return false;
+}
+
+async function resumableSessionFile(workspaceDir: string, runId: string): Promise<string> {
+  const directory = join(workspaceDir, "sessions", "cli");
+  const matches: Array<{ path: string; modifiedAt: number }> = [];
+  for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+    if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
+    const path = join(directory, entry.name);
+    if (!await fileContains(path, runId).catch(() => false)) continue;
+    matches.push({ path, modifiedAt: (await stat(path)).mtimeMs });
+  }
+  matches.sort((a, b) => b.modifiedAt - a.modifiedAt);
+  if (!matches[0]) throw new Error(`No persisted CLI session found for Run ${runId}`);
+  return matches[0].path;
 }
 
 async function stdinText(): Promise<string> {
@@ -161,6 +196,9 @@ async function main(): Promise<void> {
   const configuredWorkspace = options.workspace ?? process.env.DREAMATIC_WORKSPACE ?? join(repoRoot, "workspace");
   const workspaceDir = isAbsolute(configuredWorkspace) ? configuredWorkspace : resolve(repoRoot, configuredWorkspace);
   let task = options.task;
+  if (options.resumeRunId && !task) {
+    task = `Resume the existing Dreamatic Run ${options.resumeRunId}. Do not call run_init and do not create a new Run. Read run-state.json, bus.jsonl, the current todo, and durable stage outputs; continue from the first incomplete stage. Reuse completed work and existing child sessions. Finish critique, any permitted repair, and export unless the Run is already complete.`;
+  }
   if (!task && !stdin.isTTY) task = await stdinText();
   const shouldInteract = options.interactive || (!task && stdin.isTTY);
 
@@ -169,6 +207,7 @@ async function main(): Promise<void> {
     workspaceDir,
     persona: options.persona,
     sessionDir: join(workspaceDir, "sessions", "cli"),
+    ...(options.resumeRunId ? { sessionFile: await resumableSessionFile(workspaceDir, options.resumeRunId) } : {}),
   });
   const unsubscribe = session.subscribe(eventRenderer(options.json));
   const abort = () => void session.abort();

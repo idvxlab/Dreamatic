@@ -1,6 +1,6 @@
 import { Cloud, Grid2X2, Menu, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createSession, getHealth, getRuntimeConfig, getWorkflow, listAssets, listRuns, listSessions, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
+import { createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
 import { Canvas } from "./components/Canvas";
 import { Sidebar } from "./components/Sidebar";
@@ -136,6 +136,31 @@ export function App() {
     }
   }
 
+  async function renameProject(runId: string, title: string) {
+    try {
+      await renameRun(runId, title);
+      setRuns((current) => current.map((run) => run.id === runId ? { ...run, title } : run));
+      setNotice("Project renamed");
+      window.setTimeout(() => setNotice(undefined), 2200);
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function deleteProject(runId: string) {
+    try {
+      await deleteRun(runId);
+      const [nextRuns, nextAssets] = await Promise.all([listRuns(), listAssets()]);
+      setRuns(nextRuns);
+      setAssets(nextAssets);
+      if (activeRunId === runId) setActiveRunId(nextRuns[0]?.id);
+      setNotice("Project moved to local Trash");
+      window.setTimeout(() => setNotice(undefined), 2600);
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function shareWorkspace() {
     await navigator.clipboard.writeText(window.location.href);
     setNotice("Local workspace link copied");
@@ -213,28 +238,26 @@ export function App() {
   return (
     <div className={`app-shell ${panelOpen ? "panel-open" : "panel-collapsed"} ${navigationOpen ? "navigation-open" : ""}`}>
       <Sidebar
-        sessions={sessions}
         runs={runs}
-        activeId={activeId}
         activeRunId={activeRunId}
         onCreate={() => void addSession()}
-        onSelect={(id) => { setActiveId(id); setActiveRunId(undefined); setNavigationOpen(false); }}
         onSelectRun={(id) => {
           setActiveRunId(id);
           const linkedSession = runs.find((run) => run.id === id)?.sessionId;
           if (linkedSession && sessions.some((session) => session.id === linkedSession)) setActiveId(linkedSession);
           setNavigationOpen(false);
         }}
+        onRenameRun={(id, title) => void renameProject(id, title)}
+        onDeleteRun={(id) => void deleteProject(id)}
         onSettings={() => void openSettings()}
         creating={creating}
       />
       <section className="workspace">
         <header className="workspace-header">
           <div><button className="navigation-trigger" aria-label="Open project navigation" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><span className="project-kicker">Project</span><h2>{activeRun?.title ?? active?.title ?? (loading ? "Connecting…" : "Design workspace")}</h2></div>
-          <div className="header-actions"><span className="saved"><Cloud size={14} /> Saved locally</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> Assets <em>{visibleAssets.length}</em></button><button onClick={() => void shareWorkspace()}><Share2 size={15} /> Share</button><button className="icon-button" title="Hide agent panel" onClick={() => setPanelOpen(false)}><PanelRightClose size={16} /></button></div>
+          <div className="header-actions"><span className="saved"><Cloud size={14} /> Saved locally</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> Assets <em>{visibleAssets.length}</em></button><button onClick={() => void shareWorkspace()}><Share2 size={15} /> Share</button><button className="icon-button" title={panelOpen ? "Hide agent panel" : "Show agent panel"} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
         </header>
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
-        {!panelOpen && <button className="open-agent" onClick={() => setPanelOpen(true)}><PanelRightOpen size={15} /> Open agent</button>}
         {assetsOpen && (
           <aside className="asset-drawer">
             <header><div><Grid2X2 size={16} /><span><strong>Project assets</strong><small>{visibleAssets.length} files in this project</small></span></div><button title="Close assets" onClick={() => setAssetsOpen(false)}><X size={15} /></button></header>

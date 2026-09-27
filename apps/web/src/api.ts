@@ -38,6 +38,18 @@ export async function listRuns(): Promise<RunView[]> {
   return parse(await fetch("/api/runs"));
 }
 
+export async function renameRun(runId: string, title: string): Promise<{ id: string; title: string }> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  }));
+}
+
+export async function deleteRun(runId: string): Promise<{ id: string; trashedPath: string }> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" }));
+}
+
 export async function listAgentSessions(runId: string): Promise<AgentSession[]> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/agent-sessions`));
 }
