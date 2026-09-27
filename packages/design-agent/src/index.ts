@@ -1,0 +1,11 @@
+export { compactVisualSession, createDreamaticExtension } from "./extension.js";
+export type { DreamaticExtensionOptions } from "./extension.js";
+export { createDreamaticSession, dreamaticSessionFailure, DREAMATIC_ACTIVE_TOOLS } from "./runtime.js";
+export type { CreateDreamaticSessionOptions } from "./runtime.js";
+export { prepareDreamaticPrompt } from "./prompt.js";
+export type { DreamaticPromptImage, PersistedReference } from "./prompt.js";
+export { isRetryableError, withRetry } from "./retry.js";
+export type { RetryNotice, RetryOptions } from "./retry.js";
+export { discoverResearchAssets, fetchResearchAsset, researchFetch, validateResearchAssets, webSearch } from "./research.js";
+export { createModelImagePreview } from "./image-preview.js";
+export type { ModelImagePreview } from "./image-preview.js";
