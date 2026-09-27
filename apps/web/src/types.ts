@@ -73,6 +73,29 @@ export interface TimelineItem {
   retryCount?: number;
 }
 
+export type WorkflowKind = "message" | "tool" | "agent" | "references" | "milestone" | "retry" | "error";
+export type WorkflowStatus = "running" | "completed" | "interrupted" | "error" | "info";
+
+export interface WorkflowEvent {
+  id: string;
+  kind: WorkflowKind;
+  status: WorkflowStatus;
+  actor: string;
+  label: string;
+  detail?: string;
+  at?: string;
+  endedAt?: string;
+  stage?: string;
+  tool?: string;
+  input?: string;
+  output?: string;
+  artifactRefs?: string[];
+  assets?: Array<{ path: string; label: string }>;
+  children?: WorkflowEvent[];
+  actionCount?: number;
+  agent?: string;
+}
+
 export interface CanvasElementState {
   id: string;
   kind: "image" | "text" | "group";

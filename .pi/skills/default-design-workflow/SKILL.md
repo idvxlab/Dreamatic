@@ -40,6 +40,12 @@ Each child must load this workflow Skill and its detailed default stage Skill:
 - `design-designer` loads `default-production-stage`.
 - `design-critic` loads `default-critique-stage`.
 
+These four personas define the default path, not a fixed Agent-card layout or a
+limit on delegation. Primary may call any additional registered specialist when
+the concrete brief requires it. Every child invocation that belongs to the Run
+must pass the current `runId`; each real `spawn_agent` call is one distinct,
+persisted workflow invocation, including repeated calls to the same persona.
+
 Primary must include both Skill names in each child task. The stage Skills own
 the detailed default file schemas, research budget, production procedure, and
 critique rules. The base personas only provide reusable role behavior.
@@ -443,4 +449,3 @@ If a subagent returns `Error: sub-agent ... did not complete`, that phase is not
 done. Do not advance to the next phase based only on partial files. Retry or
 resume the same phase once when the cause is transient; otherwise report the
 blocked phase and the missing canonical bus message.
-

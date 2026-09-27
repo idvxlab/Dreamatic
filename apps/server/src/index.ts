@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, watch } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
@@ -6,6 +6,7 @@ import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
 import { assetInventory, runAgentSessions, runInventory } from "./run-store.js";
+import { workflowInventory } from "./workflow-store.js";
 import { SessionRegistry } from "./session-registry.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -38,6 +39,66 @@ const CONTENT_TYPES = new Map([
 function json(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(value));
+}
+
+async function streamWorkflow(request: IncomingMessage, response: ServerResponse, unsafeRunId: string): Promise<void> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(unsafeRunId)) throw new Error("Invalid run id");
+  const runId = unsafeRunId;
+  const runDir = join(workspaceDir, "runs", runId);
+  const expectedRunsRoot = `${resolve(workspaceDir, "runs")}${sep}`;
+  if (!resolve(runDir).startsWith(expectedRunsRoot)) throw new Error("Invalid run path");
+  const info = await stat(runDir);
+  if (!info.isDirectory()) throw new Error("Run not found");
+  const busPath = join(runDir, "bus.jsonl");
+  const initialLines = (await readFile(busPath, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
+  let seen = initialLines.length;
+  let closed = false;
+  let flushing = false;
+  let flushAgain = false;
+  response.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  const send = (value: unknown) => {
+    if (!closed) response.write(`data: ${JSON.stringify(value)}\n\n`);
+  };
+  send({ type: "snapshot", workflow: await workflowInventory(workspaceDir, runId) });
+
+  const flush = async (): Promise<void> => {
+    if (flushing) {
+      flushAgain = true;
+      return;
+    }
+    flushing = true;
+    do {
+      flushAgain = false;
+      const lines = (await readFile(busPath, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
+      if (lines.length < seen) seen = 0;
+      for (const line of lines.slice(seen)) {
+        try { send({ type: "workflow_event", event: JSON.parse(line) as unknown }); } catch { /* Retry incomplete appends on the next filesystem change. */ }
+      }
+      seen = lines.length;
+    } while (flushAgain && !closed);
+    flushing = false;
+  };
+  await flush();
+  const watcher = watch(runDir, { persistent: false }, (_eventType, filename) => {
+    if (!filename || filename.toString() === "bus.jsonl") void flush();
+  });
+  const heartbeat = setInterval(() => {
+    if (!closed) response.write(": heartbeat\n\n");
+  }, 15_000);
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(heartbeat);
+    watcher.close();
+    response.end();
+  };
+  request.once("close", cleanup);
+  response.once("close", cleanup);
 }
 
 async function body(request: IncomingMessage): Promise<unknown> {
@@ -209,6 +270,16 @@ const server = createServer(async (request, response) => {
     const agentSessionsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/agent-sessions$/);
     if (request.method === "GET" && agentSessionsMatch?.[1]) {
       json(response, 200, await runAgentSessions(workspaceDir, decodeURIComponent(agentSessionsMatch[1])));
+      return;
+    }
+    const workflowMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/workflow$/);
+    if (request.method === "GET" && workflowMatch?.[1]) {
+      json(response, 200, await workflowInventory(workspaceDir, decodeURIComponent(workflowMatch[1])));
+      return;
+    }
+    const workflowStreamMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/workflow\/stream$/);
+    if (request.method === "GET" && workflowStreamMatch?.[1]) {
+      await streamWorkflow(request, response, decodeURIComponent(workflowStreamMatch[1]));
       return;
     }
     const canvasMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/canvas$/);

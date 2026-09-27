@@ -1,6 +1,7 @@
 import { ArrowUp, Bot, Check, ChevronDown, Circle, ExternalLink, ImagePlus, LoaderCircle, Paperclip, WandSparkles, Wrench, X } from "lucide-react";
 import { useRef, useState } from "react";
-import type { AgentSession, Asset, TimelineItem } from "../types";
+import { assetUrl } from "../asset-url";
+import type { TimelineItem, WorkflowEvent } from "../types";
 
 export interface PendingImage {
   name: string;
@@ -10,10 +11,9 @@ export interface PendingImage {
 
 interface AgentPanelProps {
   timeline: TimelineItem[];
+  workflow?: WorkflowEvent[];
   streamingText: string;
   running: boolean;
-  references?: Asset[];
-  agentSessions?: AgentSession[];
   onSend: (text: string, images: PendingImage[]) => void;
 }
 
@@ -23,38 +23,63 @@ const SUGGESTIONS = [
   "把我的品牌资料整理成一套视觉方向",
 ];
 
-function toolLabel(value: string): string {
-  return value.replaceAll("_", " ");
+function timeLabel(value?: string): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? undefined : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function AgentSessionCard({ session }: { session: AgentSession }) {
-  return (
-    <details className={`agent-session-card ${session.status}`}>
-      <summary>
-        <span className="session-agent-icon"><Bot size={14} /></span>
-        <span><strong>{session.title}</strong><small>{session.actionCount} actions · {session.status}</small></span>
-        <ChevronDown size={14} />
-      </summary>
-      <div className="agent-session-body">
-        {session.task && <section><h4>Assigned task</h4><p>{session.task}</p></section>}
-        {session.followUps?.map((task, index) => <section key={`${session.id}-follow-${index}`}><h4>Follow-up {index + 1}</h4><p>{task}</p></section>)}
-        {session.actions.length > 0 && <section><h4>Actions{session.actionCount > session.actions.length ? ` · latest ${session.actions.length} of ${session.actionCount}` : ""}</h4><div className="session-actions">{session.actions.map((action) => (
-          <details className={`session-action ${action.status}`} key={action.id}>
-            <summary><Wrench size={11} /><span>{toolLabel(action.tool)}</span><small>{action.status}</small><ChevronDown size={11} /></summary>
-            {(action.input || action.output) && <div>{action.input && <><b>Input</b><pre>{action.input}</pre></>}{action.output && <><b>Result</b><pre>{action.output}</pre></>}</div>}
-          </details>
-        ))}</div></section>}
-        {session.output && <section><h4>Agent output</h4><p>{session.output}</p></section>}
-        {session.errors.length > 0 && <section className="session-errors"><h4>Errors and interruptions</h4>{session.errors.map((error, index) => <p key={`${session.id}-error-${index}`}>{error}</p>)}</section>}
+function ArtifactLinks({ paths = [] }: { paths?: string[] }) {
+  if (!paths.length) return null;
+  const images = paths.filter((path) => /\.(png|jpe?g|webp|gif)$/i.test(path));
+  return <section className="workflow-artifacts"><h4>Artifacts</h4>
+    {images.length > 0 && <div className="workflow-image-grid">{images.map((path) => <a key={path} href={assetUrl(path)} target="_blank" rel="noreferrer"><img src={assetUrl(path)} alt="" /><span>{path.split("/").at(-1)}</span></a>)}</div>}
+    <div className="workflow-file-links">{paths.filter((path) => !images.includes(path)).map((path) => <a key={path} href={assetUrl(path)} target="_blank" rel="noreferrer">{path}<ExternalLink size={10} /></a>)}</div>
+  </section>;
+}
+
+function WorkflowDetails({ event }: { event: WorkflowEvent }) {
+  return <div className="workflow-details">
+    {event.detail && <p>{event.detail}</p>}
+    {event.input && <section><h4>Input</h4><pre>{event.input}</pre></section>}
+    {event.output && event.kind !== "agent" && <section><h4>Result</h4><pre>{event.output}</pre></section>}
+    <ArtifactLinks paths={event.artifactRefs} />
+  </div>;
+}
+
+function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?: boolean }) {
+  const at = timeLabel(event.at);
+  const [agentOpen, setAgentOpen] = useState(event.status === "running");
+  if (event.kind === "agent") return <div className={`workflow-node workflow-agent-node ${event.status} ${nested ? "nested" : ""}`}>
+    <span className="workflow-dot"><Bot size={13} /></span>
+    <details className="workflow-agent-card" open={agentOpen} onToggle={(toggleEvent) => setAgentOpen(toggleEvent.currentTarget.open)}>
+      <summary><span><strong>{event.label}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} actions · {event.status}{at ? ` · ${at}` : ""}</small></span><ChevronDown size={14} /></summary>
+      <div className="workflow-agent-body">
+        {event.detail && <section className="workflow-assignment"><h4>Assigned by primary agent</h4><p>{event.detail}</p></section>}
+        {event.children?.length ? <div className="workflow-stream nested-stream">{event.children.map((child) => <WorkflowNode event={child} nested key={child.id} />)}</div> : null}
+        {event.output && <section className="workflow-agent-output"><h4>Agent output</h4><p>{event.output}</p></section>}
       </div>
     </details>
-  );
+  </div>;
+
+  if (event.kind === "references") return <div className={`workflow-node workflow-reference-node ${nested ? "nested" : ""}`}>
+    <span className="workflow-dot"><ImagePlus size={13} /></span>
+    <details className="workflow-reference-card"><summary><span><strong>{event.label}</strong><small>{event.assets?.length ?? 0} images{at ? ` · ${at}` : ""}</small></span><ChevronDown size={14} /></summary>
+      <div><p>{event.detail}</p><div className="workflow-reference-grid">{event.assets?.map((asset) => <a key={asset.path} href={assetUrl(asset.path)} target="_blank" rel="noreferrer"><img src={assetUrl(asset.path)} alt="" /><span>{asset.label}<ExternalLink size={10} /></span></a>)}</div></div>
+    </details>
+  </div>;
+
+  const expandable = Boolean(event.detail || event.input || event.output || event.artifactRefs?.length);
+  const heading = <span className="workflow-label"><strong>{event.label}</strong><small>{event.actor}{event.stage ? ` · ${event.stage}` : ""}{at ? ` · ${at}` : ""}</small></span>;
+  return <div className={`workflow-node kind-${event.kind} ${event.status} ${nested ? "nested" : ""}`}>
+    <span className="workflow-dot">{event.kind === "tool" ? <Wrench size={11} /> : event.status === "running" ? <LoaderCircle className="spin" size={13} /> : event.status === "error" || event.status === "interrupted" ? <X size={12} /> : <Check size={12} />}</span>
+    {expandable ? <details className="workflow-event-card"><summary>{heading}<ChevronDown size={12} /></summary><WorkflowDetails event={event} /></details> : <div className="workflow-event-label">{heading}</div>}
+  </div>;
 }
 
-export function AgentPanel({ timeline, streamingText, running, references = [], agentSessions = [], onSend }: AgentPanelProps) {
+export function AgentPanel({ timeline, workflow = [], streamingText, running, onSend }: AgentPanelProps) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
-  const [referencesOpen, setReferencesOpen] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
 
   async function addFiles(files: FileList | null) {
@@ -86,7 +111,7 @@ export function AgentPanel({ timeline, streamingText, running, references = [], 
         <span className="agent-mode">Auto workflow</span>
       </header>
       <div className="agent-scroll">
-        {timeline.length === 0 && agentSessions.length === 0 && !streamingText ? (
+        {timeline.length === 0 && workflow.length === 0 && !streamingText ? (
           <div className="agent-intro">
             <p className="eyebrow">Start with an outcome</p>
             <h2>What should we design?</h2>
@@ -94,33 +119,15 @@ export function AgentPanel({ timeline, streamingText, running, references = [], 
             <div className="suggestions">{SUGGESTIONS.map((item) => <button key={item} onClick={() => setText(item)}>{item}</button>)}</div>
           </div>
         ) : (
-          <div className="timeline">
-            {agentSessions.length > 0 && <section className="agent-sessions">
-              <header><span><strong>Stage sessions</strong><small>Pi child-agent work, inspectable on demand</small></span><em>{agentSessions.length}</em></header>
-              <div>{agentSessions.map((session) => <AgentSessionCard key={session.id} session={session} />)}</div>
-            </section>}
-            {references.length > 0 && (
-              <section className={`reference-block ${referencesOpen ? "open" : ""}`}>
-                <button className="reference-summary" onClick={() => setReferencesOpen((open) => !open)} aria-expanded={referencesOpen}>
-                  <span><ImagePlus size={14} /><span><strong>Reference library</strong><small>{references.length} image{references.length === 1 ? "" : "s"} collected for this Run</small></span></span>
-                  <ChevronDown size={15} />
-                </button>
-                {referencesOpen && <div className="reference-grid">{references.map((asset) => (
-                  <a key={asset.path} href={`/assets/${encodeURIComponent(asset.path)}`} target="_blank" rel="noreferrer">
-                    <img src={`/assets/${encodeURIComponent(asset.path)}`} alt="" />
-                    <span>{asset.label}<ExternalLink size={11} /></span>
-                  </a>
-                ))}</div>}
-              </section>
-            )}
-            {timeline.map((item) => {
+          <div>
+            {workflow.length > 0 ? <div className="workflow-stream">{workflow.map((event) => <WorkflowNode event={event} key={event.id} />)}</div> : <div className="timeline">{timeline.map((item) => {
               const expandable = Boolean(item.detail || item.artifactRefs?.length);
               const heading = <span className="timeline-label"><strong>{item.label}{item.retryCount && item.retryCount > 1 ? ` · ${item.retryCount} attempts` : ""}</strong>{item.stage && <span className="stage-pill">{item.stage}</span>}</span>;
               return <div className={`timeline-item ${item.kind}`} key={item.id}>
                 <span className="timeline-dot">{item.active ? <LoaderCircle className="spin" size={14} /> : item.kind === "error" ? <X size={13} /> : item.kind === "result" ? <Check size={13} /> : <Circle size={9} fill="currentColor" />}</span>
-                {expandable ? <details className="timeline-details"><summary>{heading}<ChevronDown size={12} /></summary><div className="timeline-expanded">{item.detail && <p>{item.detail}</p>}{item.artifactRefs?.length && <section><b>Artifacts</b>{item.artifactRefs.map((path) => <a key={path} href={`/assets/${encodeURIComponent(path)}`} target="_blank" rel="noreferrer">{path}<ExternalLink size={10} /></a>)}</section>}</div></details> : <div className="timeline-heading">{heading}</div>}
+                {expandable ? <details className="timeline-details"><summary>{heading}<ChevronDown size={12} /></summary><div className="timeline-expanded">{item.detail && <p>{item.detail}</p>}<ArtifactLinks paths={item.artifactRefs} /></div></details> : <div className="timeline-heading">{heading}</div>}
               </div>;
-            })}
+            })}</div>}
             {streamingText && <div className="assistant-copy">{streamingText}</div>}
           </div>
         )}

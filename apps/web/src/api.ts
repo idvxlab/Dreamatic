@@ -1,4 +1,4 @@
-import type { AgentSession, Asset, CanvasState, RunView, SessionView } from "./types";
+import type { AgentSession, Asset, CanvasState, RunView, SessionView, WorkflowEvent } from "./types";
 
 async function parse<T>(response: Response): Promise<T> {
   const value = (await response.json()) as T | { error: string };
@@ -40,6 +40,20 @@ export async function listRuns(): Promise<RunView[]> {
 
 export async function listAgentSessions(runId: string): Promise<AgentSession[]> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/agent-sessions`));
+}
+
+export async function getWorkflow(runId: string): Promise<WorkflowEvent[]> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/workflow`));
+}
+
+export type WorkflowStreamMessage =
+  | { type: "snapshot"; workflow: WorkflowEvent[] }
+  | { type: "workflow_event"; event: Record<string, unknown> };
+
+export function streamWorkflow(runId: string, onEvent: (event: WorkflowStreamMessage) => void): () => void {
+  const source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/workflow/stream`);
+  source.onmessage = (message) => onEvent(JSON.parse(message.data) as WorkflowStreamMessage);
+  return () => source.close();
 }
 
 export interface HealthView {

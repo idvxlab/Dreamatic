@@ -23,6 +23,7 @@ import { isRetryableStatus, retryAfterMs, RetryableHttpError, withRetry, type Re
 
 export interface DreamaticExtensionOptions {
   workspaceDir: string;
+  parentInvocation?: { id: string; agent: string; runId?: string };
 }
 
 const IMAGE_MIME = new Map([
@@ -174,6 +175,32 @@ async function durableRetryNotice(
     error: notice.error,
     at: new Date().toISOString(),
   })}\n`, "utf8");
+}
+
+async function appendWorkflowLifecycleEvent(
+  workspaceDir: string,
+  runId: string,
+  event: Record<string, unknown>,
+): Promise<void> {
+  const path = resolveInside(workspaceDir, join("runs", safeRunId(runId), "bus.jsonl"));
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(path, `${JSON.stringify({ runId: safeRunId(runId), ...event, at: new Date().toISOString() })}\n`, "utf8");
+}
+
+function workflowObservation(value: unknown, limit = 1_200): string {
+  let text: string;
+  try {
+    text = JSON.stringify(omitPersistedImagePayload(value));
+  } catch {
+    text = String(value);
+  }
+  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
+}
+
+function workflowReferencePath(value: unknown, runId: string): string | undefined {
+  const source = workflowObservation(value, 12_000).replaceAll("\\", "/");
+  const escapedRunId = runId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return source.match(new RegExp(`runs/${escapedRunId}/research/assets/[^\"'\\s]+\\.(?:png|jpe?g|webp|gif)`, "iu"))?.[0];
 }
 
 async function resilientFetch(
@@ -443,7 +470,39 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
   const comparedSets = new Set<string>();
   return (pi: ExtensionAPI) => {
     const profile = dreamaticProviderFromEnv();
+    let activeRunId = options.parentInvocation?.runId;
     if (profile) pi.registerProvider(profile.providerId, profile.registration);
+    if (!options.parentInvocation) {
+      pi.on("tool_execution_start", async (event) => {
+        const args = event.args && typeof event.args === "object" ? event.args as Record<string, unknown> : {};
+        if (typeof args.runId === "string") activeRunId = safeRunId(args.runId);
+        if (!activeRunId || ["run_init", "spawn_agent"].includes(event.toolName)) return;
+        await appendWorkflowLifecycleEvent(workspaceDir, activeRunId, {
+          type: "primary_tool_started",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          input: workflowObservation(event.args, 900),
+          status: "running",
+          from: "design-primary",
+        });
+      });
+      pi.on("tool_execution_end", async (event) => {
+        if (event.toolName === "run_init" && !event.isError) {
+          const match = workflowObservation(event.result, 4_000).match(/"runId"\s*:\s*"([a-zA-Z0-9][a-zA-Z0-9._-]{0,127})"/u);
+          if (match?.[1]) activeRunId = safeRunId(match[1]);
+        }
+        if (!activeRunId || ["run_init", "spawn_agent"].includes(event.toolName)) return;
+        await appendWorkflowLifecycleEvent(workspaceDir, activeRunId, {
+          type: "primary_tool_finished",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          output: workflowObservation(event.result, 1_200),
+          isError: event.isError,
+          status: event.isError ? "error" : "completed",
+          from: "design-primary",
+        });
+      });
+    }
     // Generated images remain in the durable Pi session, but only the newest
     // visual tool observation is sent back to the model on later turns. Paths
     // and textual metadata remain available, so older images can be reloaded
@@ -569,27 +628,31 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "spawn_agent",
       label: "Spawn design agent",
-      description: "Run one registered Dreamatic design persona in an isolated Pi session and return its final response.",
+      description: "Run any registered Dreamatic persona in an isolated Pi session and return its final response. Pass runId for every invocation that belongs to a Run so the session is persisted and appears in the workflow stream.",
       parameters: Type.Object({
         agent: Type.String({ description: "Persona name such as design-research, design-planner, design-designer, or design-critic" }),
         task: Type.String(),
         runId: Type.Optional(Type.String({ description: "Existing Dreamatic Run id. Required for durable stage sessions and completion validation." })),
       }),
-      async execute(_id, params, signal, onUpdate, context) {
+      async execute(invocationId, params, signal, onUpdate, context) {
         if (!context.model) throw new Error("The parent session has no active model to pass to the design agent");
         const personaPath = join(context.cwd, ".pi", "agents", `${safeRunId(params.agent)}.md`);
         const source = await readFile(personaPath, "utf8");
         const { frontmatter, body } = parseFrontmatter<PersonaFrontmatter>(source);
+        const inferredRunId = params.runId ? safeRunId(params.runId) : runIdFromTask(params.task);
+        if (inferredRunId) activeRunId = inferredRunId;
         const childLoader = new DefaultResourceLoader({
           cwd: context.cwd,
           agentDir: getAgentDir(),
           systemPromptOverride: () => body,
           appendSystemPromptOverride: (base) => base,
-          extensionFactories: [createDreamaticExtension(options)],
+          extensionFactories: [createDreamaticExtension({
+            ...options,
+            parentInvocation: { id: invocationId, agent: params.agent, ...(inferredRunId ? { runId: inferredRunId } : {}) },
+          })],
         });
         await childLoader.reload();
         const tools = personaTools(frontmatter.allowed_tools);
-        const inferredRunId = params.runId ? safeRunId(params.runId) : runIdFromTask(params.task);
         if (STAGE_COMPLETION_EVENTS[params.agent] && !inferredRunId) {
           throw new Error(`spawn_agent requires runId for workflow stage ${params.agent}`);
         }
@@ -607,12 +670,50 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           ...(context.thinkingLevel ? { thinkingLevel: context.thinkingLevel } : {}),
           ...(tools ? { tools } : {}),
         });
+        let lifecycleWrites = Promise.resolve();
+        const emitLifecycle = (event: Record<string, unknown>): Promise<void> => {
+          if (!inferredRunId) return Promise.resolve();
+          lifecycleWrites = lifecycleWrites.then(() => appendWorkflowLifecycleEvent(workspaceDir, inferredRunId, {
+            invocationId,
+            agent: params.agent,
+            ...event,
+          }));
+          return lifecycleWrites;
+        };
+        await emitLifecycle({ type: "agent_started", task: params.task, status: "running", from: "design-primary" });
         const unsubscribe = session.subscribe((event) => {
-          if (!onUpdate || event.type !== "message_update" || event.assistantMessageEvent.type !== "text_delta") return;
-          onUpdate({
-            content: [{ type: "text", text: event.assistantMessageEvent.delta }],
-            details: { agent: params.agent, running: true },
-          });
+          if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+            onUpdate?.({
+              content: [{ type: "text", text: event.assistantMessageEvent.delta }],
+              details: { agent: params.agent, running: true },
+            });
+            return;
+          }
+          if (event.type === "tool_execution_start") {
+            void emitLifecycle({
+              type: "tool_started",
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              input: workflowObservation(event.args, 900),
+              status: "running",
+            });
+            return;
+          }
+          if (event.type === "tool_execution_end") {
+            const output = workflowObservation(event.result, 1_200);
+            void emitLifecycle({
+              type: "tool_finished",
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              output,
+              isError: event.isError,
+              status: event.isError ? "error" : "completed",
+            });
+            if (!event.isError && event.toolName === "research_asset_fetch" && inferredRunId) {
+              const path = workflowReferencePath(event.result, inferredRunId);
+              if (path) void emitLifecycle({ type: "reference_added", toolCallId: event.toolCallId, path, status: "completed" });
+            }
+          }
         });
         const abort = () => void session.abort();
         signal?.addEventListener("abort", abort, { once: true });
@@ -627,19 +728,32 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           }, {
             attempts: Math.max(1, Number(process.env.DREAMATIC_AGENT_RETRY_ATTEMPTS ?? 3)),
             ...(signal ? { signal } : {}),
-            onRetry: (notice) => onUpdate?.({
-              content: [{ type: "text", text: `${params.agent} reconnecting (attempt ${notice.nextAttempt}): ${notice.error}` }],
-              details: { agent: params.agent, retry: notice },
-            }),
+            onRetry: async (notice) => {
+              await emitLifecycle({ type: "agent_retry", attempt: notice.attempt, nextAttempt: notice.nextAttempt, delayMs: notice.delayMs, error: notice.error, status: "running" });
+              onUpdate?.({
+                content: [{ type: "text", text: `${params.agent} reconnecting (attempt ${notice.nextAttempt}): ${notice.error}` }],
+                details: { agent: params.agent, retry: notice },
+              });
+            },
           });
           const output = finalAssistantText(session.messages);
           const committedEvent = inferredRunId
             ? await assertStageCommitted(workspaceDir, inferredRunId, params.agent)
             : "not-required";
+          await lifecycleWrites;
+          await emitLifecycle({ type: "agent_finished", output, committedEvent, status: "completed" });
           return {
             content: [{ type: "text", text: output || `${params.agent} completed without a text summary.` }],
             details: { agent: params.agent, personaPath, runId: inferredRunId, childSessionDir, committedEvent },
           };
+        } catch (error) {
+          await lifecycleWrites;
+          await emitLifecycle({
+            type: "agent_interrupted",
+            error: error instanceof Error ? error.message : String(error),
+            status: signal?.aborted ? "interrupted" : "error",
+          });
+          throw error;
         } finally {
           signal?.removeEventListener("abort", abort);
           unsubscribe();

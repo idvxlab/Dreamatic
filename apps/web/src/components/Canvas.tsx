@@ -1,6 +1,7 @@
 import { ExternalLink, FileImage, Hand, LayoutDashboard, Minus, MousePointer2, Plus, Scan, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCanvasState, saveCanvasState } from "../api";
+import { assetUrl } from "../asset-url";
 import type { Asset, CanvasElementState, CanvasState, RunView } from "../types";
 
 interface CanvasProps {
@@ -16,10 +17,6 @@ type Gesture =
   | { kind: "element"; pointerId: number; startX: number; startY: number; id: string; x: number; y: number };
 
 const DEFAULT_CAMERA: Camera = { x: 72, y: 72, zoom: .78 };
-
-function assetUrl(path: string): string {
-  return `/assets/${encodeURIComponent(path)}`;
-}
 
 function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
   const visual = assets.filter((asset) => /^(png|jpg|jpeg|webp|gif)$/.test(asset.kind));
