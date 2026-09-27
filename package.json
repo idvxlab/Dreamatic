@@ -1,0 +1,27 @@
+{
+  "name": "dreamatic",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "dreamatic": "apps/cli/dist/index.js"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "predev": "npm run build -w @dreamatic/design-agent && npm run build -w @dreamatic/server",
+    "precheck": "npm run build -w @dreamatic/design-agent",
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm run start -w @dreamatic/server\" \"npm run dev -w @dreamatic/web\"",
+    "build": "npm run build -w @dreamatic/design-agent && npm run build -w @dreamatic/cli && npm run build -w @dreamatic/server && npm run build -w @dreamatic/web",
+    "check": "npm run check -w @dreamatic/design-agent && npm run check -w @dreamatic/cli && npm run check -w @dreamatic/server && npm run check -w @dreamatic/web",
+    "start": "npm run start -w @dreamatic/server",
+    "cli": "npm run start -w @dreamatic/cli --",
+    "compact-session": "node scripts/compact-visual-session.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "9.2.1",
+    "typescript": "5.9.3"
+  }
+}

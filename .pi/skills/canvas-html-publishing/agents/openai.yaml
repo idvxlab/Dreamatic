@@ -1,0 +1,4 @@
+interface:
+  display_name: "Canvas HTML Publishing"
+  short_description: "Publish an edited canvas as responsive HTML"
+  default_prompt: "Use $canvas-html-publishing to publish the current edited canvas as HTML."
