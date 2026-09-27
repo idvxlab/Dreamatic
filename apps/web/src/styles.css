@@ -97,6 +97,7 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .empty-canvas > span { display: inline-flex; gap: 6px; align-items: center; margin-top: 18px; color: #9a9b94; font-size: 9px; }
 .run-progress { position: absolute; left: 50%; top: 45%; transform: translate(-50%,-50%); width: min(680px, 72%); }
 .run-progress h1 { margin: 8px 0 24px; font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; font-size: 30px; line-height: 1.15; letter-spacing: -.04em; }
+.canvas-loading-copy { color: #8c8e86; font-size: 11px; }
 .stage-track { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .stage { padding: 12px; border: 1px solid #deddd6; border-radius: 10px; background: rgba(250,249,245,.9); text-transform: capitalize; }
 .stage > span { display: block; width: 8px; height: 8px; margin-bottom: 12px; border-radius: 50%; background: #c8c8c0; }
@@ -283,8 +284,7 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .canvas-project-overview { padding: 22px; overflow: hidden; border: 1px solid rgba(39,40,35,.14); border-radius: 12px; background: rgba(250,249,245,.94); box-shadow: 0 12px 34px rgba(36,37,31,.1); cursor: grab; }
 .canvas-project-overview:active { cursor: grabbing; }
 .canvas-project-overview h1 { margin: 8px 0 22px; color: #262721; font-family: "Segoe UI Variable Display", "Segoe UI", sans-serif; font-size: 31px; line-height: 1.1; letter-spacing: -.04em; }
-.canvas-project-overview .stage { padding: 11px 12px; background: #fffefb; }
-.canvas-project-overview footer { display: flex; gap: 7px; margin-top: 14px; color: #8c8e86; font-size: 9px; text-transform: capitalize; }
+.canvas-project-overview footer { display: flex; gap: 7px; margin-top: 18px; color: #8c8e86; font-size: 9px; text-transform: capitalize; }
 .canvas-project-overview footer span { padding: 4px 7px; border-radius: 5px; background: #eeede7; }
 .canvas-view-switch { position: absolute; z-index: 5; left: 16px; top: 16px; display: flex; gap: 2px; padding: 4px; border: 1px solid rgba(30,31,27,.12); border-radius: 9px; background: rgba(250,249,245,.92); box-shadow: 0 7px 22px rgba(39,40,34,.09); backdrop-filter: blur(12px); }
 .canvas-view-switch button { height: 30px; display: flex; align-items: center; gap: 6px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: #777970; cursor: pointer; font-size: 10px; }

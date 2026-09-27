@@ -17,17 +17,14 @@ type Gesture =
   | { kind: "element"; pointerId: number; startX: number; startY: number; id: string; x: number; y: number };
 
 const DEFAULT_CAMERA: Camera = { x: 72, y: 72, zoom: .78 };
-const LAYOUT_MARKER = "canvas-overview-v2";
+const LAYOUT_MARKER = "canvas-overview-v3";
 const BOARD_X = 40;
 const BOARD_WIDTH = 1098;
 const CARD_GAP = 24;
 const CARD_WIDTH = 350;
 
 function overviewText(run: RunView, visualCount: number) {
-  const stages = Object.entries(run.stages)
-    .map(([name, status]) => `${name}  ·  ${status.replaceAll("_", " ")}`)
-    .join("\n");
-  return `${run.title}\n\n${stages}\n\n${visualCount} visual assets  ·  ${run.notes.length} design notes  ·  ${run.status}`;
+  return `${run.title}\n\n${visualCount} visual assets  ·  ${run.notes.length} design notes  ·  ${run.showcasePath ? "showcase available" : "showcase pending"}`;
 }
 
 function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
@@ -53,10 +50,10 @@ function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
       x: BOARD_X,
       y,
       width: BOARD_WIDTH,
-      height: 264,
+      height: 172,
       text: overviewText(run, visual.length),
     });
-    y += 304;
+    y += 212;
   }
   if (run?.notes.length) {
     elements.push({ id: "group-rationale", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Design record", role: "rationale" });
@@ -244,10 +241,9 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
           {elements.length === 0 ? (
             run ? (
               <section className="run-progress">
-                <p className="eyebrow">{run.status === "interrupted" ? "Run interrupted — work preserved" : "Design run in progress"}</p>
+                <p className="eyebrow">Loading project workspace</p>
                 <h1>{run.title}</h1>
-                <div className="stage-track">{Object.entries(run.stages).map(([name, status]) => <div className={`stage ${status}`} key={name}><span /><strong>{name}</strong><small>{status.replace("_", " ")}</small></div>)}</div>
-                <div className="persisted-files"><strong>Persisted work</strong><div>{run.documents.map((path) => <span key={path}>{path}</span>)}</div></div>
+                <p className="canvas-loading-copy">Restoring the saved design record and visual outputs…</p>
               </section>
             ) : (
               <section className="empty-canvas">
@@ -271,10 +267,9 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
                 </figure>
               ) : item.kind === "text" && item.id === LAYOUT_MARKER && run ? (
                 <section key={item.id} className="canvas-project-overview" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
-                  <p className="eyebrow">{run.status === "interrupted" ? "Run interrupted — work preserved" : run.status === "completed" ? "Design run completed" : "Design run in progress"}</p>
+                  <p className="eyebrow">Project workspace</p>
                   <h1>{run.title}</h1>
-                  <div className="stage-track">{Object.entries(run.stages).map(([name, status]) => <div className={`stage ${status}`} key={name}><span /><strong>{name}</strong><small>{status.replaceAll("_", " ")}</small></div>)}</div>
-                  <footer><span>{visualAssets.length} visual assets</span><span>{run.notes.length} design notes</span><span>{run.status}</span></footer>
+                  <footer><span>{visualAssets.length} visual assets</span><span>{run.notes.length} design notes</span><span>{run.showcasePath ? "Showcase available" : "Showcase pending"}</span></footer>
                 </section>
               ) : item.kind === "text" ? (
                 <article key={item.id} className={`canvas-note role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>{item.text}</article>

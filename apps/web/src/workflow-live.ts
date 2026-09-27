@@ -25,6 +25,14 @@ const toolTitles: Record<string, string> = {
   ls: "Inspected project files",
 };
 
+const completionEventAgents: Record<string, string> = {
+  research_done: "design-research",
+  plan_done: "design-planner",
+  design_done: "design-designer",
+  evaluator_pass: "design-critic",
+  evaluator_fail: "design-critic",
+};
+
 function text(value: unknown, limit = 1_200): string | undefined {
   if (typeof value !== "string" || !value.trim()) return undefined;
   return value.length > limit ? `${value.slice(0, limit).trimEnd()}…` : value;
@@ -143,11 +151,12 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
       stage: typeof event.phase === "string" ? event.phase : undefined,
       artifactRefs: artifactRefs(event.artifactRefs),
     };
-    const ownerIndex = [...workflow].reverse().findIndex((candidate) => candidate.kind === "agent" && candidate.status === "running" && (actor === "Workflow" || candidate.agent === actor));
+    const completionAgent = completionEventAgents[type];
+    const ownerIndex = [...workflow].reverse().findIndex((candidate) => candidate.kind === "agent" && candidate.status === "running" && (completionAgent ? candidate.agent === completionAgent : actor === "Workflow" || candidate.agent === actor));
     if (ownerIndex >= 0) {
       const index = workflow.length - 1 - ownerIndex;
       return workflow.map((candidate, candidateIndex) => candidateIndex === index
-        ? { ...candidate, children: sorted([...(candidate.children ?? []).filter((child) => child.id !== node.id), node]) }
+        ? { ...candidate, ...(completionAgent ? { status: "completed" as const, endedAt: at, output: typeof event.summary === "string" ? event.summary : candidate.output } : {}), children: sorted([...(candidate.children ?? []).filter((child) => child.id !== node.id), node]) }
         : candidate);
     }
     return workflow.some((candidate) => candidate.id === node.id) ? workflow : sorted([...workflow, node]);

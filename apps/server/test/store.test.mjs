@@ -29,6 +29,8 @@ test("canvas state and run assets share one durable Run", async () => {
       { type: "tool_started", invocationId: "spawn-custom", agent: "visual-historian", toolCallId: "custom-tool", toolName: "view_image", input: "{}", status: "running", at: "2026-01-01T00:00:06.200Z" },
       { type: "tool_finished", invocationId: "spawn-custom", agent: "visual-historian", toolCallId: "custom-tool", toolName: "view_image", output: "inspected", status: "completed", at: "2026-01-01T00:00:06.800Z" },
       { type: "agent_finished", invocationId: "spawn-custom", agent: "visual-historian", output: "Visual lineage checked live.", status: "completed", at: "2026-01-01T00:00:07.000Z" },
+      { type: "agent_started", invocationId: "spawn-repair", agent: "design-designer", task: "Repair the selected artifacts", status: "running", at: "2026-01-01T00:00:08.000Z" },
+      { id: "evt-design", type: "design_done", phase: "design", from_agent: "design-designer", summary: "Repair committed to durable artifacts", at: "2026-01-01T00:00:09.000Z" },
     ].map((event) => JSON.stringify(event)).join("\n") + "\n");
     await writeFile(join(runDir, "research", "assets", "ref.png"), Buffer.from("reference"));
     await writeFile(join(runDir, "research", "research.md"), "# Findings\n\n- Visible design evidence");
@@ -85,11 +87,13 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.match(childSessions[0]?.actions[0]?.output ?? "", /Three references/);
     const workflow = await workflowInventory(workspace, "sample-run");
     const agentCards = workflow.filter((event) => event.kind === "agent");
-    assert.deepEqual(agentCards.map((event) => event.agent), ["design-research", "visual-historian"]);
+    assert.deepEqual(agentCards.map((event) => event.agent), ["design-research", "visual-historian", "design-designer"]);
     assert.equal(agentCards[0]?.children?.some((event) => event.kind === "references"), true);
     assert.match(agentCards[1]?.output ?? "", /Visual lineage checked live/);
     assert.equal(agentCards[1]?.children?.filter((event) => event.id === "custom-tool").length, 1);
     assert.equal(agentCards[1]?.children?.find((event) => event.id === "custom-tool")?.status, "completed");
+    assert.equal(agentCards[2]?.status, "completed");
+    assert.equal(agentCards[2]?.endedAt, "2026-01-01T00:00:09.000Z");
     await renameRun(workspace, "sample-run", "Renamed design project");
     assert.equal((await runInventory(workspace))[0]?.title, "Renamed design project");
     await writeFile(join(runDir, "run-state.json"), JSON.stringify({ status: "complete", updatedAt: "2026-01-01T00:00:08.000Z", stages: { research: "completed", design: "completed" } }));

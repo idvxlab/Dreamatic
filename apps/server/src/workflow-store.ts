@@ -56,6 +56,14 @@ const AGENT_TITLES: Record<string, string> = {
   "design-critic": "Critic agent",
 };
 
+const COMPLETION_EVENT_AGENTS: Record<string, string> = {
+  research_done: "design-research",
+  plan_done: "design-planner",
+  design_done: "design-designer",
+  evaluator_pass: "design-critic",
+  evaluator_fail: "design-critic",
+};
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
@@ -436,6 +444,23 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
       invocation.children.push({ id: `${invocationId}-error-${index}`, kind: "error", status: "error", actor: invocation.label, label: invocation.status === "interrupted" ? "Agent interrupted" : "Agent failed", ...(typeof event.error === "string" ? { detail: compact(event.error) } : {}), ...(at ? { at } : {}) });
       if (at) invocation.endedAt = at;
     }
+  }
+  // A specialist can commit its durable domain result immediately before its
+  // provider/session transport ends. That canonical result is stronger
+  // completion evidence than a missing agent_finished event.
+  for (const event of records) {
+    const type = typeof event.type === "string" ? event.type : "";
+    const agent = COMPLETION_EVENT_AGENTS[type];
+    const at = typeof event.at === "string" ? event.at : undefined;
+    if (!agent || !at) continue;
+    const time = Date.parse(at);
+    const invocation = [...invocations.values()]
+      .filter((candidate) => candidate.agent === agent && candidate.status === "running" && eventTime(candidate) <= time)
+      .sort((left, right) => eventTime(right) - eventTime(left))[0];
+    if (!invocation) continue;
+    invocation.status = "completed";
+    invocation.endedAt = at;
+    if (typeof event.summary === "string") invocation.output = compact(event.summary, 1_200);
   }
   for (const invocation of invocations.values()) sortEvents(invocation.children);
   return [...invocations.values()];
