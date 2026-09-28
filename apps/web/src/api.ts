@@ -10,8 +10,12 @@ export async function listSessions(): Promise<SessionView[]> {
   return parse(await fetch("/api/sessions"));
 }
 
-export async function createSession(): Promise<SessionView> {
-  return parse(await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }));
+export async function createSession(projectId?: string, title?: string): Promise<SessionView> {
+  return parse(await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, title }) }));
+}
+
+export async function abortSession(sessionId: string): Promise<{ id: string; interrupted: boolean }> {
+  return parse(await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/abort`, { method: "POST" }));
 }
 
 export async function listAssets(): Promise<Asset[]> {
@@ -125,11 +129,12 @@ export async function streamPrompt(
   text: string,
   images: Array<{ name?: string; data: string; mimeType: string }>,
   onEvent: (event: PromptEvent) => void,
+  projectId?: string,
 ): Promise<void> {
   const response = await fetch(`/api/sessions/${sessionId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, images }),
+    body: JSON.stringify({ text, images, projectId }),
   });
   if (!response.ok || !response.body) throw new Error(`Request failed: ${response.status}`);
   const reader = response.body.getReader();

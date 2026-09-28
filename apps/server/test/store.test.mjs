@@ -4,8 +4,30 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { readCanvasState, writeCanvasState } from "../dist/canvas-store.js";
-import { assetInventory, deleteRun, renameRun, runAgentSessions, runInventory } from "../dist/run-store.js";
+import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, primeDraftRun, renameRun, runAgentSessions, runInventory } from "../dist/run-store.js";
 import { workflowInventory } from "../dist/workflow-store.js";
+
+test("new projects have an isolated draft Run before the agent starts", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-draft-"));
+  try {
+    const first = await createDraftRun(workspace, "session-one");
+    const second = await createDraftRun(workspace, "session-two");
+    assert.notEqual(first.id, second.id);
+    await primeDraftRun(workspace, first.id, "session-one", "设计一款 AI 玩偶");
+    const runs = await runInventory(workspace);
+    const firstRun = runs.find((run) => run.id === first.id);
+    const secondRun = runs.find((run) => run.id === second.id);
+    assert.equal(firstRun?.title, "设计一款 AI 玩偶");
+    assert.equal(firstRun?.status, "draft");
+    assert.equal(firstRun?.sessionId, "session-one");
+    assert.equal(secondRun?.title, "Untitled design");
+    assert.equal(secondRun?.sessionId, "session-two");
+    await attachSessionToRun(workspace, second.id, "replacement-session");
+    assert.equal((await runInventory(workspace)).find((run) => run.id === second.id)?.sessionId, "replacement-session");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("canvas state and run assets share one durable Run", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "dreamatic-store-"));

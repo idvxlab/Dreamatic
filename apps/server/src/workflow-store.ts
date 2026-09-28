@@ -120,6 +120,7 @@ function collectPaths(value: unknown, runId: string, result = new Set<string>())
 
 function toolLabel(tool: string): string {
   const labels: Record<string, string> = {
+    ask_user: "Clarifying the brief",
     run_init: "Created design Run",
     use_skill: "Loaded design knowledge",
     spawn_agent: "Called specialist agent",
@@ -286,7 +287,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
     const role = typeof message.role === "string" ? message.role : "";
     if (role === "user") {
       const detail = contentText(message.content, 1_200);
-      if (detail) result.push({ id: `${sessionId}-user-${result.length}`, kind: "message", status: "completed", actor: "User / CLI", label: result.length ? "Continue workflow" : "Design brief", detail, ...(at ? { at } : {}) });
+      if (detail) result.push({ id: `${sessionId}-user-${result.length}`, kind: "message", status: "completed", actor: "User / CLI", label: "You", detail, ...(at ? { at } : {}) });
       continue;
     }
     if (role === "assistant") {
@@ -556,7 +557,7 @@ async function runBriefEvent(runDir: string, runId: string): Promise<WorkflowEve
     kind: "message",
     status: "completed",
     actor: "User / CLI",
-    label: "Design brief",
+    label: "You",
     detail: compact(brief.brief, 1_200),
     ...(typeof brief.createdAt === "string" ? { at: brief.createdAt } : {}),
   };
@@ -581,9 +582,12 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
   }
   sortEvents(invocations);
 
+  const sessionHistory = (await Promise.all((await rootSessionFiles(workspaceDir, runId)).map((path) => primaryEvents(path, runId)))).flat();
+  const conversation = sessionHistory.filter((event) => event.kind === "message");
+  const briefFallback = conversation.length ? [] : [await runBriefEvent(runDir, runId)].filter((event): event is WorkflowEventView => Boolean(event));
   const primary = hasLifecycleHistory
-    ? [await runBriefEvent(runDir, runId), ...primaryLifecycleEvents(busRecords, runId)].filter((event): event is WorkflowEventView => Boolean(event))
-    : (await Promise.all((await rootSessionFiles(workspaceDir, runId)).map((path) => primaryEvents(path, runId)))).flat();
+    ? [...briefFallback, ...conversation, ...primaryLifecycleEvents(busRecords, runId)]
+    : sessionHistory;
   sortEvents(primary);
   for (const liveTool of hasLifecycleHistory ? [] : primaryLifecycleEvents(busRecords, runId)) {
     const persisted = primary.find((event) => event.id === liveTool.id);

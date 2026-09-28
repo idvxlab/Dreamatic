@@ -23,6 +23,7 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
     return term ? runs.filter((run) => run.title.toLocaleLowerCase().includes(term)) : runs;
   }, [query, runs]);
   const runLabel = (run: RunView) => {
+    if (run.status === "draft") return "Draft";
     if (run.status === "complete") return "Complete";
     const activeStage = Object.entries(run.stages).find(([, status]) => status === "in_progress")?.[0];
     const stage = activeStage ? activeStage[0]!.toUpperCase() + activeStage.slice(1) : undefined;

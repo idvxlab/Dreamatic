@@ -24,6 +24,7 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "use_skill",
   "list_skills",
   "todo_write",
+  "ask_user",
   "run_init",
   "design_bus_post",
   "design_bus_read",
@@ -49,6 +50,7 @@ export interface CreateDreamaticSessionOptions {
   sessionDir?: string;
   sessionFile?: string;
   inMemory?: boolean;
+  projectId?: string;
 }
 
 export async function createDreamaticSession(options: CreateDreamaticSessionOptions) {
@@ -72,7 +74,7 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
       ...base,
       `# Active Dreamatic persona: ${persona}\n\n${personaPrompt}`,
     ],
-    extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir })],
+    extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, ...(options.projectId ? { projectId: options.projectId } : {}) })],
   });
   await resourceLoader.reload();
 

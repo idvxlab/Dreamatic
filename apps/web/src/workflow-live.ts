@@ -8,6 +8,7 @@ const agentTitles: Record<string, string> = {
 };
 
 const toolTitles: Record<string, string> = {
+  ask_user: "Clarifying the brief",
   web_search: "Searched the web",
   research_fetch: "Read research source",
   research_asset_discover: "Discovered reference images",

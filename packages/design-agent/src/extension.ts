@@ -23,6 +23,7 @@ import { isRetryableStatus, retryAfterMs, RetryableHttpError, withRetry, type Re
 
 export interface DreamaticExtensionOptions {
   workspaceDir: string;
+  projectId?: string;
   parentInvocation?: { id: string; agent: string; runId?: string };
 }
 
@@ -558,6 +559,44 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     });
 
     pi.registerTool({
+      name: "ask_user",
+      label: "Clarify design brief",
+      description: "Present one compact structured clarification card to the user before run_init. Use only when missing information materially changes the design. After calling this tool, end the turn and wait for the user's next message.",
+      parameters: Type.Object({
+        title: Type.Optional(Type.String({ maxLength: 90 })),
+        context: Type.Optional(Type.String({ maxLength: 280 })),
+        questions: Type.Array(Type.Object({
+          id: Type.Optional(Type.String({ minLength: 1, maxLength: 48 })),
+          header: Type.String({ minLength: 1, maxLength: 30 }),
+          question: Type.String({ minLength: 1, maxLength: 240 }),
+          options: Type.Optional(Type.Array(Type.Object({
+            label: Type.String({ minLength: 1, maxLength: 40 }),
+            description: Type.String({ minLength: 1, maxLength: 180 }),
+          }), { minItems: 2, maxItems: 4 })),
+          multiple: Type.Optional(Type.Boolean()),
+          custom: Type.Optional(Type.Boolean()),
+          placeholder: Type.Optional(Type.String({ maxLength: 160 })),
+          required: Type.Optional(Type.Boolean()),
+        }), { minItems: 1, maxItems: 3 }),
+      }),
+      async execute(_id, params) {
+        const questions = params.questions.map((question, index) => ({
+          ...question,
+          id: question.id ?? `question-${index + 1}`,
+          required: question.required !== false,
+          custom: question.custom !== false,
+        }));
+        return textResult({
+          status: "waiting_for_user",
+          title: params.title ?? "A few details before we begin",
+          context: params.context,
+          questions,
+          instruction: "End this turn now. Continue only after the user answers in the same session.",
+        });
+      },
+    });
+
+    pi.registerTool({
       name: "websearch",
       label: "Search design references",
       description: "Search the public web for design research sources. Returns compact titles, URLs, and snippets; fetch important sources separately.",
@@ -849,8 +888,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       }),
       async execute(_id, params) {
         const generatedId = `${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 8)}`;
-        const runId = safeRunId(params.runIdOverride ?? generatedId);
+        const runId = safeRunId(options.projectId ?? params.runIdOverride ?? generatedId);
         const runDir = resolveInside(workspaceDir, join("runs", runId));
+        const existingBrief: Record<string, unknown> = await readFile(join(runDir, "brief.json"), "utf8").then((source) => JSON.parse(source) as Record<string, unknown>).catch(() => ({}));
+        const existingState: Record<string, unknown> = await readFile(join(runDir, "run-state.json"), "utf8").then((source) => JSON.parse(source) as Record<string, unknown>).catch(() => ({}));
+        if (typeof existingState.status === "string" && existingState.status !== "draft") {
+          throw new Error(`Run ${runId} is already initialized; resume it instead of calling run_init again`);
+        }
         function parsed(value: string | undefined): unknown {
           if (!value?.trim()) return null;
           try {
@@ -872,7 +916,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         ]) await mkdir(join(runDir, directory), { recursive: true });
         const brief = {
           runId,
-          createdAt: new Date().toISOString(),
+          createdAt: typeof existingBrief.createdAt === "string" ? existingBrief.createdAt : new Date().toISOString(),
+          ...(typeof existingBrief.sessionId === "string" ? { sessionId: existingBrief.sessionId } : {}),
+          ...(typeof existingBrief.title === "string" ? { title: existingBrief.title } : {}),
           brief: params.brief,
           workflowSkill: params.workflowSkill ?? "",
           context,

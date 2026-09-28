@@ -1,7 +1,7 @@
-import { ArrowUp, Bot, Check, ChevronDown, Circle, ExternalLink, ImagePlus, LoaderCircle, Paperclip, WandSparkles, Wrench, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowUp, Bot, Check, ChevronDown, Circle, ExternalLink, ImagePlus, LoaderCircle, Paperclip, Square, WandSparkles, Wrench, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { assetUrl } from "../asset-url";
-import type { TimelineItem, WorkflowEvent } from "../types";
+import type { ClarificationRequest, TimelineItem, WorkflowEvent } from "../types";
 
 export interface PendingImage {
   name: string;
@@ -14,7 +14,11 @@ interface AgentPanelProps {
   workflow?: WorkflowEvent[];
   streamingText: string;
   running: boolean;
+  stopping: boolean;
+  clarification?: ClarificationRequest;
   onSend: (text: string, images: PendingImage[]) => void;
+  onStop: () => void;
+  onAnswerClarification: (answers: Record<string, string>) => void;
 }
 
 const SUGGESTIONS = [
@@ -50,6 +54,16 @@ function WorkflowDetails({ event }: { event: WorkflowEvent }) {
 function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?: boolean }) {
   const at = timeLabel(event.at);
   const [agentOpen, setAgentOpen] = useState(event.status === "running");
+  if (event.kind === "message") {
+    const user = event.actor === "User / CLI" || event.actor === "User";
+    return <div className={`workflow-message-row ${user ? "user" : "assistant"}`}>
+      <div className="workflow-message-bubble">
+        <small>{user ? "You" : event.actor}{at ? ` · ${at}` : ""}</small>
+        {event.detail && <p>{event.detail}</p>}
+        <ArtifactLinks paths={event.artifactRefs} />
+      </div>
+    </div>;
+  }
   if (event.kind === "agent") return <div className={`workflow-node workflow-agent-node ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot"><Bot size={13} /></span>
     <details className="workflow-agent-card" open={agentOpen} onToggle={(toggleEvent) => setAgentOpen(toggleEvent.currentTarget.open)}>
@@ -77,7 +91,29 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   </div>;
 }
 
-export function AgentPanel({ timeline, workflow = [], streamingText, running, onSend }: AgentPanelProps) {
+function ClarificationCard({ request, disabled, onSubmit }: { request: ClarificationRequest; disabled: boolean; onSubmit: (answers: Record<string, string>) => void }) {
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  useEffect(() => { setSelected({}); setCustom({}); }, [request.id]);
+  const answerFor = (id: string) => [...(selected[id] ?? []), ...(custom[id]?.trim() ? [custom[id].trim()] : [])].join("、");
+  const ready = request.questions.every((question) => !question.required || Boolean(answerFor(question.id)));
+  const toggle = (questionId: string, label: string, multiple: boolean) => setSelected((current) => {
+    const values = current[questionId] ?? [];
+    if (!multiple) return { ...current, [questionId]: [label] };
+    return { ...current, [questionId]: values.includes(label) ? values.filter((value) => value !== label) : [...values, label] };
+  });
+  return <section className="clarification-card" aria-label="Design brief questions">
+    <div className="clarification-heading"><span><Bot size={14} /></span><div><strong>{request.title}</strong>{request.context && <p>{request.context}</p>}</div></div>
+    <div className="clarification-questions">{request.questions.map((question, index) => <fieldset key={question.id}>
+      <legend><em>{index + 1}</em><span><b>{question.header}</b>{question.question}</span>{question.multiple && <small>Multiple</small>}{!question.required && <small>Optional</small>}</legend>
+      {question.options?.length ? <div className="clarification-options">{question.options.map((option) => <button type="button" className={(selected[question.id] ?? []).includes(option.label) ? "selected" : ""} onClick={() => toggle(question.id, option.label, question.multiple)} key={option.label}><strong>{option.label}</strong><small>{option.description}</small></button>)}</div> : null}
+      {question.custom && <input value={custom[question.id] ?? ""} onChange={(event) => setCustom((current) => ({ ...current, [question.id]: event.target.value }))} placeholder={question.placeholder ?? (question.options?.length ? "Or enter another answer…" : "Type your answer…")} />}
+    </fieldset>)}</div>
+    <button className="clarification-submit" type="button" disabled={disabled || !ready} onClick={() => onSubmit(Object.fromEntries(request.questions.map((question) => [question.id, answerFor(question.id)])))}>{disabled ? "Waiting for agent…" : "Continue workflow"}<ArrowUp size={13} /></button>
+  </section>;
+}
+
+export function AgentPanel({ timeline, workflow = [], streamingText, running, stopping, clarification, onSend, onStop, onAnswerClarification }: AgentPanelProps) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -108,7 +144,9 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, on
     <aside className="agent-panel">
       <header className="agent-header">
         <div><span className="agent-sigil"><WandSparkles size={16} /></span><span><strong>Design agent</strong><small><i /> Pi runtime connected</small></span></div>
-        <span className="agent-mode">Auto workflow</span>
+        {running
+          ? <button className="agent-stop" type="button" onClick={onStop} disabled={stopping} title="Stop the current run"><Square size={10} fill="currentColor" /> {stopping ? "Stopping…" : "Stop"}</button>
+          : <span className="agent-mode">Auto workflow</span>}
       </header>
       <div className="agent-scroll">
         {timeline.length === 0 && workflow.length === 0 && !streamingText ? (
@@ -133,6 +171,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, on
         )}
       </div>
       <div className="composer-wrap">
+        {clarification ? <ClarificationCard request={clarification} disabled={running} onSubmit={onAnswerClarification} /> : <>
         {images.length > 0 && <div className="attachment-row">{images.map((image, index) => <span key={`${image.name}-${index}`}><ImagePlus size={13} />{image.name}<button onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={11} /></button></span>)}</div>}
         <div className="composer">
           <textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Describe the design outcome…" rows={3} />
@@ -143,6 +182,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, on
             <button className="send" disabled={running || (!text.trim() && images.length === 0)} onClick={submit}>{running ? <LoaderCircle className="spin" size={17} /> : <ArrowUp size={17} />}</button>
           </div>
         </div>
+        </>}
       </div>
     </aside>
   );

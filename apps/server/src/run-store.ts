@@ -1,5 +1,6 @@
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, relative } from "node:path";
+import { randomUUID } from "node:crypto";
 
 export type TimelineKind = "thought" | "tool" | "result" | "error";
 
@@ -27,6 +28,58 @@ export interface TimelineView {
 function checkedRunId(runId: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) throw new Error("Invalid run id");
   return runId;
+}
+
+export function newProjectId(): string {
+  return `project-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}`;
+}
+
+export async function createDraftRun(workspaceDir: string, sessionId: string, title = "Untitled design", projectId = newProjectId()): Promise<{ id: string; title: string }> {
+  const runId = checkedRunId(projectId);
+  const runDir = join(workspaceDir, "runs", runId);
+  const createdAt = new Date().toISOString();
+  await mkdir(join(workspaceDir, "runs"), { recursive: true });
+  await mkdir(runDir, { recursive: false });
+  await Promise.all([
+    writeFile(join(runDir, "brief.json"), JSON.stringify({ runId, sessionId, title, brief: "", resolvedScope: { human_title: title }, createdAt }, null, 2), "utf8"),
+    writeFile(join(runDir, "run-state.json"), JSON.stringify({ runId, status: "draft", stages: { research: "pending", planning: "pending", design: "pending", critique: "pending", export: "pending" }, createdAt, updatedAt: createdAt, lastEvent: "project_created" }, null, 2), "utf8"),
+    writeFile(join(runDir, "bus.jsonl"), "", "utf8"),
+  ]);
+  return { id: runId, title };
+}
+
+export async function primeDraftRun(workspaceDir: string, unsafeRunId: string, sessionId: string, rawBrief: string): Promise<void> {
+  const runId = checkedRunId(unsafeRunId);
+  const runDir = join(workspaceDir, "runs", runId);
+  const state = await readFile(join(runDir, "run-state.json"), "utf8").then((source) => record(JSON.parse(source) as unknown));
+  if (state.status !== "draft") return;
+  const briefPath = join(runDir, "brief.json");
+  const brief = await readFile(briefPath, "utf8").then((source) => record(JSON.parse(source) as unknown));
+  if (typeof brief.brief === "string" && brief.brief.trim()) return;
+  const text = rawBrief.trim();
+  if (!text) return;
+  brief.sessionId = sessionId;
+  brief.brief = text;
+  brief.title = text.slice(0, 72);
+  brief.resolvedScope = { ...record(brief.resolvedScope), human_title: text.slice(0, 72) };
+  await writeFile(briefPath, JSON.stringify(brief, null, 2), "utf8");
+  state.updatedAt = new Date().toISOString();
+  state.lastEvent = "brief_received";
+  await writeFile(join(runDir, "run-state.json"), JSON.stringify(state, null, 2), "utf8");
+}
+
+export async function attachSessionToRun(workspaceDir: string, unsafeRunId: string, sessionId: string): Promise<{ id: string; title: string }> {
+  const runId = checkedRunId(unsafeRunId);
+  const briefPath = join(workspaceDir, "runs", runId, "brief.json");
+  const brief = await readFile(briefPath, "utf8").then((source) => record(JSON.parse(source) as unknown));
+  brief.sessionId = sessionId;
+  await writeFile(briefPath, JSON.stringify(brief, null, 2), "utf8");
+  const title = typeof brief.title === "string" && brief.title.trim()
+    ? brief.title.trim()
+    : typeof brief.brief === "string" && brief.brief.trim()
+    ? brief.brief.trim().slice(0, 72)
+    : runId;
+  return { id: runId, title };
 }
 
 export async function renameRun(workspaceDir: string, unsafeRunId: string, unsafeTitle: string): Promise<{ id: string; title: string }> {
@@ -547,7 +600,7 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
       activity,
       agentSessions: childSessions.map(agentSessionSummary),
       ...(path ? { showcasePath: relative(workspaceDir, path).replaceAll("\\", "/") } : {}),
-      ...(session.sessionId ? { sessionId: session.sessionId } : {}),
+      ...(session.sessionId || typeof brief.sessionId === "string" ? { sessionId: session.sessionId ?? brief.sessionId as string } : {}),
     });
   }
   return runs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

@@ -5,7 +5,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
-import { assetInventory, deleteRun, renameRun, runAgentSessions, runInventory } from "./run-store.js";
+import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, newProjectId, primeDraftRun, renameRun, runAgentSessions, runInventory } from "./run-store.js";
 import { workflowInventory } from "./workflow-store.js";
 import { SessionRegistry } from "./session-registry.js";
 
@@ -216,7 +216,12 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "POST" && url.pathname === "/api/sessions") {
       const input = record(await body(request));
-      json(response, 201, await registry.create(typeof input.title === "string" ? input.title : undefined));
+      const projectId = typeof input.projectId === "string" ? input.projectId : newProjectId();
+      const session = await registry.create(typeof input.title === "string" ? input.title : undefined, projectId);
+      const project = typeof input.projectId === "string"
+        ? await attachSessionToRun(workspaceDir, input.projectId, session.id)
+        : await createDraftRun(workspaceDir, session.id, session.title, projectId);
+      json(response, 201, { ...session, projectId: project.id });
       return;
     }
     const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
@@ -228,6 +233,8 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && promptMatch?.[1]) {
       const input = record(await body(request));
       if (typeof input.text !== "string") throw new Error("text is required");
+      const projectId = typeof input.projectId === "string" ? input.projectId : undefined;
+      if (projectId) await primeDraftRun(workspaceDir, projectId, promptMatch[1], input.text);
       const images = Array.isArray(input.images)
         ? input.images.flatMap((value) => {
             const item = record(value);
@@ -244,7 +251,7 @@ const server = createServer(async (request, response) => {
       const send = (value: unknown) => response.write(`${JSON.stringify(value)}\n`);
       const unsubscribe = registry.subscribe(promptMatch[1], (event) => send({ type: "agent_event", event }));
       try {
-        await registry.prompt(promptMatch[1], input.text, images);
+        await registry.prompt(promptMatch[1], input.text, images, projectId);
         send({ type: "snapshot", session: registry.view(promptMatch[1]) });
       } catch (error) {
         send({ type: "error", message: error instanceof Error ? error.message : String(error) });
@@ -252,6 +259,11 @@ const server = createServer(async (request, response) => {
         unsubscribe();
         response.end();
       }
+      return;
+    }
+    const abortMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/abort$/);
+    if (request.method === "POST" && abortMatch?.[1]) {
+      json(response, 200, await registry.abort(decodeURIComponent(abortMatch[1])));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/assets") {

@@ -324,8 +324,21 @@ Initial domain-context table:
 ## Clarification Contract
 
 Primary may still use `ask_user` to confirm missing user needs. The domain type
-itself is not a question. Ask at most one compact clarification card before
-`run_init`, and only ask questions that materially change the design direction.
+itself is not a question. For a general design task, ask at most one compact
+clarification card before `run_init`, and only ask questions that materially
+change the design direction. For a sparse `brand_cultural_design` brief,
+progressive MI → BI → VI clarification is allowed, following the earlier Python
+workflow: ask only unresolved layers, one card per round, and stop as soon as
+the direction is sufficiently clear or the user asks the system to decide.
+
+Every question uses this product contract:
+
+- `header`: short label, at most 30 characters;
+- `question`: full sentence in the brief's language;
+- `options`: 2–4 `{ label, description }` choices when useful;
+- `multiple: true` only for naturally multi-valued fields such as audiences;
+- `custom: true` so free-form input is always available;
+- no fake "other" option—the interface provides the custom field.
 
 Clarification flow:
 
@@ -339,8 +352,10 @@ Clarification flow:
    professional Skill instructions directly.
 5. Check missing common fields and the selected built-in domain's
    `domain_scope`, or the external Skill's clarification guidance.
-6. If critical design choices are missing, call `ask_user` once.
-7. Merge the answer into `resolvedScope`; fill remaining minor design gaps with
+6. If critical design choices are missing, call `ask_user`.
+   Ask 1–3 questions in one card, then end the turn immediately. Do not call
+   `run_init`, spawn a child Agent, or begin research until the user answers.
+7. On the user's next message, merge the answers into `resolvedScope`; fill remaining minor design gaps with
    clear defaults, not unverified external facts.
 8. Call `run_init` with `brief`, `workflowSkill:
    "default-design-workflow"`, JSON-stringified `resolvedScope`, and the

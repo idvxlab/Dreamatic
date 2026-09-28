@@ -4,6 +4,26 @@ export interface SessionView {
   createdAt: string;
   running: boolean;
   messages: unknown[];
+  pendingClarification?: ClarificationRequest;
+  projectId?: string;
+}
+
+export interface ClarificationQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options?: Array<{ label: string; description: string }>;
+  multiple: boolean;
+  custom: boolean;
+  placeholder?: string;
+  required: boolean;
+}
+
+export interface ClarificationRequest {
+  id: string;
+  title: string;
+  context?: string;
+  questions: ClarificationQuestion[];
 }
 
 export interface Asset {

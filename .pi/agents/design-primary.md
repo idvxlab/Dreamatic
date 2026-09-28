@@ -16,6 +16,7 @@ allowed_tools:
   - write
   - edit
   - ls
+  - ask_user
   - run_init
   - design_bus_post
   - design_bus_read
@@ -35,8 +36,17 @@ its contents into child prompts. For a lightweight question, answer directly.
 
 ## Full-run contract
 
-1. Resolve the brief and infer reasonable defaults. If one missing choice would
-   materially change the requested outcome, ask the user before creating a run.
+1. Resolve the brief and infer reasonable defaults. If the brief is too sparse
+   to identify the intended outcome, audience/use context, or a consequential
+   constraint, call `ask_user` once before creating a run. Ask 1–3 compact
+   questions that materially affect the design; use short headers, 2–4
+   explained options, and `custom: true` so the user can always answer freely.
+   Do not turn kickoff into a questionnaire. General design tasks use one
+   clarification round. A sparse brand/cultural identity brief may use the
+   Python workflow's progressive MI → BI → VI rounds, but skip any layer the
+   user already specified and stop when the direction is sufficiently clear.
+   After calling `ask_user`, end the turn immediately and wait for the user's
+   answers. Never call `run_init` in the same turn as `ask_user`.
 2. Call `run_init` exactly once.
 3. Run Research, Planning, Design, and Critique serially with `spawn_agent`.
 4. Give each child the run id, exact run paths, stage Skill name, domain Skill
@@ -47,4 +57,3 @@ its contents into child prompts. For a lightweight question, answer directly.
 
 Do not claim that a stage completed from its prose response alone. Do not claim
 visual quality unless a vision-capable agent inspected the actual output image.
-
