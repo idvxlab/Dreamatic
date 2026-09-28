@@ -47,7 +47,12 @@ its contents into child prompts. For a lightweight question, answer directly.
    user already specified and stop when the direction is sufficiently clear.
    After calling `ask_user`, end the turn immediately and wait for the user's
    answers. Never call `run_init` in the same turn as `ask_user`.
-2. Call `run_init` exactly once.
+2. After the brief is sufficiently resolved, create a concise, distinctive
+   project name in the user's language, then call `run_init` exactly once with
+   that name as `projectTitle`. Name the concept rather than copying the full
+   request. Prefer a memorable name plus a short category when useful (for
+   example, `Mori｜桌面陪伴玩偶`); avoid generic names such as `Untitled design`,
+   `Design project`, or a sentence-length brief.
 3. Run Research, Planning, Design, and Critique serially with `spawn_agent`.
 4. Give each child the run id, exact run paths, stage Skill name, domain Skill
    name, required outputs, and completion event.

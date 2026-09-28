@@ -61,10 +61,11 @@ critique rules. The base personas only provide reusable role behavior.
    design preferences.
 4. Use `ask_user` once when a missing design choice materially changes the
    direction. Merge the answer and record minor inferred defaults.
-5. Derive a readable lowercase ASCII run slug.
-6. Call `run_init` once with the raw brief, `workflowSkill:
-   "default-design-workflow"`, `resolvedScope`, optional built-in
-   `domainContext`, and the slug as `runIdOverride`.
+5. Derive a readable lowercase ASCII run slug and a concise, distinctive
+   human-facing project name in the user's language.
+6. Call `run_init` once with the name as `projectTitle`, the raw brief,
+   `workflowSkill: "default-design-workflow"`, `resolvedScope`, optional
+   built-in `domainContext`, and the slug as `runIdOverride`.
 7. Capture the exact returned run paths.
 8. Spawn `design-research`. Its task must name `default-design-workflow`,
    `default-research-stage`, and the selected domain Skill, and must include the
@@ -149,7 +150,7 @@ Recommended shape:
 ```json
 {
   "run_name": "short-ascii-slug",
-  "human_title": "Human-readable title",
+  "human_title": "Canonical projectTitle written by run_init",
   "domain_type": "optional built-in domain id",
   "professional_skills": ["optional explicitly selected Skill name"],
   "target": "string",
@@ -357,15 +358,19 @@ Clarification flow:
    `run_init`, spawn a child Agent, or begin research until the user answers.
 7. On the user's next message, merge the answers into `resolvedScope`; fill remaining minor design gaps with
    clear defaults, not unverified external facts.
-8. Call `run_init` with `brief`, `workflowSkill:
+8. Create a concise, distinctive human-facing project name in the user's
+   language. It must name the concept rather than repeat the full brief. Call
+   `run_init` with that name as `projectTitle`, plus `brief`, `workflowSkill:
    "default-design-workflow"`, JSON-stringified `resolvedScope`, and the
-   JSON-stringified `domainContext` only when one exists.
+   JSON-stringified `domainContext` only when one exists. `run_init` stores
+   `projectTitle` as both `brief.title` and `resolvedScope.human_title`, making
+   it the canonical name shown by the sidebar, canvas, and showcase inputs.
 
 ## Run Directory
 
 `run_init` returns `runId` and `runDir`.
 
-Before calling `run_init`, Primary should derive a readable run slug and pass it as `runIdOverride` whenever possible. The slug should be lowercase ASCII, stable, and descriptive, such as `tongji-idvx-lab-visual-system`. Also store a human-facing `run_name` or `human_title` in `resolvedScope`. This keeps both the internal run directory and `outputs/runs/<runId>/final/` easy to find later.
+Before calling `run_init`, Primary should derive a readable run slug and pass it as `runIdOverride` whenever possible. The slug should be lowercase ASCII, stable, and descriptive, such as `tongji-idvx-lab-visual-system`. Independently create a human-facing `projectTitle`; the runtime writes it to `resolvedScope.human_title`. The immutable Run id and editable display name must never be conflated.
 
 Expected layout:
 

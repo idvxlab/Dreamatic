@@ -12,6 +12,23 @@ function eventName(event: Record<string, unknown>): string {
   return typeof event.type === "string" ? event.type : "agent_event";
 }
 
+const LIVE_TOOL_LABELS: Record<string, string> = {
+  ask_user: "Clarifying the brief",
+  list_skills: "Finding design knowledge",
+  use_skill: "Loading design knowledge",
+  run_init: "Creating the design project",
+  todo_write: "Planning the workflow",
+  spawn_agent: "Starting a specialist agent",
+  design_bus_read: "Reading workflow context",
+  design_bus_post: "Updating workflow progress",
+  artifact_lint: "Checking design deliverables",
+  export_package: "Preparing the final showcase",
+};
+
+function liveToolLabel(name: string): string {
+  return LIVE_TOOL_LABELS[name] ?? name.replaceAll("_", " ").replace(/^./u, (letter) => letter.toUpperCase());
+}
+
 function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
@@ -52,6 +69,7 @@ export function App() {
   const [streamingText, setStreamingText] = useState("");
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
+  const [pendingAgentStatus, setPendingAgentStatus] = useState<string>();
   const [liveClarification, setLiveClarification] = useState<{ sessionId: string; request: ClarificationRequest }>();
   const [answeredClarificationId, setAnsweredClarificationId] = useState<string>();
   const [loading, setLoading] = useState(true);
@@ -141,7 +159,10 @@ export function App() {
     const closeStream = streamWorkflow(activeRunId, (message) => {
       if (disposed) return;
       if (message.type === "snapshot") setWorkflow(message.workflow);
-      else setWorkflow((current) => applyWorkflowStreamEvent(current, message.event));
+      else {
+        setPendingAgentStatus(undefined);
+        setWorkflow((current) => applyWorkflowStreamEvent(current, message.event));
+      }
     });
     return () => {
       disposed = true;
@@ -163,6 +184,7 @@ export function App() {
       setStreamingText("");
       setLiveClarification(undefined);
       setAnsweredClarificationId(undefined);
+      setPendingAgentStatus(undefined);
       setConnectionError(undefined);
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : String(error));
@@ -241,6 +263,7 @@ export function App() {
 
   function receive(item: PromptEvent) {
     if (item.type === "error") {
+      setPendingAgentStatus(undefined);
       setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: "Run failed", detail: item.message }]);
       return;
     }
@@ -253,12 +276,15 @@ export function App() {
     const type = eventName(event);
     if (type === "message_update") {
       const update = event.assistantMessageEvent;
-      if (update && typeof update === "object" && "delta" in update && typeof update.delta === "string") {
+      if (update && typeof update === "object" && "type" in update && update.type === "text_delta" && "delta" in update && typeof update.delta === "string") {
+        setPendingAgentStatus(undefined);
         setStreamingText((current) => current + update.delta);
       }
       return;
     }
     if (type === "tool_execution_start") {
+      setPendingAgentStatus(undefined);
+      setStreamingText("");
       const clarification = clarificationFromEvent(event);
       if (clarification && activeId) {
         setLiveClarification({ sessionId: activeId, request: clarification });
@@ -267,19 +293,35 @@ export function App() {
       const label = typeof event.toolName === "string" ? event.toolName : "Using tool";
       const id = String(event.toolCallId ?? crypto.randomUUID());
       setTimeline((current) => [...current, { id, kind: "tool", label, active: true }]);
+      setWorkflow((current) => current.some((entry) => entry.id === id) ? current : [...current, {
+        id,
+        kind: "tool",
+        status: "running",
+        actor: "Primary agent",
+        label: liveToolLabel(label),
+        tool: label,
+        at: new Date().toISOString(),
+      }]);
     } else if (type === "tool_execution_end") {
       const id = String(event.toolCallId ?? "");
       setTimeline((current) => current.map((entry) => entry.id === id ? { ...entry, active: false, kind: "result" } : entry));
+      setWorkflow((current) => current.map((entry) => entry.id === id ? {
+        ...entry,
+        status: event.isError === true ? "error" : "completed",
+        endedAt: new Date().toISOString(),
+      } : entry));
     }
   }
 
-  async function send(text: string, images: PendingImage[]) {
+  async function send(text: string, images: PendingImage[], presentation?: { userText?: string; waitingLabel?: string }) {
     if (!activeId) return;
     setRunning(true);
     awaitingRun.current = true;
     runIdsBeforePrompt.current = new Set(runs.map((run) => run.id));
     setStreamingText("");
-    setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "thought", label: text, detail: images.length ? `${images.length} reference image${images.length > 1 ? "s" : ""}` : undefined }]);
+    const userText = presentation?.userText ?? text;
+    setPendingAgentStatus(presentation?.waitingLabel ?? (activeRun?.status === "draft" ? "正在理解设计需求，并判断是否需要进一步澄清…" : "正在理解你的消息并决定下一步…"));
+    setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "thought", label: userText, detail: images.length ? `${images.length} reference image${images.length > 1 ? "s" : ""}` : undefined }]);
     if (activeRunId) {
       const localMessage: WorkflowEvent = {
         id: `local-user-${crypto.randomUUID()}`,
@@ -287,16 +329,21 @@ export function App() {
         status: "completed",
         actor: "User",
         label: "You",
-        detail: text,
+        detail: userText,
         at: new Date().toISOString(),
       };
       setWorkflow((current) => [...current, localMessage]);
     }
     try {
       await streamPrompt(activeId, text, images.map(({ name, data, mimeType }) => ({ name, data, mimeType })), receive, activeRunId);
-      const [nextRuns, nextAssets] = await Promise.all([listRuns(), listAssets()]);
+      const [nextRuns, nextAssets, persistedWorkflow] = await Promise.all([
+        listRuns(),
+        listAssets(),
+        activeRunId ? getWorkflow(activeRunId) : Promise.resolve(undefined),
+      ]);
       setRuns(nextRuns);
       setAssets(nextAssets);
+      if (persistedWorkflow) setWorkflow(persistedWorkflow);
       const ownedRun = nextRuns.find((run) => run.sessionId === activeId);
       if (ownedRun) setActiveRunId(ownedRun.id);
     } catch (error) {
@@ -304,6 +351,8 @@ export function App() {
     } finally {
       awaitingRun.current = false;
       setRunning(false);
+      setPendingAgentStatus(undefined);
+      setStreamingText("");
     }
   }
 
@@ -312,6 +361,7 @@ export function App() {
     setStopping(true);
     try {
       const result = await abortSession(activeId);
+      setPendingAgentStatus(undefined);
       setNotice(result.interrupted ? "Stopping the current run…" : "The run has already stopped");
       window.setTimeout(() => setNotice(undefined), 2200);
     } catch (error) {
@@ -324,11 +374,15 @@ export function App() {
   function answerClarification(answers: Record<string, string>) {
     if (!visibleClarification) return;
     const response = visibleClarification.questions
-      .map((question) => `${question.header}｜${question.question}\n回答：${answers[question.id]?.trim() || "未指定，请采用合理默认值"}`)
+      .map((question) => `${question.header}｜${question.question}\n${answers[question.id]?.trim() || "采用合理默认值"}`)
       .join("\n\n");
     setAnsweredClarificationId(visibleClarification.id);
     setLiveClarification(undefined);
-    void send(`以下是我对 Brief 澄清问题的回答。请将答案合并进 resolvedScope，保留已明确的信息，然后继续同一个工作流：\n\n${response}`, []);
+    const answerMessage = `我的回答：\n\n${response}\n\n请据此继续。`;
+    void send(answerMessage, [], {
+      userText: answerMessage,
+      waitingLabel: "正在整理你的答案，并规划接下来的设计工作流…",
+    });
   }
 
   return (
@@ -356,7 +410,7 @@ export function App() {
           </aside>
         )}
       </section>
-      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={activeRun ? "" : streamingText} running={agentRunning} stopping={stopping} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} />}
+      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} />}
       {navigationOpen && <button className="navigation-scrim" aria-label="Close project navigation" onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label="Close agent panel" onClick={() => setPanelOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>Server unavailable</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? "Connecting…" : "Reconnect"}</button></div>}

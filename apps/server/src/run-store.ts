@@ -41,7 +41,7 @@ export async function createDraftRun(workspaceDir: string, sessionId: string, ti
   await mkdir(join(workspaceDir, "runs"), { recursive: true });
   await mkdir(runDir, { recursive: false });
   await Promise.all([
-    writeFile(join(runDir, "brief.json"), JSON.stringify({ runId, sessionId, title, brief: "", resolvedScope: { human_title: title }, createdAt }, null, 2), "utf8"),
+    writeFile(join(runDir, "brief.json"), JSON.stringify({ runId, sessionId, title, titleStatus: "temporary", brief: "", resolvedScope: {}, createdAt }, null, 2), "utf8"),
     writeFile(join(runDir, "run-state.json"), JSON.stringify({ runId, status: "draft", stages: { research: "pending", planning: "pending", design: "pending", critique: "pending", export: "pending" }, createdAt, updatedAt: createdAt, lastEvent: "project_created" }, null, 2), "utf8"),
     writeFile(join(runDir, "bus.jsonl"), "", "utf8"),
   ]);
@@ -61,7 +61,7 @@ export async function primeDraftRun(workspaceDir: string, unsafeRunId: string, s
   brief.sessionId = sessionId;
   brief.brief = text;
   brief.title = text.slice(0, 72);
-  brief.resolvedScope = { ...record(brief.resolvedScope), human_title: text.slice(0, 72) };
+  brief.titleStatus = "temporary";
   await writeFile(briefPath, JSON.stringify(brief, null, 2), "utf8");
   state.updatedAt = new Date().toISOString();
   state.lastEvent = "brief_received";
@@ -576,7 +576,7 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
       .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")))
       .slice(-40);
     const rawBrief = typeof brief.brief === "string" ? brief.brief.trim() : "";
-    const title = [scope.human_title, scope.run_name]
+    const title = [scope.human_title, brief.title, scope.run_name]
       .find((value): value is string => typeof value === "string" && Boolean(value.trim()))
       ?? (rawBrief ? rawBrief.slice(0, 72) : entry.name);
     const stages = Object.fromEntries(Object.entries(record(state.stages)).filter((pair): pair is [string, string] => typeof pair[1] === "string"));

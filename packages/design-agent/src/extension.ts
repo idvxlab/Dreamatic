@@ -880,6 +880,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       description: "Initialize a persistent Dreamatic workflow run, brief, directories, and coordination bus.",
       parameters: Type.Object({
         brief: Type.String(),
+        projectTitle: Type.String({
+          minLength: 2,
+          maxLength: 48,
+          description: "A concise, distinctive human-facing name created for this project. Name the design concept; do not copy the user's full request or use generic labels such as Untitled design.",
+        }),
         workflowSkill: Type.Optional(Type.String()),
         context: Type.Optional(Type.String()),
         resolvedScope: Type.Optional(Type.String()),
@@ -906,6 +911,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const context = parsed(params.context);
         const resolvedScope = parsed(params.resolvedScope);
         const domainContext = parsed(params.domainContext);
+        const projectTitle = params.projectTitle.trim();
+        if (!projectTitle) throw new Error("projectTitle must be a concise human-facing project name");
+        const namedScope = resolvedScope && typeof resolvedScope === "object" && !Array.isArray(resolvedScope)
+          ? { ...(resolvedScope as Record<string, unknown>), human_title: projectTitle }
+          : { human_title: projectTitle };
         for (const directory of [
           "research/assets",
           "plan",
@@ -918,11 +928,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           runId,
           createdAt: typeof existingBrief.createdAt === "string" ? existingBrief.createdAt : new Date().toISOString(),
           ...(typeof existingBrief.sessionId === "string" ? { sessionId: existingBrief.sessionId } : {}),
-          ...(typeof existingBrief.title === "string" ? { title: existingBrief.title } : {}),
+          title: projectTitle,
+          titleStatus: "canonical",
           brief: params.brief,
           workflowSkill: params.workflowSkill ?? "",
           context,
-          resolvedScope,
+          resolvedScope: namedScope,
           domainContext,
         };
         await writeFile(join(runDir, "brief.json"), JSON.stringify(brief, null, 2), "utf8");
@@ -931,6 +942,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         return textResult({
           ok: true,
           runId,
+          projectTitle,
           runDir,
           researchDir: join(runDir, "research"),
           researchAssetsDir: join(runDir, "research", "assets"),

@@ -15,6 +15,7 @@ interface AgentPanelProps {
   streamingText: string;
   running: boolean;
   stopping: boolean;
+  pendingAgentStatus?: string;
   clarification?: ClarificationRequest;
   onSend: (text: string, images: PendingImage[]) => void;
   onStop: () => void;
@@ -113,10 +114,16 @@ function ClarificationCard({ request, disabled, onSubmit }: { request: Clarifica
   </section>;
 }
 
-export function AgentPanel({ timeline, workflow = [], streamingText, running, stopping, clarification, onSend, onStop, onAnswerClarification }: AgentPanelProps) {
+export function AgentPanel({ timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification }: AgentPanelProps) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!pendingAgentStatus && !clarification) return;
+    window.requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }));
+  }, [pendingAgentStatus, clarification]);
 
   async function addFiles(files: FileList | null) {
     if (!files) return;
@@ -148,7 +155,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
           ? <button className="agent-stop" type="button" onClick={onStop} disabled={stopping} title="Stop the current run"><Square size={10} fill="currentColor" /> {stopping ? "Stopping…" : "Stop"}</button>
           : <span className="agent-mode">Auto workflow</span>}
       </header>
-      <div className="agent-scroll">
+      <div className="agent-scroll" ref={scrollRef}>
         {timeline.length === 0 && workflow.length === 0 && !streamingText ? (
           <div className="agent-intro">
             <p className="eyebrow">Start with an outcome</p>
@@ -158,14 +165,14 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
           </div>
         ) : (
           <div>
-            {workflow.length > 0 ? <div className="workflow-stream">{workflow.map((event) => <WorkflowNode event={event} key={event.id} />)}</div> : <div className="timeline">{timeline.map((item) => {
+            {workflow.length > 0 ? <div className="workflow-stream">{workflow.map((event) => <WorkflowNode event={event} key={event.id} />)}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{pendingAgentStatus}</strong><small>Primary agent · working</small><i><span /><span /><span /></i></div></div>}</div> : <div className="timeline">{timeline.map((item) => {
               const expandable = Boolean(item.detail || item.artifactRefs?.length);
               const heading = <span className="timeline-label"><strong>{item.label}{item.retryCount && item.retryCount > 1 ? ` · ${item.retryCount} attempts` : ""}</strong>{item.stage && <span className="stage-pill">{item.stage}</span>}</span>;
               return <div className={`timeline-item ${item.kind}`} key={item.id}>
                 <span className="timeline-dot">{item.active ? <LoaderCircle className="spin" size={14} /> : item.kind === "error" ? <X size={13} /> : item.kind === "result" ? <Check size={13} /> : <Circle size={9} fill="currentColor" />}</span>
                 {expandable ? <details className="timeline-details"><summary>{heading}<ChevronDown size={12} /></summary><div className="timeline-expanded">{item.detail && <p>{item.detail}</p>}<ArtifactLinks paths={item.artifactRefs} /></div></details> : <div className="timeline-heading">{heading}</div>}
               </div>;
-            })}</div>}
+            })}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{pendingAgentStatus}</strong><small>Primary agent · working</small><i><span /><span /><span /></i></div></div>}</div>}
             {streamingText && <div className="assistant-copy">{streamingText}</div>}
           </div>
         )}

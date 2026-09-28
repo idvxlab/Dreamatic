@@ -22,6 +22,13 @@ test("new projects have an isolated draft Run before the agent starts", async ()
     assert.equal(firstRun?.sessionId, "session-one");
     assert.equal(secondRun?.title, "Untitled design");
     assert.equal(secondRun?.sessionId, "session-two");
+    const firstBriefPath = join(workspace, "runs", first.id, "brief.json");
+    const firstBrief = JSON.parse(await readFile(firstBriefPath, "utf8"));
+    firstBrief.title = "Mori｜桌面陪伴玩偶";
+    firstBrief.titleStatus = "canonical";
+    firstBrief.resolvedScope = { human_title: "Mori｜桌面陪伴玩偶" };
+    await writeFile(firstBriefPath, JSON.stringify(firstBrief));
+    assert.equal((await runInventory(workspace)).find((run) => run.id === first.id)?.title, "Mori｜桌面陪伴玩偶");
     await attachSessionToRun(workspace, second.id, "replacement-session");
     assert.equal((await runInventory(workspace)).find((run) => run.id === second.id)?.sessionId, "replacement-session");
   } finally {
@@ -75,7 +82,7 @@ test("canvas state and run assets share one durable Run", async () => {
     ].map((entry) => JSON.stringify(entry)).join("\n"));
     await writeFile(join(workspace, "sessions", "cli", "primary.jsonl"), [
       { type: "session", id: "primary-session", timestamp: "2026-01-01T00:00:00.000Z" },
-      { type: "message", timestamp: "2026-01-01T00:00:00.100Z", message: { role: "user", content: [{ type: "text", text: "Run sample-run" }] } },
+      { type: "message", timestamp: "2026-01-01T00:00:00.100Z", message: { role: "user", content: [{ type: "text", text: "Run sample-run\n\n[DREAMATIC PROJECT OWNERSHIP]\nThis conversation belongs only to project sample-run. Never reuse another Run." }] } },
       { type: "message", timestamp: "2026-01-01T00:00:00.500Z", message: { role: "assistant", content: [{ type: "toolCall", id: "spawn-research", name: "spawn_agent", arguments: { agent: "design-research", runId: "sample-run", task: "Research the audience and references" } }], stopReason: "toolUse" } },
       { type: "message", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "toolResult", toolCallId: "spawn-research", toolName: "spawn_agent", content: [{ type: "text", text: "Research complete" }], isError: false } },
       { type: "message", timestamp: "2026-01-01T00:00:06.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "spawn-custom", name: "spawn_agent", arguments: { agent: "visual-historian", runId: "sample-run", task: "Check the visual lineage" } }], stopReason: "toolUse" } },
@@ -108,6 +115,7 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.match(childSessions[0]?.task ?? "", /Research the audience/);
     assert.match(childSessions[0]?.actions[0]?.output ?? "", /Three references/);
     const workflow = await workflowInventory(workspace, "sample-run");
+    assert.equal(workflow.find((event) => event.kind === "message" && event.actor === "User / CLI")?.detail, "Run sample-run");
     const agentCards = workflow.filter((event) => event.kind === "agent");
     assert.deepEqual(agentCards.map((event) => event.agent), ["design-research", "visual-historian", "design-designer"]);
     assert.equal(agentCards[0]?.children?.some((event) => event.kind === "references"), true);

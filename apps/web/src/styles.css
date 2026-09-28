@@ -164,6 +164,14 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .workflow-message-bubble p { margin: 0; color: #50524b; font-size: 9.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workflow-message-row.user .workflow-message-bubble p { color: #f8f7f2; }
 .workflow-message-bubble .workflow-artifacts { margin-top: 8px; }
+.workflow-thinking-card { min-width: 0; padding: 7px 9px; border: 1px solid rgba(137,169,73,.3); border-radius: 8px; background: linear-gradient(135deg,#f8f9f1,#fffefb); }
+.workflow-thinking-card strong { display: block; color: #46483f; font-size: 9.5px; font-weight: 560; line-height: 1.45; }
+.workflow-thinking-card small { display: inline-block; margin-top: 3px; color: #92948b; font-size: 7.5px; }
+.workflow-thinking-card i { display: inline-flex; gap: 2px; margin-left: 6px; vertical-align: middle; }
+.workflow-thinking-card i span { width: 3px; height: 3px; border-radius: 50%; background: #8cab4d; animation: thinking-pulse 1.15s infinite ease-in-out; }
+.workflow-thinking-card i span:nth-child(2) { animation-delay: .16s; }
+.workflow-thinking-card i span:nth-child(3) { animation-delay: .32s; }
+@keyframes thinking-pulse { 0%,70%,100% { opacity: .25; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
 .workflow-node { position: relative; min-width: 0; display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 7px; padding: 6px 0; }
 .workflow-node:not(:last-child)::after { content: ""; position: absolute; z-index: 0; left: 10px; top: 28px; bottom: -9px; width: 1px; background: #dddcd5; }
 .workflow-dot { position: relative; z-index: 1; width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: #e6e5de; color: #85877f; }

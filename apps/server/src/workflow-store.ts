@@ -79,6 +79,10 @@ function contentText(value: unknown, limit = 900): string {
   return compact(value.map(record).flatMap((part) => typeof part.text === "string" ? [part.text] : []).join("\n"), limit);
 }
 
+function userFacingPrompt(value: string): string {
+  return value.replace(/\n\n\[DREAMATIC PROJECT OWNERSHIP\][\s\S]*$/u, "").trim();
+}
+
 function compactJson(value: unknown, limit = 700): string | undefined {
   if (value === undefined) return undefined;
   try {
@@ -286,7 +290,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
     const message = record(envelope.message);
     const role = typeof message.role === "string" ? message.role : "";
     if (role === "user") {
-      const detail = contentText(message.content, 1_200);
+      const detail = userFacingPrompt(contentText(message.content, 1_200));
       if (detail) result.push({ id: `${sessionId}-user-${result.length}`, kind: "message", status: "completed", actor: "User / CLI", label: "You", detail, ...(at ? { at } : {}) });
       continue;
     }
