@@ -14,7 +14,7 @@ const option = (name) => {
 };
 const positionalImage = args.find((value, index) => !value.startsWith("--") && (index === 0 || !args[index - 1]?.startsWith("--")));
 const imageInput = option("--image") ?? positionalImage;
-const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.DREAMATIC_API_KEY ?? process.env.OPENAI_API_KEY;
+const apiKey = process.env.DREAMATIC_IMAGE_API_KEY?.trim() || process.env.DREAMATIC_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
 const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/u, "");
 const endpoint = process.env.DREAMATIC_IMAGE_EDIT_ENDPOINT?.trim() || `${baseUrl}/images/edits`;
 const model = process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1";

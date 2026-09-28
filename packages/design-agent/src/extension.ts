@@ -1068,7 +1068,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         size: Type.Optional(Type.String()),
       }),
       async execute(_id, params, signal, onUpdate) {
-        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.DREAMATIC_API_KEY ?? process.env.OPENAI_API_KEY;
+        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY?.trim() || process.env.DREAMATIC_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
         if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
         const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
         const endpoint = process.env.DREAMATIC_IMAGE_GENERATION_ENDPOINT?.trim() || `${baseUrl}/images/generations`;
@@ -1146,7 +1146,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         size: Type.Optional(Type.String()),
       }),
       async execute(_id, params, signal, onUpdate) {
-        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.DREAMATIC_API_KEY ?? process.env.OPENAI_API_KEY;
+        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY?.trim() || process.env.DREAMATIC_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
         if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
         const form = new FormData();
         form.set("model", process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1");
