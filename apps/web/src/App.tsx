@@ -252,7 +252,7 @@ export function App() {
     }
   }
 
-  async function saveSettings(config: RuntimeConfig & { textApiKey?: string; imageApiKey?: string }) {
+  async function saveSettings(config: RuntimeConfig & { textApiKey?: string; searchApiKey?: string; imageApiKey?: string }) {
     const saved = await saveRuntimeConfig(config);
     setRuntimeConfig(saved);
     setHealth(await getHealth());

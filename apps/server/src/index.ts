@@ -119,6 +119,7 @@ const CONFIG_KEYS = {
   providerType: "DREAMATIC_PROVIDER_TYPE",
   baseUrl: "DREAMATIC_BASE_URL",
   model: "DREAMATIC_MODEL",
+  searchProvider: "DREAMATIC_SEARCH_PROVIDER",
   imageBaseUrl: "DREAMATIC_IMAGE_BASE_URL",
   imageModel: "DREAMATIC_IMAGE_MODEL",
   imageGenerationEndpoint: "DREAMATIC_IMAGE_GENERATION_ENDPOINT",
@@ -131,6 +132,7 @@ function configView() {
   return {
     ...Object.fromEntries(Object.entries(CONFIG_KEYS).map(([field, key]) => [field, process.env[key] ?? ""])),
     textApiKeyConfigured: Boolean(process.env.DREAMATIC_API_KEY),
+    searchApiKeyConfigured: Boolean(process.env.DREAMATIC_SEARCH_API_KEY || process.env.SERPER_API_KEY),
     imageApiKeyConfigured: Boolean(process.env.DREAMATIC_IMAGE_API_KEY || process.env.DREAMATIC_API_KEY),
   };
 }
@@ -144,6 +146,7 @@ async function saveConfig(input: Record<string, unknown>): Promise<void> {
     if (typeof value === "string") updates.set(key, value.trim());
   }
   if (typeof input.textApiKey === "string" && input.textApiKey.trim()) updates.set("DREAMATIC_API_KEY", input.textApiKey.trim());
+  if (typeof input.searchApiKey === "string" && input.searchApiKey.trim()) updates.set("DREAMATIC_SEARCH_API_KEY", input.searchApiKey.trim());
   if (typeof input.imageApiKey === "string" && input.imageApiKey.trim()) updates.set("DREAMATIC_IMAGE_API_KEY", input.imageApiKey.trim());
   for (const [key, value] of updates) {
     if (key.includes("URL") || key.includes("ENDPOINT")) {

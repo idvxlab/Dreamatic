@@ -96,6 +96,21 @@ Set `DREAMATIC_PROVIDER_TYPE=openai-responses` only when the endpoint implements
 the OpenAI Responses protocol. Otherwise the default OpenAI-compatible chat
 completions protocol is used.
 
+### Web research
+
+Dreamatic uses DuckDuckGo without an API key by default. To use Serper instead,
+configure:
+
+```env
+DREAMATIC_SEARCH_PROVIDER=serper
+DREAMATIC_SEARCH_API_KEY=your-serper-key
+```
+
+The Research Agent keeps the same `websearch` tool contract with either
+provider. `SERPER_API_KEY` is also accepted for compatibility with older
+Dreamatic configurations. If Serper is not configured, Dreamatic automatically
+uses DuckDuckGo.
+
 ### Image generation and editing
 
 ```env

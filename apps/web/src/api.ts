@@ -95,6 +95,7 @@ export interface RuntimeConfig {
   providerType: string;
   baseUrl: string;
   model: string;
+  searchProvider: string;
   imageBaseUrl: string;
   imageModel: string;
   imageGenerationEndpoint: string;
@@ -102,6 +103,7 @@ export interface RuntimeConfig {
   imageDefaultSize: string;
   imageResponseFormat: string;
   textApiKeyConfigured: boolean;
+  searchApiKeyConfigured: boolean;
   imageApiKeyConfigured: boolean;
 }
 
@@ -109,7 +111,7 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   return parse(await fetch("/api/config"));
 }
 
-export async function saveRuntimeConfig(config: RuntimeConfig & { textApiKey?: string; imageApiKey?: string }): Promise<RuntimeConfig> {
+export async function saveRuntimeConfig(config: RuntimeConfig & { textApiKey?: string; searchApiKey?: string; imageApiKey?: string }): Promise<RuntimeConfig> {
   return parse(await fetch("/api/config", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

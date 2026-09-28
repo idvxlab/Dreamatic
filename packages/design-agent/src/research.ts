@@ -6,6 +6,14 @@ import { RetryableHttpError, withRetry } from "./retry.js";
 
 const MAX_PAGE_BYTES = 3 * 1024 * 1024;
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
+const SERPER_SEARCH_URL = "https://google.serper.dev/search";
+
+type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export interface WebSearchOptions {
+  env?: NodeJS.ProcessEnv;
+  fetch?: FetchLike;
+}
 
 function safeUrl(value: string): URL {
   const url = new URL(value);
@@ -37,27 +45,99 @@ function plainText(html: string): string {
     .trim());
 }
 
-async function boundedFetch(url: URL, accept: string, maxBytes: number): Promise<{ response: Response; bytes: Buffer }> {
-  return withRetry(async () => {
-    const response = await fetch(url, {
-      redirect: "follow",
-      headers: { "User-Agent": "Dreamatic/0.1 design research", Accept: accept },
-      signal: AbortSignal.timeout(45_000),
-    });
-    if ([408, 409, 425, 429, 500, 502, 503, 504].includes(response.status)) throw new RetryableHttpError(response.status, `Research fetch failed (${response.status})`);
-    if (!response.ok) throw new Error(`Research fetch failed (${response.status})`);
-    const declared = Number(response.headers.get("content-length") ?? 0);
-    if (declared > maxBytes) throw new Error(`Research response exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    if (bytes.length > maxBytes) throw new Error(`Research response exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
-    return { response, bytes };
-  }, { attempts: 3 });
+function describeNetworkError(error: unknown): string {
+  const messages: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
+    const code = "code" in current && typeof current.code === "string" ? ` (${current.code})` : "";
+    const message = `${current.message}${code}`.trim();
+    if (message && !messages.includes(message)) messages.push(message);
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return messages.join(": ") || String(error);
 }
 
-export async function webSearch(query: string, limit = 8) {
+async function boundedFetch(
+  url: URL,
+  accept: string,
+  maxBytes: number,
+  options: { fetch?: FetchLike; init?: RequestInit; operation?: string } = {},
+): Promise<{ response: Response; bytes: Buffer }> {
+  const operation = options.operation ?? "Research fetch";
+  try {
+    return await withRetry(async () => {
+      const headers = new Headers({ "User-Agent": "Dreamatic/0.1 design research", Accept: accept });
+      new Headers(options.init?.headers).forEach((value, key) => headers.set(key, value));
+      const response = await (options.fetch ?? globalThis.fetch)(url, {
+        ...options.init,
+        redirect: "follow",
+        headers,
+        signal: AbortSignal.timeout(45_000),
+      });
+      if ([408, 409, 425, 429, 500, 502, 503, 504].includes(response.status)) {
+        throw new RetryableHttpError(response.status, `${operation} failed (${response.status})`);
+      }
+      if (!response.ok) throw new Error(`${operation} failed (${response.status})`);
+      const declared = Number(response.headers.get("content-length") ?? 0);
+      if (declared > maxBytes) throw new Error(`${operation} response exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (bytes.length > maxBytes) throw new Error(`${operation} response exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
+      return { response, bytes };
+    }, { attempts: 3 });
+  } catch (error) {
+    throw new Error(`${operation} failed: ${describeNetworkError(error)}`, { cause: error });
+  }
+}
+
+function searchConfiguration(env: NodeJS.ProcessEnv): { provider: "serper"; apiKey: string } | { provider: "duckduckgo"; fallbackReason?: string } {
+  const provider = env.DREAMATIC_SEARCH_PROVIDER?.trim().toLowerCase();
+  const profileKey = env.DREAMATIC_SEARCH_API_KEY?.trim();
+  const legacySerperKey = env.SERPER_API_KEY?.trim();
+  if (provider === "serper") {
+    const apiKey = profileKey || legacySerperKey;
+    return apiKey ? { provider: "serper", apiKey } : { provider: "duckduckgo", fallbackReason: "Serper is selected but no search API key is configured." };
+  }
+  if (!provider && legacySerperKey) return { provider: "serper", apiKey: legacySerperKey };
+  return { provider: "duckduckgo", ...(provider && provider !== "duckduckgo" ? { fallbackReason: `Unsupported search provider '${provider}'.` } : {}) };
+}
+
+async function serperSearch(query: string, limit: number, apiKey: string, fetcher?: FetchLike) {
+  const { bytes } = await boundedFetch(new URL(SERPER_SEARCH_URL), "application/json", MAX_PAGE_BYTES, {
+    ...(fetcher ? { fetch: fetcher } : {}),
+    operation: "Serper search",
+    init: {
+      method: "POST",
+      headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ q: query, num: limit }),
+    },
+  });
+  let payload: { organic?: Array<{ title?: unknown; link?: unknown; snippet?: unknown; date?: unknown }> };
+  try { payload = JSON.parse(bytes.toString("utf8")) as typeof payload; }
+  catch (error) { throw new Error(`Serper search returned invalid JSON: ${describeNetworkError(error)}`); }
+  const results: Array<{ title: string; url: string; snippet: string; date?: string }> = [];
+  const seen = new Set<string>();
+  for (const item of payload.organic ?? []) {
+    const title = typeof item.title === "string" ? item.title.trim() : "";
+    const url = typeof item.link === "string" ? item.link.trim() : "";
+    if (!title || !url || seen.has(url)) continue;
+    seen.add(url);
+    const snippet = typeof item.snippet === "string" ? item.snippet.trim() : "";
+    const date = typeof item.date === "string" ? item.date.trim() : "";
+    results.push({ title, url, snippet, ...(date ? { date } : {}) });
+    if (results.length >= limit) break;
+  }
+  return { provider: "serper" as const, query, count: results.length, results };
+}
+
+export async function webSearch(query: string, limit = 8, options: WebSearchOptions = {}) {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) throw new Error("Search query must not be empty");
+  const cappedLimit = Math.max(1, Math.min(12, limit));
+  const configuration = searchConfiguration(options.env ?? process.env);
+  if (configuration.provider === "serper") return serperSearch(normalizedQuery, cappedLimit, configuration.apiKey, options.fetch);
   const url = new URL("https://html.duckduckgo.com/html/");
-  url.searchParams.set("q", query);
-  const { bytes } = await boundedFetch(url, "text/html", MAX_PAGE_BYTES);
+  url.searchParams.set("q", normalizedQuery);
+  const { bytes } = await boundedFetch(url, "text/html", MAX_PAGE_BYTES, { ...(options.fetch ? { fetch: options.fetch } : {}), operation: "DuckDuckGo search" });
   const html = bytes.toString("utf8");
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   const blocks = html.split(/class="result\s+results_links[^>]*"/i).slice(1);
@@ -69,12 +149,17 @@ export async function webSearch(query: string, limit = 8) {
     const destination = redirected.searchParams.get("uddg") ?? redirected.href;
     const snippet = plainText(block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a?>/i)?.[1] ?? "");
     results.push({ title: plainText(link[2]!), url: destination, snippet });
-    if (results.length >= Math.max(1, Math.min(12, limit))) break;
+    if (results.length >= cappedLimit) break;
   }
-  return { query, count: results.length, results };
+  return { provider: "duckduckgo" as const, query: normalizedQuery, count: results.length, results, ...(configuration.fallbackReason ? { fallbackReason: configuration.fallbackReason } : {}) };
 }
 
-export async function researchFetch(workspaceDir: string, params: { runId: string; url: string; id: string; cacheText?: boolean }) {
+function sourceId(url: URL): string {
+  const stem = `${url.hostname}-${url.pathname}`.replace(/[^a-z0-9\u4e00-\u9fff-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "source";
+  return safeRunId(`${stem}-${createHash("sha256").update(url.href).digest("hex").slice(0, 10)}`);
+}
+
+export async function researchFetch(workspaceDir: string, params: { runId: string; url: string; id?: string; cacheText?: boolean }) {
   const runId = safeRunId(params.runId);
   const url = safeUrl(params.url);
   const { response, bytes } = await boundedFetch(url, "text/html,text/plain,application/json", MAX_PAGE_BYTES);
@@ -84,7 +169,7 @@ export async function researchFetch(workspaceDir: string, params: { runId: strin
   const title = /html/i.test(contentType) ? plainText(source.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? url.hostname) : url.hostname;
   let cachedPath: string | undefined;
   if (params.cacheText) {
-    const id = safeRunId(params.id);
+    const id = params.id?.trim() ? safeRunId(params.id) : sourceId(url);
     const path = resolveInside(workspaceDir, join("runs", runId, "research", "sources", `${id}.txt`));
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, `${title}\n${response.url}\n\n${text}\n`, "utf8");

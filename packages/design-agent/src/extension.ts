@@ -613,7 +613,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       parameters: Type.Object({
         runId: Type.String(),
         url: Type.String(),
-        id: Type.String(),
+        id: Type.Optional(Type.String({ description: "Stable cache filename stem. Derived from the URL when omitted." })),
         cacheText: Type.Optional(Type.Boolean()),
       }),
       async execute(_id, params) {
