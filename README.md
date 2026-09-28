@@ -128,6 +128,20 @@ same key as `DREAMATIC_API_KEY`. Explicit generation/edit endpoints are optional
 when the provider follows the standard `/images/generations` and `/images/edits`
 paths.
 
+To diagnose image editing without running the full agent workflow:
+
+```bash
+# Configuration, DNS, and endpoint reachability only; does not create an image
+npm run diagnose:image-edit
+
+# One real image-edit request using the exact .env configuration; may be billable
+npm run diagnose:image-edit -- --image "/absolute/path/to/reference.png"
+```
+
+The diagnostic hides the API key and reports the resolved endpoint, model,
+input size, timeout, HTTP status, elapsed time, request ID, retry guidance, and
+the provider error body. It works the same way on macOS, Linux, and Windows.
+
 ### Workspace and recovery
 
 ```env

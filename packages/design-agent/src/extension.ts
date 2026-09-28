@@ -116,6 +116,7 @@ interface RunState {
 
 const MAX_ACTIVE_SKILL_CHARS = 18_000;
 const operationAttempts = new Map<string, number>();
+const operationLastErrors = new Map<string, string>();
 
 function omitPersistedImagePayload(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(omitPersistedImagePayload);
@@ -216,20 +217,33 @@ async function resilientFetch(
   return withRetry(async () => {
     const used = operationAttempts.get(budgetKey) ?? 0;
     if (used >= attemptBudget) {
-      const message = `${options.operation} retry budget exhausted after ${used} attempts; durable checkpoint preserved`;
+      const lastError = operationLastErrors.get(budgetKey);
+      const message = `${options.operation} retry budget exhausted after ${used} attempts; durable checkpoint preserved${lastError ? `; last error: ${lastError}` : ""}`;
       await appendFile(resolveInside(options.workspaceDir, join("runs", safeRunId(options.runId), "bus.jsonl")), `${JSON.stringify({ runId: options.runId, type: "operation_interrupted", operation: options.operation, scope: options.budgetScope, attempts: used, retryable: true, error: message, at: new Date().toISOString() })}\n`, "utf8");
       throw new Error(message);
     }
     operationAttempts.set(budgetKey, used + 1);
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
-    const response = await fetch(endpoint, { ...init, signal });
-    if (isRetryableStatus(response.status)) {
-      const detail = (await response.text()).slice(0, 600);
-      throw new RetryableHttpError(response.status, `${options.operation} failed (${response.status}): ${detail}`, retryAfterMs(response));
+    try {
+      const response = await fetch(endpoint, { ...init, signal });
+      if (isRetryableStatus(response.status)) {
+        const detail = (await response.text()).slice(0, 600);
+        throw new RetryableHttpError(response.status, `${options.operation} failed (${response.status}): ${detail}`, retryAfterMs(response));
+      }
+      operationAttempts.delete(budgetKey);
+      operationLastErrors.delete(budgetKey);
+      return response;
+    } catch (error) {
+      let failure = error instanceof Error ? error : new Error(String(error));
+      if (timeout.aborted && !options.signal?.aborted) {
+        const target = new URL(endpoint);
+        target.search = "";
+        failure = new Error(`${options.operation} timed out after ${timeoutMs} ms while calling ${target.toString()}`);
+      }
+      operationLastErrors.set(budgetKey, failure.message.slice(0, 800));
+      throw failure;
     }
-    operationAttempts.delete(budgetKey);
-    return response;
   }, {
     attempts,
     ...(options.signal ? { signal: options.signal } : {}),
@@ -1054,8 +1068,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         size: Type.Optional(Type.String()),
       }),
       async execute(_id, params, signal, onUpdate) {
-        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.OPENAI_API_KEY;
-        if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY or OPENAI_API_KEY is not configured");
+        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.DREAMATIC_API_KEY ?? process.env.OPENAI_API_KEY;
+        if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
         const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
         const endpoint = process.env.DREAMATIC_IMAGE_GENERATION_ENDPOINT?.trim() || `${baseUrl}/images/generations`;
         const idempotencyKey = createHash("sha256").update(`${params.runId}\0${params.id}\0${params.prompt}`).digest("hex");
@@ -1132,8 +1146,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         size: Type.Optional(Type.String()),
       }),
       async execute(_id, params, signal, onUpdate) {
-        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.OPENAI_API_KEY;
-        if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY or OPENAI_API_KEY is not configured");
+        const apiKey = process.env.DREAMATIC_IMAGE_API_KEY ?? process.env.DREAMATIC_API_KEY ?? process.env.OPENAI_API_KEY;
+        if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
         const form = new FormData();
         form.set("model", process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1");
         form.set("prompt", params.prompt);

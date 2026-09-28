@@ -18,6 +18,7 @@
     "check": "npm run check -w @dreamatic/design-agent && npm run check -w @dreamatic/cli && npm run check -w @dreamatic/server && npm run check -w @dreamatic/web",
     "start": "npm run start -w @dreamatic/server",
     "cli": "npm run start -w @dreamatic/cli --",
+    "diagnose:image-edit": "node scripts/diagnose-image-edit.mjs",
     "compact-session": "node scripts/compact-visual-session.mjs"
   },
   "devDependencies": {
