@@ -56,6 +56,7 @@ function clarificationFromEvent(event: Record<string, unknown>): ClarificationRe
 
 export function App() {
   const initialized = useRef(false);
+  const workspaceReady = useRef(false);
   const awaitingRun = useRef(false);
   const runIdsBeforePrompt = useRef<Set<string>>(new Set());
   const [sessions, setSessions] = useState<SessionView[]>([]);
@@ -96,7 +97,7 @@ export function App() {
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
     setConnectionError(undefined);
-    for (let attempt = 0; attempt < 8; attempt += 1) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
       try {
         const [existing, loadedRuns, initialAssets, runtimeHealth] = await Promise.all([listSessions(), listRuns(), listAssets(), getHealth()]);
         const next = existing.length > 0 ? existing : [await createSession()];
@@ -109,11 +110,12 @@ export function App() {
           : next.find((session) => session.id === existingRuns[0]?.sessionId)?.id ?? next[0]?.id);
         setAssets(initialAssets);
         setHealth(runtimeHealth);
+        workspaceReady.current = true;
         setLoading(false);
         return;
       } catch (error) {
-        if (attempt < 7) {
-          await pause(350);
+        if (attempt < 19) {
+          await pause(500);
           continue;
         }
         setConnectionError(error instanceof Error ? error.message : String(error));
@@ -131,9 +133,24 @@ export function App() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       void Promise.all([listRuns(), listAssets(), listSessions()]).then(([nextRuns, nextAssets, nextSessions]) => {
+        const recovering = !workspaceReady.current;
         setRuns(nextRuns);
         setAssets(nextAssets);
         setSessions(nextSessions);
+        setActiveRunId((current) => {
+          if (current && nextRuns.some((run) => run.id === current)) return current;
+          if (current || recovering) return nextRuns[0]?.id;
+          return undefined;
+        });
+        setActiveId((current) => {
+          if (current && nextSessions.some((session) => session.id === current)) return current;
+          if (!current && !recovering) return undefined;
+          const firstRun = nextRuns[0];
+          return nextSessions.find((session) => session.id === firstRun?.sessionId)?.id ?? nextSessions[0]?.id;
+        });
+        workspaceReady.current = true;
+        setConnectionError(undefined);
+        setLoading(false);
         if (awaitingRun.current) {
           const owned = nextRuns.find((run) => run.sessionId === activeId);
           const created = nextRuns.find((run) => !runIdsBeforePrompt.current.has(run.id) && run.sessionId === activeId);

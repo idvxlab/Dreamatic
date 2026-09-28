@@ -4,5 +4,6 @@ dist/
 .DS_Store
 workspace/runs/
 workspace/sessions/
+workspace/.trash/
 *.log
 *.tsbuildinfo
