@@ -192,6 +192,7 @@ const server = createServer(async (request, response) => {
         .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl")).length;
       json(response, 200, {
         ok: true,
+        processId: process.pid,
         workspaceDir,
         profile: process.env.DREAMATIC_ACTIVE_PROFILE ?? "default",
         provider: process.env.DREAMATIC_PROVIDER_NAME ?? "Not configured",
@@ -341,14 +342,25 @@ const server = createServer(async (request, response) => {
   }
 });
 
+server.once("error", async (error: NodeJS.ErrnoException) => {
+  if (error.code === "EADDRINUSE") console.error(`Dreamatic cannot start because port ${port} is already in use. Stop the previous Dreamatic dev process, then try again.`);
+  else console.error(error);
+  await registry.dispose().catch(() => undefined);
+  process.exit(1);
+});
+
 server.listen(port, () => {
   console.log(`Dreamatic server: http://localhost:${port}`);
   console.log(`Workspace: ${workspaceDir}`);
 });
 
+let shuttingDown = false;
 async function shutdown(): Promise<void> {
-  await registry.dispose();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  await registry.dispose().catch(() => undefined);
   server.close();
+  server.closeAllConnections();
 }
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);

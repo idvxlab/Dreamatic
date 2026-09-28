@@ -170,6 +170,7 @@ export function App() {
       return;
     }
     let disposed = false;
+    setWorkflow([]);
     void getWorkflow(activeRunId).then((next) => {
       if (!disposed) setWorkflow(next);
     }).catch(() => undefined);
@@ -222,6 +223,17 @@ export function App() {
   }
 
   async function selectProject(runId: string) {
+    if (runId === activeRunId) {
+      setNavigationOpen(false);
+      return;
+    }
+    setWorkflow([]);
+    setTimeline([]);
+    setStreamingText("");
+    setPendingAgentStatus(undefined);
+    setLiveClarification(undefined);
+    setAnsweredClarificationId(undefined);
+    setSelectedAsset(undefined);
     setActiveRunId(runId);
     const project = runs.find((run) => run.id === runId);
     const linked = project?.sessionId ? sessions.find((session) => session.id === project.sessionId) : undefined;

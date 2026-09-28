@@ -74,6 +74,7 @@ export function streamWorkflow(runId: string, onEvent: (event: WorkflowStreamMes
 
 export interface HealthView {
   ok: boolean;
+  processId: number;
   workspaceDir: string;
   profile: string;
   provider: string;

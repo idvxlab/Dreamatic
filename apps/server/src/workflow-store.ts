@@ -164,7 +164,10 @@ async function sessionLines(path: string): Promise<Record<string, unknown>[]> {
   for await (const line of lines) {
     if (!line) continue;
     try {
-      const safeLine = line.length > 500_000
+      // Session history can contain inline image payloads smaller than the old
+      // size threshold. Letting those strings reach collectPaths makes its path
+      // matcher scan hundreds of thousands of base64 characters repeatedly.
+      const safeLine = line.includes('"data"') || line.includes('"b64_json"') || line.includes('"imageData"') || line.includes('"base64"')
         ? line.replace(/"(?:data|b64_json|imageData|base64)"\s*:\s*"[^"]*"/gu, '"data":"[image payload omitted]"')
         : line;
       result.push(record(JSON.parse(safeLine) as unknown));
