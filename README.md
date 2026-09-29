@@ -1,24 +1,90 @@
 # Dreamatic
 
-**A Pi-based harness for professional design agents** — turn a brief into a
-traceable design process, a reviewed visual artifact set, and a standalone
-showcase.
+**A professional AI design harness for turning creative briefs into
+traceable design processes and organized visual deliveries.**
 
 ![Dreamatic hero illustration](docs/assets/dreamatic-hero.png)
 
-Dreamatic keeps Pi as a versioned dependency and extends it through its SDK,
-Extensions, Skills, and session runtime. Pi provides the general agent loop;
-Dreamatic provides the design-specific workflow, visual actions, artifact
-contracts, Design Bus, project workspace, CLI, and React interface.
+Dreamatic is designed for work that needs more than a single generated image.
+It coordinates research, planning, visual production, critique, targeted
+revision, and delivery as one inspectable workflow. Every project keeps its
+brief, references, design rationale, intermediate decisions, generated assets,
+review evidence, and final presentation together.
 
-The `dev` branch is the current rebuilt baseline. A complete brief-to-output
-run has been exercised with isolated Research, Planning, Design, and Critic
-sessions, reference collection, image generation/editing, visual inspection,
-repair, durable artifacts, Canvas presentation, and Showcase preview.
+## What Dreamatic does
+
+```text
+creative brief
+  → scope and clarification
+  → reference research
+  → design system and deliverable planning
+  → image generation and editing
+  → visual critique and targeted repair
+  → reviewed artifact set
+  → interactive Canvas + standalone Showcase
+```
+
+Dreamatic turns this process into a persistent **Run** rather than a disposable
+chat. The primary agent can create specialist Research, Planning, Design, and
+Critic sessions when needed. Those sessions share structured project knowledge
+through the Design Bus while keeping their own working context and history.
+
+## Key features
+
+| Feature | What it provides |
+| --- | --- |
+| Brief-to-delivery workflow | One continuous process from requirements and research to reviewed visual output and export |
+| Adaptive specialist agents | Isolated child sessions are created when the workflow needs research, planning, design, or critique expertise |
+| Design knowledge and domain Skills | Workflow guidance, visual composition rules, critique rubrics, image prompting, and domain-specific design knowledge |
+| Evidence-grounded research | Web search, source reading, reference-image collection, validation, deduplication, and a persistent research library |
+| Visual production toolchain | Image generation, multi-reference editing, visual inspection, side-by-side comparison, artifact selection, and linting |
+| Artifact-set delivery | Produces an organized family of visuals, plans, research, review records, manifests, and a self-contained final package—not just one image |
+| Visual consistency loop | Establishes design anchors, inspects every generated or edited image, and supports one scoped repair pass after critique |
+| Durable and resumable projects | Run state, session histories, workflow events, files, and canvas layout survive interruption and can be reopened |
+| Shared Web and CLI workflow | Browser and command-line tasks use the same agents, Skills, tools, workspace, and project files |
+| Live, inspectable execution | The interface streams primary-agent actions, dynamically created child-agent sessions, references, tool activity, and outputs as they happen |
+| Canvas and Showcase | Arrange references, design notes, and visual outcomes on a persistent pan-and-zoom canvas, then switch to the generated presentation page |
+| Resilient local runtime | Operation-level retries, durable checkpoints, recoverable project deletion, provider diagnostics, and reconnection-aware Web startup |
+
+## Design outputs
+
+A completed Run can contain:
+
+- a normalized brief and acceptance criteria;
+- verified research notes, sources, and a reusable reference-image library;
+- a design system, rationale, production plan, and deliverable manifest;
+- multiple generated and edited visual assets with inspection records;
+- critique, selection, repair, and artifact-lint evidence;
+- a persistent Canvas layout for working with the project;
+- a self-contained Showcase and final delivery package.
+
+The built-in workflow currently supports **brand and cultural identity**,
+**product and industrial design**, **architecture and spatial design**, and
+**poster and advertising design**. Its deliverable plan adapts to the brief:
+for example, a product may add an exploded view when its structure is complex,
+while a campaign may add format adaptations when several media placements are
+required.
+
+## Two ways to work
+
+- **Web workspace:** create and manage projects, answer clarification cards,
+  watch the nested workflow stream, inspect references and outputs, arrange the
+  Canvas, and open the final Showcase.
+- **CLI:** run the same workflow from a terminal, attach reference images,
+  stream machine-readable events, use interactive mode, or resume an
+  interrupted Run. CLI-created projects automatically appear in the Web
+  workspace when both use the same workspace directory.
+
+The current release focuses on image-based design deliverables. Video and 3D
+branches documented by earlier experiments are not active in this runtime.
 
 ## Architecture boundary
 
-| Pi dependency | Dreamatic extension |
+Dreamatic uses Pi as a versioned upstream runtime and extends it through its
+SDK, Extensions, Skills, and session APIs. Pi supplies the general agent loop;
+Dreamatic owns the design-specific behavior and product experience.
+
+| Runtime foundation | Dreamatic product layer |
 | --- | --- |
 | Model/provider abstraction | Design personas and domain Skills |
 | Agent sessions and streaming | Multi-stage design orchestration |
@@ -27,7 +93,7 @@ repair, durable artifacts, Canvas presentation, and Showcase preview.
 | Context compaction and persistence | Image-context control and resumable Run files |
 | General filesystem/shell tools | React project workspace and design CLI |
 
-The same persistent Run is used by both entry points:
+The same persistent Run is used by both Web and CLI:
 
 ```text
 brief → primary Pi session → specialist child sessions → visual artifacts
