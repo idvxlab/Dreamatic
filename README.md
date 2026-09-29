@@ -1,6 +1,6 @@
 # Dreamatic
 
-**A professional AI design workspace for turning creative briefs into
+**A professional AI design harness for turning creative briefs into
 traceable design processes and organized visual deliveries.**
 
 ![Dreamatic hero illustration](docs/assets/dreamatic-hero.png)
