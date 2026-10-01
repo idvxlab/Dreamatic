@@ -46,7 +46,7 @@ export interface RunView {
   assetCount: number;
   documents: string[];
   notes: Array<{
-    id: "research" | "plan" | "critique";
+    id: "research" | "plan" | "review";
     title: string;
     text: string;
     path: string;

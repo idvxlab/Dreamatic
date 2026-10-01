@@ -45,23 +45,24 @@ const LIFECYCLE_TYPES = new Set([
   "tool_started",
   "tool_finished",
   "reference_added",
-  "primary_tool_started",
-  "primary_tool_finished",
+  "orchestrator_tool_started",
+  "orchestrator_tool_finished",
 ]);
 
 const AGENT_TITLES: Record<string, string> = {
-  "design-research": "Research agent",
-  "design-planner": "Planning agent",
-  "design-designer": "Design agent",
-  "design-critic": "Critic agent",
+  researcher: "Researcher",
+  designer: "Designer",
+  reviewer: "Reviewer",
+  builder: "Builder",
 };
 
 const COMPLETION_EVENT_AGENTS: Record<string, string> = {
-  research_done: "design-research",
-  plan_done: "design-planner",
-  design_done: "design-designer",
-  evaluator_pass: "design-critic",
-  evaluator_fail: "design-critic",
+  research_done: "researcher",
+  design_spec_ready: "designer",
+  design_revision_ready: "designer",
+  design_review_pass: "reviewer",
+  design_review_fail: "reviewer",
+  build_done: "builder",
 };
 
 function record(value: unknown): Record<string, unknown> {
@@ -126,8 +127,8 @@ function toolLabel(tool: string): string {
   const labels: Record<string, string> = {
     ask_user: "Clarifying the brief",
     run_init: "Created design Run",
-    use_skill: "Loaded design knowledge",
     spawn_agent: "Called specialist agent",
+    websearch: "Searched the web",
     web_search: "Searched the web",
     research_fetch: "Read research source",
     research_asset_discover: "Discovered reference images",
@@ -217,7 +218,7 @@ async function childInvocations(path: string, agent: string, runId: string): Pro
         id: `${sessionId}-invocation-${invocationIndex}`,
         kind: "agent",
         status: "running",
-        actor: "Primary agent",
+        actor: "Orchestrator",
         agent,
         label: AGENT_TITLES[agent] ?? agent.replaceAll("-", " "),
         detail: contentText(message.content, 1_200),
@@ -300,7 +301,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
     if (role === "assistant") {
       const parts = Array.isArray(message.content) ? message.content : [];
       const text = contentText(parts, 1_200);
-      if (text) result.push({ id: `${sessionId}-assistant-${result.length}`, kind: "message", status: "completed", actor: "Primary agent", label: "Primary agent", detail: text, ...(at ? { at } : {}) });
+      if (text) result.push({ id: `${sessionId}-assistant-${result.length}`, kind: "message", status: "completed", actor: "Orchestrator", label: "Orchestrator", detail: text, ...(at ? { at } : {}) });
       for (const [index, rawPart] of parts.entries()) {
         const part = record(rawPart);
         if (part.type !== "toolCall" || typeof part.name !== "string") continue;
@@ -313,7 +314,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
           id,
           kind: "agent",
           status: "running",
-          actor: "Primary agent",
+          actor: "Orchestrator",
           agent,
           label: AGENT_TITLES[agent] ?? agent.replaceAll("-", " "),
           ...(typeof args.task === "string" ? { detail: compact(args.task, 1_200) } : {}),
@@ -324,7 +325,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
           id,
           kind: "tool",
           status: "running",
-          actor: "Primary agent",
+          actor: "Orchestrator",
           label: toolLabel(part.name),
           tool: part.name,
           ...(at ? { at } : {}),
@@ -334,7 +335,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
         result.push(event);
         pending.set(id, event);
       }
-      if (message.stopReason === "error") result.push({ id: `${sessionId}-error-${result.length}`, kind: "error", status: "error", actor: "Primary agent", label: "Primary agent interrupted", detail: typeof message.errorMessage === "string" ? compact(message.errorMessage) : "Agent execution was interrupted", ...(at ? { at } : {}) });
+      if (message.stopReason === "error") result.push({ id: `${sessionId}-error-${result.length}`, kind: "error", status: "error", actor: "Orchestrator", label: "Orchestrator interrupted", detail: typeof message.errorMessage === "string" ? compact(message.errorMessage) : "Agent execution was interrupted", ...(at ? { at } : {}) });
       continue;
     }
     if (role === "toolResult") {
@@ -375,7 +376,7 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
         id: invocationId,
         kind: "agent",
         status: "running",
-        actor: "Primary agent",
+        actor: "Orchestrator",
         agent,
         label: AGENT_TITLES[agent] ?? agent.replaceAll("-", " "),
         ...(typeof event.task === "string" ? { detail: compact(event.task, 1_200) } : {}),
@@ -474,16 +475,16 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
   return [...invocations.values()];
 }
 
-function primaryLifecycleEvents(records: Record<string, unknown>[], runId: string): WorkflowEventView[] {
+function orchestratorLifecycleEvents(records: Record<string, unknown>[], runId: string): WorkflowEventView[] {
   const events: WorkflowEventView[] = [];
   const tools = new Map<string, WorkflowEventView>();
   for (const [index, event] of records.entries()) {
     const type = typeof event.type === "string" ? event.type : "";
-    if (!["primary_tool_started", "primary_tool_finished"].includes(type)) continue;
+    if (!["orchestrator_tool_started", "orchestrator_tool_finished"].includes(type)) continue;
     const id = typeof event.toolCallId === "string" ? event.toolCallId : `primary-tool-${index}`;
-    if (type === "primary_tool_started") {
+    if (type === "orchestrator_tool_started") {
       const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-      const node: WorkflowEventView = { id, kind: "tool", status: "running", actor: "Primary agent", label: toolLabel(toolName), tool: toolName, ...(typeof event.input === "string" ? { input: compact(event.input, 900) } : {}), ...(typeof event.at === "string" ? { at: event.at } : {}) };
+      const node: WorkflowEventView = { id, kind: "tool", status: "running", actor: "Orchestrator", label: toolLabel(toolName), tool: toolName, ...(typeof event.input === "string" ? { input: compact(event.input, 900) } : {}), ...(typeof event.at === "string" ? { at: event.at } : {}) };
       events.push(node);
       tools.set(id, node);
       continue;
@@ -491,7 +492,7 @@ function primaryLifecycleEvents(records: Record<string, unknown>[], runId: strin
     let node = tools.get(id);
     if (!node) {
       const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-      node = { id, kind: "tool", status: "running", actor: "Primary agent", label: toolLabel(toolName), tool: toolName, ...(typeof event.at === "string" ? { at: event.at } : {}) };
+      node = { id, kind: "tool", status: "running", actor: "Orchestrator", label: toolLabel(toolName), tool: toolName, ...(typeof event.at === "string" ? { at: event.at } : {}) };
       events.push(node);
       tools.set(id, node);
     }
@@ -508,7 +509,7 @@ function busEvents(records: Record<string, unknown>[], runId: string): WorkflowE
     try {
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       if (LIFECYCLE_TYPES.has(type)) return [];
-      const failed = type.includes("fail") || type.includes("interrupted") || event.severity === "error";
+      const failed = type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";
       const refs = [...collectPaths(event.artifactRefs, runId)];
       const operation = typeof event.operation === "string" ? event.operation : "operation";
@@ -593,10 +594,10 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
   const conversation = sessionHistory.filter((event) => event.kind === "message");
   const briefFallback = conversation.length ? [] : [await runBriefEvent(runDir, runId)].filter((event): event is WorkflowEventView => Boolean(event));
   const primary = hasLifecycleHistory
-    ? [...briefFallback, ...conversation, ...primaryLifecycleEvents(busRecords, runId)]
+    ? [...briefFallback, ...conversation, ...orchestratorLifecycleEvents(busRecords, runId)]
     : sessionHistory;
   sortEvents(primary);
-  for (const liveTool of hasLifecycleHistory ? [] : primaryLifecycleEvents(busRecords, runId)) {
+  for (const liveTool of hasLifecycleHistory ? [] : orchestratorLifecycleEvents(busRecords, runId)) {
     const persisted = primary.find((event) => event.id === liveTool.id);
     if (persisted) Object.assign(persisted, liveTool);
     else primary.push(liveTool);
@@ -664,7 +665,7 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
 
   const references = await referenceAssets(workspaceDir, runId);
   if (references.length) {
-    const research = allInvocations.find((invocation) => invocation.agent === "design-research");
+    const research = allInvocations.find((invocation) => invocation.agent === "researcher");
     const existing = research?.children.find((event) => event.kind === "references");
     if (existing) {
       const assets = [...(existing.assets ?? [])];

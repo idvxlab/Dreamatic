@@ -5,7 +5,7 @@
 Dreamatic turns one design brief into a durable, inspectable design package.
 The same Run can be started from the CLI or Web UI, resumed after interruption,
 and opened in the React workspace. The package contains research references,
-an executable plan, a coherent image set, visual critique, repair history, and
+an executable Design Context, a coherent image set, review challenges, revision history, and
 a standalone responsive showcase page.
 
 ## Architectural boundaries
@@ -16,7 +16,8 @@ a standalone responsive showcase page.
 - `apps/server` owns durable Runs, stage orchestration, asset indexing,
   publication jobs, and the Web API.
 - `apps/cli` and `apps/web` are two clients of the same Run contract.
-- `.pi/skills` remains the source of design knowledge and stage instructions.
+- `.pi/skills` remains optional design knowledge; Agent descriptions and
+  runtime contracts define required behavior and stage interfaces.
 
 The server must not accumulate another monolith. Run storage, workflow
 orchestration, asset indexing, canvas persistence, and HTTP routing are separate
@@ -29,6 +30,7 @@ Each Run has one authoritative directory:
 ```text
 workspace/runs/<run-id>/
   brief.json
+  design-context.json
   run-state.json
   bus.jsonl
   sessions/<stage>/
@@ -50,20 +52,20 @@ model's prose response is never sufficient evidence of completion.
 
 ## Workflow
 
-The default workflow is a state machine:
+The default workflow is a controlled reasoning graph:
 
 ```text
-research -> planning -> design -> critique
-                              ^       |
-                              | repair|
-                              +-------+
-                                      -> publish -> complete
+researcher -> designer -> reviewer
+                 ^           |
+                 +-- issues -+
+             approved context -> builder -> publish -> complete
 ```
 
-Primary selects the workflow and supervises it. Research, Planner, Designer,
-and Critic run in isolated persistent Pi sessions. One bounded repair round is
-allowed by default. Every stage is idempotent and can resume from its durable
-checkpoint. Retryable provider failures do not roll back completed tool work.
+Orchestrator selects the workflow and supervises it. Researcher, Designer,
+Reviewer, and Builder run in isolated persistent Pi sessions. Reviewer
+challenges the Design Context without authoring a replacement design. One
+bounded Designer revision is allowed by default. Every responsibility is
+idempotent and can resume from its durable checkpoint.
 
 ## Design Bus
 
@@ -75,15 +77,13 @@ image payloads or duplicated documents.
 ## Asset and visual-context policy
 
 References and generated images are stored once and passed between stages as
-paths plus compact metadata. A visual inspection produces a small review JSON
-paired with the inspected image. Base64 image blocks are removed from active
-context after the first visual pass and are not copied into Design Bus events.
-Model-facing observations use bounded previews while Run assets retain their
-original resolution. Duplicate image reads and duplicate comparisons are
-rejected within a stage invocation. Repair-round Critic sessions inspect only
-changed images plus the relevant consistency anchor. Resumable stage histories
-omit base64 payloads; complete visual histories are retained as recoverable
-backups.
+paths plus compact metadata. Researcher and Designer may inspect bounded
+reference previews while Run assets retain their original resolution. Builder
+uses one-pass generation/editing and receives persisted paths rather than image
+payloads, so successful production does not trigger a second visual audit.
+Base64 image blocks are not copied into Design Bus events. Resumable stage
+histories omit visual payloads; complete source assets remain recoverable from
+their persisted paths.
 
 Retry budgets are scoped by Run, operation, and artifact id. A recoverable
 image failure records `operation_retry` or `operation_interrupted` without
@@ -124,7 +124,7 @@ between the editable canvas and the Run's standalone showcase page.
 ## Verified vertical slice
 
 `urban-rider-clip-safety-light` completed the full CLI path with 11 research
-references, seven coordinated product-design boards, one targeted repair round,
-a passing visual Critic verdict, and an exported `final/00-index.html`. The same
-Run is indexed by the Web API with research, plan, critique notes, canvas state,
+references, seven coordinated product-design boards, one targeted revision,
+an approved Design Context, and an exported `final/00-index.html`. The same
+Run is indexed by the Web API with research, plan, review notes, canvas state,
 and a final Showcase URL.

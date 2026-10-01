@@ -223,6 +223,12 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
     if (gesture.current?.pointerId === event.pointerId) gesture.current = undefined;
   }
 
+  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (event.target instanceof Element && event.target.closest(".canvas-note")) return;
+    event.preventDefault();
+    zoomAt(camera.zoom * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY);
+  }
+
   const showcaseUrl = run?.showcasePath ? assetUrl(run.showcasePath) : undefined;
 
   return (
@@ -237,7 +243,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
           <a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open showcase</a>
         </section>
       ) : (
-        <div ref={viewportRef} className={`canvas-viewport tool-${tool}`} onPointerDown={beginPan} onPointerMove={move} onPointerUp={endGesture} onPointerCancel={endGesture} onWheel={(event) => { event.preventDefault(); zoomAt(camera.zoom * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY); }}>
+        <div ref={viewportRef} className={`canvas-viewport tool-${tool}`} onPointerDown={beginPan} onPointerMove={move} onPointerUp={endGesture} onPointerCancel={endGesture} onWheel={handleWheel}>
           {elements.length === 0 ? (
             run ? (
               <section className="run-progress">
@@ -250,7 +256,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
                 <div className="empty-orbit"><div><FileImage size={28} /></div></div>
                 <p className="eyebrow">A quiet canvas, ready to work</p>
                 <h1>Turn a brief into a<br />coherent design system.</h1>
-                <p>Ask the agent to begin. Research, directions, generated artifacts, and critique will appear here as the run develops.</p>
+                <p>Ask the agent to begin. Research, Design Context, review challenges, and built artifacts will appear here as the run develops.</p>
                 <span><ZoomIn size={14} /> Visual outputs are inspected before delivery</span>
               </section>
             )

@@ -54,7 +54,7 @@ item is implemented in the new architecture, not merely copied.
 
 ## Existing Dreamatic workflow
 
-- [x] Workflow and domain Skills copied to `.pi/skills`
+- [x] Optional Designer domain and craft Skills maintained in `.pi/skills`
 - [x] Default design-agent system instructions
 - [x] Design run and workflow bus tools
 - [x] OpenAI-compatible image generation

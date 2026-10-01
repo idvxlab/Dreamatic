@@ -34,6 +34,7 @@ test("visual session compaction keeps a recoverable full backup", async () => {
 
     const result = await compactVisualSession(sessionFile);
     const compacted = await readFile(sessionFile, "utf8");
+    assert.ok(result.backupPath);
     const backup = await readFile(result.backupPath, "utf8");
 
     assert.equal(result.omitted, 1);
@@ -43,6 +44,22 @@ test("visual session compaction keeps a recoverable full backup", async () => {
     assert.equal(backup, original);
     assert.equal((await stat(result.backupPath)).size, Buffer.byteLength(original));
     assert.equal((await readdir(directory)).filter((name) => name.endsWith(".bak")).length, 1);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("visual session compaction skips backup when there are no images", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dreamatic-text-session-"));
+  try {
+    const sessionFile = join(directory, "session.jsonl");
+    const original = `${JSON.stringify({ type: "message", message: { role: "assistant", content: [{ type: "text", text: "done" }] } })}\n`;
+    await writeFile(sessionFile, original, "utf8");
+    const result = await compactVisualSession(sessionFile);
+    assert.equal(result.omitted, 0);
+    assert.equal(result.backupPath, undefined);
+    assert.equal(await readFile(sessionFile, "utf8"), original);
+    assert.equal((await readdir(directory)).filter((name) => name.endsWith(".bak")).length, 0);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

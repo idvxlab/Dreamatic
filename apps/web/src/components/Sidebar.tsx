@@ -46,7 +46,7 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
   };
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar" id="project-panel">
       <div className="brand-row">
         <div className="brand-mark"><Sparkles size={17} strokeWidth={1.8} /></div>
         <div><strong>Dreamatic</strong><span>Design intelligence</span></div>

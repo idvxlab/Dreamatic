@@ -30,7 +30,7 @@ const MIME_TYPES = new Map([
 function parseArgs(args: string[]): CliOptions {
   const task: string[] = [];
   const images: string[] = [];
-  let persona = "design-primary";
+  let persona = "orchestrator";
   let json = false;
   let interactive = false;
   let help = false;
@@ -85,7 +85,7 @@ function printHelp(): void {
   stdout.write(`  Get-Content brief.md | dreamatic  Read a task from stdin\n\n`);
   stdout.write(`Options:\n`);
   stdout.write(`  -i, --image <path>       Attach a reference image; repeatable\n`);
-  stdout.write(`  -p, --persona <name>     Persona to run; default design-primary\n`);
+  stdout.write(`  -p, --persona <name>     Persona to run; default orchestrator\n`);
   stdout.write(`      --workspace <path>   Override the runtime workspace directory\n`);
   stdout.write(`      --resume <runId>     Reopen the latest CLI session for an interrupted Run\n`);
   stdout.write(`      --interactive        Continue interactively after the first task\n`);
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
   const workspaceDir = isAbsolute(configuredWorkspace) ? configuredWorkspace : resolve(repoRoot, configuredWorkspace);
   let task = options.task;
   if (options.resumeRunId && !task) {
-    task = `Resume the existing Dreamatic Run ${options.resumeRunId}. Do not call run_init and do not create a new Run. Read run-state.json, bus.jsonl, the current todo, and durable stage outputs; continue from the first incomplete stage. Reuse completed work and existing child sessions. Finish critique, any permitted repair, and export unless the Run is already complete.`;
+    task = `Resume the existing Dreamatic Run ${options.resumeRunId}. Do not call run_init and do not create a new Run. Read run-state.json, bus.jsonl, the current todo, and durable Design Context; continue from the first incomplete responsibility. Reuse completed work and existing child sessions. Complete the Researcher-Designer-Reviewer loop, invoke Builder only after design_review_pass, then export unless the Run is already complete.`;
   }
   if (!task && !stdin.isTTY) task = await stdinText();
   const shouldInteract = options.interactive || (!task && stdin.isTTY);

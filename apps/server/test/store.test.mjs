@@ -43,23 +43,27 @@ test("canvas state and run assets share one durable Run", async () => {
     await mkdir(join(runDir, "research", "assets"), { recursive: true });
     await mkdir(join(runDir, "artifacts", "generated-images"), { recursive: true });
     await mkdir(join(runDir, "final", "artifacts", "generated-images"), { recursive: true });
-    await mkdir(join(runDir, "sessions", "design-research"), { recursive: true });
-    await mkdir(join(runDir, "sessions", "visual-historian"), { recursive: true });
+    await mkdir(join(runDir, "sessions", "researcher"), { recursive: true });
+    await mkdir(join(runDir, "sessions", "reviewer"), { recursive: true });
     await mkdir(join(workspace, "sessions", "cli"), { recursive: true });
     await writeFile(join(runDir, "brief.json"), JSON.stringify({ createdAt: "2026-01-01T00:00:00.000Z", brief: "Sample product" }));
     await writeFile(join(runDir, "run-state.json"), JSON.stringify({ status: "active", updatedAt: "2026-01-01T00:00:01.000Z", stages: { research: "completed", design: "in_progress" } }));
     await writeFile(join(runDir, "bus.jsonl"), [
-      { type: "agent_started", invocationId: "spawn-research", agent: "design-research", task: "Research the audience and references", status: "running", at: "2026-01-01T00:00:00.500Z" },
-      { type: "tool_started", invocationId: "spawn-research", agent: "design-research", toolCallId: "tool-1", toolName: "web_search", input: "product reference", status: "running", at: "2026-01-01T00:00:02.000Z" },
-      { type: "tool_finished", invocationId: "spawn-research", agent: "design-research", toolCallId: "tool-1", toolName: "web_search", output: "Three references found", status: "completed", at: "2026-01-01T00:00:03.000Z" },
-      { id: "evt-1", type: "research_done", phase: "research", summary: "References ready", artifactRefs: ["runs/sample-run/research/assets/ref.png"], at: "2026-01-01T00:00:01.000Z" },
-      { type: "agent_finished", invocationId: "spawn-research", agent: "design-research", output: "Research complete with traceable references.", status: "completed", at: "2026-01-01T00:00:05.000Z" },
-      { type: "agent_started", invocationId: "spawn-custom", agent: "visual-historian", task: "Check the visual lineage", status: "running", at: "2026-01-01T00:00:06.000Z" },
-      { type: "tool_started", invocationId: "spawn-custom", agent: "visual-historian", toolCallId: "custom-tool", toolName: "view_image", input: "{}", status: "running", at: "2026-01-01T00:00:06.200Z" },
-      { type: "tool_finished", invocationId: "spawn-custom", agent: "visual-historian", toolCallId: "custom-tool", toolName: "view_image", output: "inspected", status: "completed", at: "2026-01-01T00:00:06.800Z" },
-      { type: "agent_finished", invocationId: "spawn-custom", agent: "visual-historian", output: "Visual lineage checked live.", status: "completed", at: "2026-01-01T00:00:07.000Z" },
-      { type: "agent_started", invocationId: "spawn-repair", agent: "design-designer", task: "Repair the selected artifacts", status: "running", at: "2026-01-01T00:00:08.000Z" },
-      { id: "evt-design", type: "design_done", phase: "design", from_agent: "design-designer", summary: "Repair committed to durable artifacts", at: "2026-01-01T00:00:09.000Z" },
+      { type: "agent_started", invocationId: "spawn-research", agent: "researcher", task: "Research the audience and references", status: "running", at: "2026-01-01T00:00:00.500Z" },
+      { type: "tool_started", invocationId: "spawn-research", agent: "researcher", toolCallId: "tool-1", toolName: "websearch", input: "product reference", status: "running", at: "2026-01-01T00:00:02.000Z" },
+      { type: "tool_finished", invocationId: "spawn-research", agent: "researcher", toolCallId: "tool-1", toolName: "websearch", output: "Three references found", status: "completed", at: "2026-01-01T00:00:03.000Z" },
+      { id: "evt-1", type: "research_done", phase: "research", from_agent: "researcher", to: "orchestrator", summary: "References ready", artifactRefs: ["runs/sample-run/research/assets/ref.png"], at: "2026-01-01T00:00:04.000Z" },
+      { type: "agent_finished", invocationId: "spawn-research", agent: "researcher", output: "Research complete with traceable references.", status: "completed", at: "2026-01-01T00:00:05.000Z" },
+      { type: "agent_started", invocationId: "spawn-design", agent: "designer", task: "Create the executable Design Context", status: "running", at: "2026-01-01T00:00:05.200Z" },
+      { id: "evt-design", type: "design_spec_ready", phase: "design", from_agent: "designer", to: "orchestrator", summary: "Design Context ready for challenge", artifactRefs: ["runs/sample-run/plan/design_plan.json"], at: "2026-01-01T00:00:05.800Z" },
+      { type: "agent_finished", invocationId: "spawn-design", agent: "designer", output: "Design Context committed.", status: "completed", at: "2026-01-01T00:00:06.000Z" },
+      { type: "agent_started", invocationId: "spawn-review", agent: "reviewer", task: "Challenge the design context", status: "running", at: "2026-01-01T00:00:06.100Z" },
+      { type: "tool_started", invocationId: "spawn-review", agent: "reviewer", toolCallId: "review-tool", toolName: "read", input: "{}", status: "running", at: "2026-01-01T00:00:06.200Z" },
+      { type: "tool_finished", invocationId: "spawn-review", agent: "reviewer", toolCallId: "review-tool", toolName: "read", output: "inspected", status: "completed", at: "2026-01-01T00:00:06.800Z" },
+      { id: "evt-review", type: "design_review_pass", phase: "review", from_agent: "reviewer", to: "orchestrator", summary: "Design Context approved", artifactRefs: ["runs/sample-run/review/design-review.json"], at: "2026-01-01T00:00:07.000Z" },
+      { type: "agent_finished", invocationId: "spawn-review", agent: "reviewer", output: "Design context challenged.", status: "completed", at: "2026-01-01T00:00:07.100Z" },
+      { type: "agent_started", invocationId: "spawn-build", agent: "builder", task: "Implement the approved design context", status: "running", at: "2026-01-01T00:00:08.000Z" },
+      { id: "evt-build", type: "build_done", phase: "build", from_agent: "builder", to: "orchestrator", summary: "Implementation committed to durable artifacts", artifactRefs: ["runs/sample-run/artifacts/00-gallery.html"], at: "2026-01-01T00:00:09.000Z" },
     ].map((event) => JSON.stringify(event)).join("\n") + "\n");
     await writeFile(join(runDir, "research", "assets", "ref.png"), Buffer.from("reference"));
     await writeFile(join(runDir, "research", "research.md"), "# Findings\n\n- Visible design evidence");
@@ -68,25 +72,25 @@ test("canvas state and run assets share one durable Run", async () => {
     await writeFile(join(runDir, "final", "artifacts", "generated-images", "hero.png"), Buffer.from("hero"));
     await writeFile(join(runDir, "final", "artifacts", "00-gallery.html"), "<!doctype html><title>Gallery copy</title>");
     await writeFile(join(runDir, "final", "00-index.html"), "<!doctype html><title>Final</title>");
-    await writeFile(join(runDir, "sessions", "design-research", "research.jsonl"), [
+    await writeFile(join(runDir, "sessions", "researcher", "research.jsonl"), [
       { type: "session", id: "research-session", timestamp: "2026-01-01T00:00:00.000Z" },
       { type: "message", timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "Research the audience and references" }] } },
-      { type: "message", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "web_search", arguments: { query: "product reference" } }], stopReason: "toolUse" } },
-      { type: "message", timestamp: "2026-01-01T00:00:03.000Z", message: { role: "toolResult", toolCallId: "tool-1", toolName: "web_search", content: [{ type: "text", text: "Three references found" }], isError: false } },
+      { type: "message", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "websearch", arguments: { query: "product reference" } }], stopReason: "toolUse" } },
+      { type: "message", timestamp: "2026-01-01T00:00:03.000Z", message: { role: "toolResult", toolCallId: "tool-1", toolName: "websearch", content: [{ type: "text", text: "Three references found" }], isError: false } },
       { type: "message", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "Research complete with traceable references." }], stopReason: "stop" } },
     ].map((entry) => JSON.stringify(entry)).join("\n"));
-    await writeFile(join(runDir, "sessions", "visual-historian", "custom.jsonl"), [
-      { type: "session", id: "custom-session", timestamp: "2026-01-01T00:00:06.000Z" },
-      { type: "message", timestamp: "2026-01-01T00:00:06.100Z", message: { role: "user", content: [{ type: "text", text: "Check the visual lineage" }] } },
-      { type: "message", timestamp: "2026-01-01T00:00:07.000Z", message: { role: "assistant", content: [{ type: "text", text: "Visual lineage checked." }], stopReason: "stop" } },
+    await writeFile(join(runDir, "sessions", "reviewer", "review.jsonl"), [
+      { type: "session", id: "review-session", timestamp: "2026-01-01T00:00:06.000Z" },
+      { type: "message", timestamp: "2026-01-01T00:00:06.100Z", message: { role: "user", content: [{ type: "text", text: "Challenge the design context" }] } },
+      { type: "message", timestamp: "2026-01-01T00:00:07.000Z", message: { role: "assistant", content: [{ type: "text", text: "Design context challenged." }], stopReason: "stop" } },
     ].map((entry) => JSON.stringify(entry)).join("\n"));
     await writeFile(join(workspace, "sessions", "cli", "primary.jsonl"), [
       { type: "session", id: "primary-session", timestamp: "2026-01-01T00:00:00.000Z" },
       { type: "message", timestamp: "2026-01-01T00:00:00.100Z", message: { role: "user", content: [{ type: "text", text: "Run sample-run\n\n[DREAMATIC PROJECT OWNERSHIP]\nThis conversation belongs only to project sample-run. Never reuse another Run." }] } },
-      { type: "message", timestamp: "2026-01-01T00:00:00.500Z", message: { role: "assistant", content: [{ type: "toolCall", id: "spawn-research", name: "spawn_agent", arguments: { agent: "design-research", runId: "sample-run", task: "Research the audience and references" } }], stopReason: "toolUse" } },
+      { type: "message", timestamp: "2026-01-01T00:00:00.500Z", message: { role: "assistant", content: [{ type: "toolCall", id: "spawn-research", name: "spawn_agent", arguments: { agent: "researcher", runId: "sample-run", task: "Research the audience and references" } }], stopReason: "toolUse" } },
       { type: "message", timestamp: "2026-01-01T00:00:05.000Z", message: { role: "toolResult", toolCallId: "spawn-research", toolName: "spawn_agent", content: [{ type: "text", text: "Research complete" }], isError: false } },
-      { type: "message", timestamp: "2026-01-01T00:00:06.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "spawn-custom", name: "spawn_agent", arguments: { agent: "visual-historian", runId: "sample-run", task: "Check the visual lineage" } }], stopReason: "toolUse" } },
-      { type: "message", timestamp: "2026-01-01T00:00:07.100Z", message: { role: "toolResult", toolCallId: "spawn-custom", toolName: "spawn_agent", content: [{ type: "text", text: "Visual lineage checked" }], isError: false } },
+      { type: "message", timestamp: "2026-01-01T00:00:06.000Z", message: { role: "assistant", content: [{ type: "toolCall", id: "spawn-review", name: "spawn_agent", arguments: { agent: "reviewer", runId: "sample-run", task: "Challenge the design context" } }], stopReason: "toolUse" } },
+      { type: "message", timestamp: "2026-01-01T00:00:07.100Z", message: { role: "toolResult", toolCallId: "spawn-review", toolName: "spawn_agent", content: [{ type: "text", text: "Design context challenged" }], isError: false } },
     ].map((entry) => JSON.stringify(entry)).join("\n"));
 
     const state = await writeCanvasState(workspace, "sample-run", { camera: { x: 12, y: 24, zoom: .9 }, elements: [{ id: "hero", kind: "image", x: 10, y: 20, width: 300, height: 220, assetPath: "runs/sample-run/artifacts/generated-images/hero.png" }] });
@@ -104,7 +108,7 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.equal(runs[0]?.activity.some((item) => item.label === "References ready"), true);
     assert.deepEqual(runs[0]?.notes.map((note) => note.id), ["research"]);
     assert.match(runs[0]?.notes[0]?.text ?? "", /Visible design evidence/);
-    assert.equal(runs[0]?.agentSessions[0]?.title, "Research agent");
+    assert.equal(runs[0]?.agentSessions[0]?.title, "Researcher");
     assert.equal(runs[0]?.agentSessions[0]?.status, "completed");
     assert.equal(runs[0]?.agentSessions[0]?.actionCount, 1);
     assert.equal(runs[0]?.agentSessions[0]?.actions.length, 0);
@@ -117,13 +121,13 @@ test("canvas state and run assets share one durable Run", async () => {
     const workflow = await workflowInventory(workspace, "sample-run");
     assert.equal(workflow.find((event) => event.kind === "message" && event.actor === "User / CLI")?.detail, "Run sample-run");
     const agentCards = workflow.filter((event) => event.kind === "agent");
-    assert.deepEqual(agentCards.map((event) => event.agent), ["design-research", "visual-historian", "design-designer"]);
+    assert.deepEqual(agentCards.map((event) => event.agent), ["researcher", "designer", "reviewer", "builder"]);
     assert.equal(agentCards[0]?.children?.some((event) => event.kind === "references"), true);
-    assert.match(agentCards[1]?.output ?? "", /Visual lineage checked live/);
-    assert.equal(agentCards[1]?.children?.filter((event) => event.id === "custom-tool").length, 1);
-    assert.equal(agentCards[1]?.children?.find((event) => event.id === "custom-tool")?.status, "completed");
-    assert.equal(agentCards[2]?.status, "completed");
-    assert.equal(agentCards[2]?.endedAt, "2026-01-01T00:00:09.000Z");
+    assert.match(agentCards[2]?.output ?? "", /Design context challenged/);
+    assert.equal(agentCards[2]?.children?.filter((event) => event.id === "review-tool").length, 1);
+    assert.equal(agentCards[2]?.children?.find((event) => event.id === "review-tool")?.status, "completed");
+    assert.equal(agentCards[3]?.status, "completed");
+    assert.equal(agentCards[3]?.endedAt, "2026-01-01T00:00:09.000Z");
     await renameRun(workspace, "sample-run", "Renamed design project");
     assert.equal((await runInventory(workspace))[0]?.title, "Renamed design project");
     await writeFile(join(runDir, "run-state.json"), JSON.stringify({ status: "complete", updatedAt: "2026-01-01T00:00:08.000Z", stages: { research: "completed", design: "completed" } }));
@@ -131,6 +135,31 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.match(deleted.trashedPath, /^\.trash\/runs\/sample-run-/);
     assert.equal(await stat(join(workspace, "runs", "sample-run")).then(() => true).catch(() => false), false);
     assert.equal(await stat(join(workspace, deleted.trashedPath)).then(() => true).catch(() => false), true);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("a Reviewer fail verdict is a revision milestone rather than a transport error", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-review-loop-"));
+  try {
+    const runDir = join(workspace, "runs", "review-loop");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, "brief.json"), JSON.stringify({ createdAt: "2026-01-01T00:00:00.000Z", brief: "Review this design" }));
+    await writeFile(join(runDir, "bus.jsonl"), `${JSON.stringify({
+      id: "review-fail",
+      type: "design_review_fail",
+      from_agent: "reviewer",
+      to: "orchestrator",
+      summary: "Two blocking issues require Designer revision",
+      requestedAction: "Resolve R-001 and R-002",
+      at: "2026-01-01T00:00:01.000Z",
+    })}\n`);
+    const workflow = await workflowInventory(workspace, "review-loop");
+    const verdict = workflow.find((event) => event.id === "review-fail");
+    assert.equal(verdict?.kind, "milestone");
+    assert.equal(verdict?.status, "completed");
+    assert.match(verdict?.detail ?? "", /R-001/);
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

@@ -1,156 +1,47 @@
 ---
 name: product-design
-description: "Product and industrial-design domain guidance for Dreamatic: user scenarios, functions, form language, CMF, render deliverables, and critique focus."
+description: "Design physical products through user context, function, interaction, ergonomics, product architecture, form, CMF, and lifecycle reasoning. Use for industrial and consumer product concepts."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
-  workflow: ai-design-harness
+  audience: designer
   domain_type: product_design
 ---
 
-# Product Design Skill
+# Product Design
 
-This skill supports `product_design` runs. It is a first-pass domain framework:
-use it to keep the workflow coherent, then deepen the professional details with
-future references.
+Use this optional module for industrial, consumer, furniture, appliance, mobility, wearable, or hardware concepts. It supports professional product reasoning without requiring a fixed deliverable set.
 
-## 1. Domain Positioning
+## Design Frame
 
-`product_design` covers product and industrial-design concepts expressed as
-rendered images, not manufacturing-ready engineering packages.
+Connect the concept across these dimensions:
 
-Typical briefs:
+- target user, use context, unmet need, and desired experience;
+- primary and secondary functions, controls, feedback, and interaction flow;
+- ergonomics, reach, grip, posture, accessibility, safety, and human scale;
+- product architecture, part relationships, interfaces, service access, and assembly intent;
+- form semantics, proportion, silhouette, visual center, and brand character;
+- color, material, finish, tactility, durability, cleaning, and aging;
+- manufacturing plausibility, repair, packaging, transport, and product lifecycle.
 
-- consumer electronics, appliances, devices, tools, furniture, lighting
-- campus or cultural products when the object itself is the design focus
-- product CMF, usage scene, hero render, and detail render exploration
+Do not claim technical feasibility, compliance, or performance without evidence. Mark unresolved engineering matters as assumptions or validation needs.
 
-The expected final result is a curated PNG set plus `00-gallery.html`.
+## Reference Use
 
-## 2. Scope Fields
+Evaluate references for functional principles, interaction patterns, ergonomic cues, construction logic, CMF behavior, and category expectations. Separate useful mechanisms from superficial styling and identify protected brand or product assets that must not be imitated.
 
-Read `brief.json::resolvedScope.domain_scope`:
+## Proposal Coverage
 
-```json
-{
-  "user_context": {
-    "target_user": "string",
-    "usage_scenario": "string",
-    "environment": "string"
-  },
-  "function_experience": {
-    "core_functions": ["string"],
-    "interaction_mode": "string",
-    "experience_goal": "string"
-  },
-  "form_material": {
-    "form_direction": "string",
-    "material_cmf": "string",
-    "scale_or_portability": "string"
-  }
-}
-```
+Select the minimum set of images that makes the product executable. Depending on the brief, this may include:
 
-If fields are missing, infer careful defaults from the brief and record them in
-planning assumptions. Primary should ask the user only when the missing field
-would materially change the design direction.
+- a hero view that communicates the concept and intended context;
+- multi-view or orthographic-style views for proportion and continuity;
+- an in-use view for ergonomics and interaction;
+- a detail or CMF study for critical interfaces and material transitions;
+- an exploded or architecture view only when internal relationships matter;
+- variants only when the brief requires a family or comparison.
 
-## 3. Research Guidance
+Each planned image should specify purpose, viewpoint, visible features, consistency anchors, acceptance criteria, aspect ratio, and size. Use the lowest resolution that still communicates the required evidence.
 
-Build a broad product-design reference library covering:
+## Quality Lens
 
-- multiple similar product categories and competing objects
-- usage contexts, ergonomics, and body/object scale cues
-- material, color, finish, interface, detail, and mechanism references
-- lifestyle and environmental references that can affect the design
-
-Reference images should be saved in `research/assets/` and described by role:
-`competitor`, `usage_context`, `cmf`, `detail`, or `lifestyle` when possible.
-The current asset tool may still use generic kinds such as `peer` or `other`;
-record the more specific role in descriptions until the tool schema is expanded.
-Skip generic product inspiration that cannot be tied to a manifest item or
-`domain_handoff` note.
-
-## 4. Planner Guidance
-
-Planner should translate the brief into an executable concept plan:
-
-- product thesis: what problem the product appears to solve
-- target user and scenario
-- functional priorities
-- form language and proportions
-- CMF direction
-- image-generation plan tied to deliverable categories
-
-Recommended deliverable categories:
-
-- hero product render
-- three-view render showing front, side, and rear or top views as appropriate
-- usage scenario render
-- detail or interaction render
-- CMF/material board
-- form language board
-- scale reference
-
-Optional additional categories:
-
-- exploded view
-- function annotation board
-- scale reference
-- interaction flow
-- form exploration sheet
-- packaging or display context
-
-These are categories. If the brief names multiple product variants, use
-contexts, or detail areas, Planner may expand one category into several concrete
-PNG entries in `deliverable_manifest.json`.
-
-Planner should reason from the concrete product problem before finalizing the
-manifest:
-
-- complex structure, modules, or visible internal components -> add exploded view
-- many core functions -> add function annotation board
-- screen, voice, gesture, service, or companion behavior -> add interaction flow
-- several environments -> split usage scene into multiple concrete scenes
-- object size or body relationship matters -> include scale reference
-- launch, retail, or public communication is part of the brief -> add packaging/display or marketing visual
-
-Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
-
-## 5. Designer Guidance
-
-Designer should produce PNGs that look like product concept renderings.
-
-Each image prompt should include:
-
-- product object name
-- target user and usage scene
-- core function visible in the image
-- form language and silhouette
-- material/finish/color direction
-- view type: hero, usage, detail, CMF, or exploration
-- the selected consistency anchor, usually the three-view or canonical product render
-- any `domain_handoff.execution_notes` relevant to this deliverable
-
-Avoid images that only look like abstract branding graphics.
-
-## 6. Critic Guidance
-
-Critic should evaluate:
-
-- whether function is visually understandable
-- whether form and CMF match the user/context
-- whether scale and interaction feel plausible
-- whether deliverables cover hero, usage, detail, and material views
-- whether the PNGs read as product design, not just poster graphics
-
-## 7. Later Professional Deepening
-
-Future work should add stronger references for:
-
-- CMF methods
-- ergonomics and human factors
-- product semantics
-- manufacturability heuristics
-- category-specific render conventions
+A strong product concept is coherent from user need to function, interaction, form, and CMF. Novelty should improve meaning or use rather than add arbitrary complexity.

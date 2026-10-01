@@ -67,10 +67,15 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   }
   if (event.kind === "agent") return <div className={`workflow-node workflow-agent-node ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot"><Bot size={13} /></span>
-    <details className="workflow-agent-card" open={agentOpen} onToggle={(toggleEvent) => setAgentOpen(toggleEvent.currentTarget.open)}>
+    <details className="workflow-agent-card" open={agentOpen} onToggle={(toggleEvent) => {
+      const target = toggleEvent.currentTarget;
+      const open = target.open;
+      setAgentOpen(open);
+      if (open) window.requestAnimationFrame(() => target.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }}>
       <summary><span><strong>{event.label}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} actions · {event.status}{at ? ` · ${at}` : ""}</small></span><ChevronDown size={14} /></summary>
       <div className="workflow-agent-body">
-        {event.detail && <section className="workflow-assignment"><h4>Assigned by primary agent</h4><p>{event.detail}</p></section>}
+        {event.detail && <section className="workflow-assignment"><h4>Assigned by Orchestrator</h4><p>{event.detail}</p></section>}
         {event.children?.length ? <div className="workflow-stream nested-stream">{event.children.map((child) => <WorkflowNode event={child} nested key={child.id} />)}</div> : null}
         {event.output && <section className="workflow-agent-output"><h4>Agent output</h4><p>{event.output}</p></section>}
       </div>
@@ -119,11 +124,26 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
   const [images, setImages] = useState<PendingImage[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const followOutputRef = useRef(true);
 
   useEffect(() => {
-    if (!pendingAgentStatus && !clarification) return;
-    window.requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }));
-  }, [pendingAgentStatus, clarification]);
+    if (!followOutputRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const element = scrollRef.current;
+      if (element) element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [timeline, workflow, streamingText, pendingAgentStatus, clarification, running]);
+
+  useEffect(() => {
+    if (!running) return;
+    followOutputRef.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      const element = scrollRef.current;
+      if (element) element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [running]);
 
   async function addFiles(files: FileList | null) {
     if (!files) return;
@@ -155,7 +175,10 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
           ? <button className="agent-stop" type="button" onClick={onStop} disabled={stopping} title="Stop the current run"><Square size={10} fill="currentColor" /> {stopping ? "Stopping…" : "Stop"}</button>
           : <span className="agent-mode">Auto workflow</span>}
       </header>
-      <div className="agent-scroll" ref={scrollRef}>
+      <div className="agent-scroll" ref={scrollRef} onScroll={(event) => {
+        const element = event.currentTarget;
+        followOutputRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
+      }}>
         {timeline.length === 0 && workflow.length === 0 && !streamingText ? (
           <div className="agent-intro">
             <p className="eyebrow">Start with an outcome</p>
@@ -165,14 +188,14 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
           </div>
         ) : (
           <div>
-            {workflow.length > 0 ? <div className="workflow-stream">{workflow.map((event) => <WorkflowNode event={event} key={event.id} />)}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{pendingAgentStatus}</strong><small>Primary agent · working</small><i><span /><span /><span /></i></div></div>}</div> : <div className="timeline">{timeline.map((item) => {
+            {workflow.length > 0 ? <div className="workflow-stream">{workflow.map((event) => <WorkflowNode event={event} key={event.id} />)}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{pendingAgentStatus}</strong><small>Orchestrator · working</small><i><span /><span /><span /></i></div></div>}</div> : <div className="timeline">{timeline.map((item) => {
               const expandable = Boolean(item.detail || item.artifactRefs?.length);
               const heading = <span className="timeline-label"><strong>{item.label}{item.retryCount && item.retryCount > 1 ? ` · ${item.retryCount} attempts` : ""}</strong>{item.stage && <span className="stage-pill">{item.stage}</span>}</span>;
               return <div className={`timeline-item ${item.kind}`} key={item.id}>
                 <span className="timeline-dot">{item.active ? <LoaderCircle className="spin" size={14} /> : item.kind === "error" ? <X size={13} /> : item.kind === "result" ? <Check size={13} /> : <Circle size={9} fill="currentColor" />}</span>
                 {expandable ? <details className="timeline-details"><summary>{heading}<ChevronDown size={12} /></summary><div className="timeline-expanded">{item.detail && <p>{item.detail}</p>}<ArtifactLinks paths={item.artifactRefs} /></div></details> : <div className="timeline-heading">{heading}</div>}
               </div>;
-            })}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{pendingAgentStatus}</strong><small>Primary agent · working</small><i><span /><span /><span /></i></div></div>}</div>}
+            })}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{pendingAgentStatus}</strong><small>Orchestrator · working</small><i><span /><span /><span /></i></div></div>}</div>}
             {streamingText && <div className="assistant-copy">{streamingText}</div>}
           </div>
         )}

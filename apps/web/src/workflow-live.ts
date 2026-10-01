@@ -1,14 +1,15 @@
 import type { WorkflowEvent } from "./types";
 
 const agentTitles: Record<string, string> = {
-  "design-research": "Research agent",
-  "design-planner": "Planning agent",
-  "design-designer": "Design agent",
-  "design-critic": "Critic agent",
+  researcher: "Researcher",
+  designer: "Designer",
+  reviewer: "Reviewer",
+  builder: "Builder",
 };
 
 const toolTitles: Record<string, string> = {
   ask_user: "Clarifying the brief",
+  websearch: "Searched the web",
   web_search: "Searched the web",
   research_fetch: "Read research source",
   research_asset_discover: "Discovered reference images",
@@ -27,11 +28,12 @@ const toolTitles: Record<string, string> = {
 };
 
 const completionEventAgents: Record<string, string> = {
-  research_done: "design-research",
-  plan_done: "design-planner",
-  design_done: "design-designer",
-  evaluator_pass: "design-critic",
-  evaluator_fail: "design-critic",
+  research_done: "researcher",
+  design_spec_ready: "designer",
+  design_revision_ready: "designer",
+  design_review_pass: "reviewer",
+  design_review_fail: "reviewer",
+  build_done: "builder",
 };
 
 function text(value: unknown, limit = 1_200): string | undefined {
@@ -51,7 +53,7 @@ function updateAgent(workflow: WorkflowEvent[], invocationId: string, update: (a
     id: invocationId,
     kind: "agent",
     status: "running",
-    actor: "Primary agent",
+    actor: "Orchestrator",
     agent: agentName,
     label: agentTitles[agentName] ?? agentName.replaceAll("-", " "),
     detail: text(seed?.task),
@@ -72,13 +74,13 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
   const type = typeof event.type === "string" ? event.type : "";
   const invocationId = typeof event.invocationId === "string" ? event.invocationId : undefined;
   const at = typeof event.at === "string" ? event.at : new Date().toISOString();
-  if (type === "primary_tool_started") {
+  if (type === "orchestrator_tool_started") {
     const id = typeof event.toolCallId === "string" ? event.toolCallId : `primary-tool-${at}`;
     if (workflow.some((candidate) => candidate.id === id)) return workflow;
     const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-    return sorted([...workflow, { id, kind: "tool", status: "running", actor: "Primary agent", label: toolTitles[toolName] ?? toolName.replaceAll("_", " "), tool: toolName, input: text(event.input, 900), at }]);
+    return sorted([...workflow, { id, kind: "tool", status: "running", actor: "Orchestrator", label: toolTitles[toolName] ?? toolName.replaceAll("_", " "), tool: toolName, input: text(event.input, 900), at }]);
   }
-  if (type === "primary_tool_finished") {
+  if (type === "orchestrator_tool_finished") {
     const id = typeof event.toolCallId === "string" ? event.toolCallId : "";
     return workflow.map((candidate) => candidate.id === id ? { ...candidate, status: event.isError === true ? "error" : "completed", output: text(event.output), endedAt: at } : candidate);
   }
@@ -136,7 +138,7 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
 
   if (["operation_retry", "operation_interrupted"].includes(type) || event.summary || event.requestedAction) {
     const actor = typeof event.from_agent === "string" ? event.from_agent : typeof event.from === "string" ? event.from : "Workflow";
-    const failed = type.includes("fail") || type.includes("interrupted") || event.severity === "error";
+    const failed = type.includes("interrupted") || event.severity === "error";
     const kind = type === "operation_retry" ? "retry" : failed ? "error" : "milestone";
     const operation = typeof event.operation === "string" ? event.operation : "operation";
     const scope = typeof event.scope === "string" ? event.scope : "default";

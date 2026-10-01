@@ -1,4 +1,4 @@
-import { Cloud, Grid2X2, Menu, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
+import { Cloud, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
@@ -14,8 +14,6 @@ function eventName(event: Record<string, unknown>): string {
 
 const LIVE_TOOL_LABELS: Record<string, string> = {
   ask_user: "Clarifying the brief",
-  list_skills: "Finding design knowledge",
-  use_skill: "Loading design knowledge",
   run_init: "Creating the design project",
   todo_write: "Planning the workflow",
   spawn_agent: "Starting a specialist agent",
@@ -78,6 +76,7 @@ export function App() {
   const [connectionError, setConnectionError] = useState<string>();
   const [health, setHealth] = useState<HealthView>();
   const [panelOpen, setPanelOpen] = useState(true);
+  const [projectPanelOpen, setProjectPanelOpen] = useState(true);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -326,7 +325,7 @@ export function App() {
         id,
         kind: "tool",
         status: "running",
-        actor: "Primary agent",
+        actor: "Orchestrator",
         label: liveToolLabel(label),
         tool: label,
         at: new Date().toISOString(),
@@ -415,12 +414,12 @@ export function App() {
   }
 
   return (
-    <div className={`app-shell ${panelOpen ? "panel-open" : "panel-collapsed"} ${navigationOpen ? "navigation-open" : ""}`}>
+    <div className={`app-shell ${panelOpen ? "panel-open" : "panel-collapsed"} ${projectPanelOpen ? "sidebar-open" : "sidebar-collapsed"} ${navigationOpen ? "navigation-open" : ""}`}>
       <Sidebar
         runs={runs}
         activeRunId={activeRunId}
         onCreate={() => void addSession()}
-        onSelectRun={(id) => void selectProject(id)}
+        onSelectRun={(id) => { setNavigationOpen(false); void selectProject(id); }}
         onRenameRun={(id, title) => void renameProject(id, title)}
         onDeleteRun={(id) => void deleteProject(id)}
         onSettings={() => void openSettings()}
@@ -428,7 +427,7 @@ export function App() {
       />
       <section className="workspace">
         <header className="workspace-header">
-          <div><button className="navigation-trigger" aria-label="Open project navigation" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><span className="project-kicker">Project</span><h2>{activeRun?.title ?? active?.title ?? (loading ? "Connecting…" : "Design workspace")}</h2></div>
+          <div><button className="navigation-trigger" aria-label="Open project navigation" aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? "Hide project panel" : "Show project panel"} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? "Hide project panel" : "Show project panel"} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">Project</span><h2>{activeRun?.title ?? active?.title ?? (loading ? "Connecting…" : "Design workspace")}</h2></div>
           <div className="header-actions"><span className="saved"><Cloud size={14} /> Saved locally</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> Assets <em>{visibleAssets.length}</em></button><button onClick={() => void shareWorkspace()}><Share2 size={15} /> Share</button><button className="icon-button" title={panelOpen ? "Hide agent panel" : "Show agent panel"} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
         </header>
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />

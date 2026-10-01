@@ -1,157 +1,52 @@
 ---
 name: architecture-space
-description: "Architecture, interior, exhibition, and spatial-design domain guidance for Dreamatic: site, program, spatial sequence, atmosphere, material, and presentation render deliverables."
+description: "Design architecture, interiors, exhibitions, and spatial concepts through program, sequence, scale, material, light, and site relationships. Use for spatial-design briefs, not engineering documentation."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
-  workflow: ai-design-harness
+  audience: designer
   domain_type: architecture_space_design
 ---
 
-# Architecture & Space Design Skill
+# Architecture and Space
 
-This skill supports `architecture_space_design` runs. It is a first-pass domain
-framework for concept/effect images, not CAD, BIM, construction drawings, or
-technical detailing.
+Use this optional knowledge module when the brief concerns buildings, interiors, exhibitions, installations, or spatial experiences. It strengthens spatial reasoning without prescribing the workflow or replacing the design brief.
 
-## 1. Domain Positioning
+## Design Frame
 
-`architecture_space_design` covers:
+Resolve the relationships that materially shape the concept:
 
-- architectural concept design
-- interiors and retail spaces
-- exhibition, booth, installation, and environmental design
-- visitor centers, labs, studios, campus spaces, and cultural spaces
+- users, activities, privacy, accessibility, and duration of stay;
+- site, climate, orientation, views, thresholds, and surrounding context;
+- program, adjacency, zoning, circulation, arrival, and egress intent;
+- scale, capacity, adaptability, maintenance, and operational constraints;
+- conceptual structure and enclosure, without presenting unverified engineering claims;
+- material, light, acoustics, atmosphere, and sensory transitions.
 
-The expected final result is a curated PNG set plus `00-gallery.html`.
+State assumptions when dimensions, regulations, site data, or technical evidence are missing.
 
-## 2. Scope Fields
+## Reference Use
 
-Read `brief.json::resolvedScope.domain_scope`:
+Judge references by what they can contribute rather than by visual similarity alone:
 
-```json
-{
-  "site_context": {
-    "location_or_site_type": "string",
-    "context_relationship": "string",
-    "environmental_cues": "string"
-  },
-  "program_spatial": {
-    "core_functions": ["string"],
-    "spatial_sequence": "string",
-    "scale": "string"
-  },
-  "atmosphere_material": {
-    "atmosphere": "string",
-    "material_direction": "string",
-    "light_strategy": "string"
-  }
-}
-```
+- site references clarify environmental response;
+- typology references reveal program and circulation patterns;
+- experiential references clarify atmosphere, sequence, and human scale;
+- operational references expose accessibility, maintenance, and use constraints.
 
-Primary should ask the user only when missing function, scale, site, or
-atmosphere would lead to a materially different concept.
+Extract transferable principles and avoid copying a reference's appearance without its underlying logic.
 
-## 3. Research Guidance
+## Proposal Coverage
 
-Build a broad architecture and spatial reference library. Cover:
+Choose only the views needed to communicate and execute the concept. Possible views include a hero perspective, zoning or plan logic, section, circulation sequence, key interior, material-and-light study, or critical detail.
 
-- site/context and analogous environmental images
-- multiple precedent buildings, interiors, exhibitions, or spatial installations
-- plan, zoning, section, and circulation references where available
-- material, lighting, atmosphere, and human-scale references
-- accessibility/comfort references when the users include elders, children, public visitors, or accessibility-sensitive groups
+For every planned image, define:
 
-When real site data is unavailable, collect analogous references and label the
-run as a concept based on assumptions.
-Skip decorative mood references that do not inform a view, diagram, material
-decision, or `domain_handoff` note.
+- the design question it answers;
+- viewpoint, program, scale cues, material behavior, and consistency anchor;
+- acceptance criteria and an appropriate output size.
 
-## 4. Planner Guidance
+Avoid redundant views. Auxiliary diagrams can use lower resolution when they do not require fine material or spatial detail.
 
-Planner should define:
+## Quality Lens
 
-- spatial thesis and intended experience
-- program/zoning priorities
-- site or context relationship
-- atmosphere, material, and light direction
-- image-generation plan tied to view categories
-
-Recommended deliverable categories:
-
-- hero spatial render or key perspective
-- plan or zoning diagram
-- circulation or user journey diagram
-- section or sectional perspective
-- material and lighting atmosphere board
-- accessibility and scale board
-
-Optional additional categories:
-
-- site relation view
-- interior key moment render
-- elevation or facade study
-- detail vignette
-- day-night atmosphere pair
-- human-scale use scene
-- presentation overview board
-
-These are categories. If the brief names several zones, rooms, user flows, or
-atmosphere moments, Planner may expand one category into several concrete PNG
-entries in `deliverable_manifest.json`.
-
-Planner should reason from the concrete spatial problem before finalizing the
-manifest:
-
-- strong site/context dependency -> add site relation view
-- exterior identity, threshold, or entrance expression matters -> add elevation/facade study
-- vertical organization, mezzanine, atrium, slope, or stacked program -> add section perspective
-- several rooms or zones -> split interior/key view into multiple concrete views
-- visitor journey or operational flow matters -> add circulation or sequence diagram
-- lighting atmosphere is central -> add day/night or alternate light scene
-- envelope, craft, facade, or installation detail matters -> add detail vignette
-- elders, children, care, public service, accessibility, or comfort-sensitive users -> keep accessibility and scale visible in a dedicated board and in at least one experiential render
-
-Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
-
-## 5. Designer Guidance
-
-Designer should produce PNGs that read as architectural or spatial concept
-presentation images.
-
-Each image prompt should include:
-
-- space type and function
-- view type: hero render, site relation, plan/zoning, circulation, section, interior key moment, facade/elevation, material board, or detail vignette
-- spatial organization and human-scale cues
-- atmosphere and lighting
-- material direction
-- accessibility or comfort cues when relevant: handrails, ramps, resting points, glare control, clear circulation, seating scale, doorway width, or surface safety
-- context or site relationship when relevant
-- the selected consistency anchor, usually the key spatial view or massing/arrival view
-- any `domain_handoff.execution_notes` relevant to this deliverable
-
-Avoid purely decorative mood images that do not show usable space.
-
-## 6. Critic Guidance
-
-Critic should evaluate:
-
-- whether spatial logic and program are understandable
-- whether scale and human use feel plausible
-- whether plan, section, and circulation images explain the design rather than merely decorate it
-- whether material and light support the intended atmosphere
-- whether accessibility and scale are visible when the brief names sensitive users or public access
-- whether site/context is addressed when the brief requires it
-- whether outputs read as spatial design, not only abstract branding
-
-## 7. Later Professional Deepening
-
-Future work should add stronger references for:
-
-- spatial typologies
-- circulation and program diagrams
-- architectural atmosphere precedents
-- material-light relationships
-- basic accessibility and public-space heuristics
+A strong spatial proposal connects program, movement, hierarchy, context, scale, and atmosphere. Preserve creative freedom in form and expression while ensuring that every major decision can be traced to the brief, evidence, or a clearly stated design hypothesis.

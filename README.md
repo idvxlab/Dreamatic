@@ -6,8 +6,8 @@ traceable design processes and organized visual deliveries.**
 ![Dreamatic hero illustration](docs/assets/dreamatic-hero.png)
 
 Dreamatic is designed for work that needs more than a single generated image.
-It coordinates research, planning, visual production, critique, targeted
-revision, and delivery as one inspectable workflow. Every project keeps its
+It coordinates research, design reasoning, adversarial review, implementation,
+and delivery as one inspectable workflow. Every project keeps its
 brief, references, design rationale, intermediate decisions, generated assets,
 review evidence, and final presentation together.
 
@@ -17,31 +17,31 @@ review evidence, and final presentation together.
 creative brief
   → scope and clarification
   → reference research
-  → design system and deliverable planning
-  → image generation and editing
-  → visual critique and targeted repair
-  → reviewed artifact set
+  → shared Design Context
+  → Designer / Reviewer challenge loop
+  → Builder implementation
+  → validated artifact set
   → interactive Canvas + standalone Showcase
 ```
 
 Dreamatic turns this process into a persistent **Run** rather than a disposable
-chat. The primary agent can create specialist Research, Planning, Design, and
-Critic sessions when needed. Those sessions share structured project knowledge
-through the Design Bus while keeping their own working context and history.
+chat. Orchestrator controls Researcher, Designer, Reviewer, and Builder
+sessions. Agents reason, Design Context remembers, Orchestrator controls the
+flow, and Builder executes.
 
 ## Key features
 
 | Feature | What it provides |
 | --- | --- |
 | Brief-to-delivery workflow | One continuous process from requirements and research to reviewed visual output and export |
-| Adaptive specialist agents | Isolated child sessions are created when the workflow needs research, planning, design, or critique expertise |
-| Design knowledge and domain Skills | Workflow guidance, visual composition rules, critique rubrics, image prompting, and domain-specific design knowledge |
+| Five-role agent architecture | Orchestrator coordinates Researcher, Designer, Reviewer, and Builder without overlapping ownership |
+| Optional design knowledge | Skills may enrich domain reasoning, but Agent contracts and runtime validation are self-contained |
 | Evidence-grounded research | Web search, source reading, reference-image collection, validation, deduplication, and a persistent research library |
 | Visual production toolchain | Image generation, multi-reference editing, visual inspection, side-by-side comparison, artifact selection, and linting |
 | Artifact-set delivery | Produces an organized family of visuals, plans, research, review records, manifests, and a self-contained final package—not just one image |
-| Visual consistency loop | Establishes design anchors, inspects every generated or edited image, and supports one scoped repair pass after critique |
+| Bounded reasoning loop | Researcher informs Designer; Reviewer challenges the proposal; Designer revises only concrete issues before Builder starts |
 | Durable and resumable projects | Run state, session histories, workflow events, files, and canvas layout survive interruption and can be reopened |
-| Shared Web and CLI workflow | Browser and command-line tasks use the same agents, Skills, tools, workspace, and project files |
+| Shared Web and CLI workflow | Browser and command-line tasks use the same agents, contracts, tools, workspace, and project files |
 | Live, inspectable execution | The interface streams primary-agent actions, dynamically created child-agent sessions, references, tool activity, and outputs as they happen |
 | Canvas and Showcase | Arrange references, design notes, and visual outcomes on a persistent pan-and-zoom canvas, then switch to the generated presentation page |
 | Resilient local runtime | Operation-level retries, durable checkpoints, recoverable project deletion, provider diagnostics, and reconnection-aware Web startup |
@@ -54,7 +54,7 @@ A completed Run can contain:
 - verified research notes, sources, and a reusable reference-image library;
 - a design system, rationale, production plan, and deliverable manifest;
 - multiple generated and edited visual assets with inspection records;
-- critique, selection, repair, and artifact-lint evidence;
+- design-review issues, decisions, selection, and artifact-lint evidence;
 - a persistent Canvas layout for working with the project;
 - a self-contained Showcase and final delivery package.
 
@@ -96,8 +96,8 @@ Dreamatic owns the design-specific behavior and product experience.
 The same persistent Run is used by both Web and CLI:
 
 ```text
-brief → primary Pi session → specialist child sessions → visual artifacts
-      → critique / scoped repair → reviewed package → Canvas + Showcase
+brief → Orchestrator → Researcher → Designer ↔ Reviewer
+      → approved Design Context → Builder → Canvas + Showcase
 ```
 
 ## Requirements
@@ -158,6 +158,15 @@ DREAMATIC_PROVIDER_TYPE=openai-compatible
 DREAMATIC_PROVIDER_NAME=Local profile
 ```
 
+Each Agent uses `DREAMATIC_MODEL` and the active thinking level by default.
+Optional `DREAMATIC_MODEL_ORCHESTRATOR`, `DREAMATIC_MODEL_RESEARCHER`,
+`DREAMATIC_MODEL_DESIGNER`, `DREAMATIC_MODEL_REVIEWER`, and
+`DREAMATIC_MODEL_BUILDER` values select a different model from the same
+provider for that role. Matching `DREAMATIC_THINKING_LEVEL_<ROLE>` values may
+be `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. A typical
+cost-conscious setup uses a stronger model for Designer and faster models for
+Orchestrator and Builder.
+
 Set `DREAMATIC_PROVIDER_TYPE=openai-responses` only when the endpoint implements
 the OpenAI Responses protocol. Otherwise the default OpenAI-compatible chat
 completions protocol is used.
@@ -172,7 +181,7 @@ DREAMATIC_SEARCH_PROVIDER=serper
 DREAMATIC_SEARCH_API_KEY=your-serper-key
 ```
 
-The Research Agent keeps the same `websearch` tool contract with either
+Researcher keeps the same `websearch` tool contract with either
 provider. `SERPER_API_KEY` is also accepted for compatibility with older
 Dreamatic configurations. If Serper is not configured, Dreamatic automatically
 uses DuckDuckGo.
@@ -217,7 +226,15 @@ DREAMATIC_AGENT_RETRY_ATTEMPTS=3
 DREAMATIC_IMAGE_RETRY_ATTEMPTS=3
 DREAMATIC_OPERATION_ATTEMPT_BUDGET=5
 DREAMATIC_IMAGE_TIMEOUT_MS=300000
+DREAMATIC_IMAGE_CONCURRENCY=2
+DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS=2
+DREAMATIC_IMAGE_EDIT_TIMEOUT_MS=180000
 ```
+
+Image generation uses a bounded concurrency of two by default. Builder creates
+the primary consistency anchor first, then may generate two independent
+supporting views together. Image editing has a shorter, separate retry budget
+because a stalled edit endpoint should not block the Run for fifteen minutes.
 
 Web and CLI must point to the same `DREAMATIC_WORKSPACE`. This is what makes a
 CLI-created, interrupted, or completed project appear in the React workspace.
@@ -243,7 +260,7 @@ npm start
 
 ## CLI
 
-The CLI runs the same primary persona, Extensions, Skills, child sessions, and
+The CLI runs the same Orchestrator, Extensions, child sessions, and
 workspace as the Web application.
 
 ```bash
@@ -275,13 +292,14 @@ Every project is stored under `workspace/runs/<run-id>`:
 
 ```text
 brief.json                    normalized brief and domain scope
+design-context.json           authoritative context index, revision, and approval state
 run-state.json                persisted workflow state
 bus.jsonl                     append-only Design Bus and live lifecycle events
 plan/                         task breakdown, design system, acceptance criteria
 research/                     evidence, cached sources, and reference images
 sessions/<persona>/           resumable Pi child-session histories
 artifacts/                    generated, edited, and selected design artifacts
-review/                       critique and evaluation evidence
+review/                       Design Context challenges and verdict
 final/                        exported self-contained package
 canvas/canvas-state.json      Canvas positions and camera state
 ```
@@ -300,8 +318,8 @@ apps/web                 React + Vite design workspace
 apps/server              Local HTTP/SSE API and Run inventory
 apps/cli                 One-shot, interactive, JSON, and resume CLI
 packages/design-agent    Dreamatic Pi extension and visual tools
-.pi/agents               Primary and specialist design personas
-.pi/skills               Workflow, domain, critique, and visual Skills
+.pi/agents               Orchestrator, Researcher, Designer, Reviewer, Builder
+.pi/skills               Optional Designer domain and craft Skills
 workspace                Local Runs and Pi sessions (gitignored)
 docs                     Architecture, migration, and UI contracts
 ```
@@ -361,15 +379,6 @@ They describe prior design outputs, not the current TypeScript architecture.
 | Hero render | Usage scene | Form language |
 |---|---|---|
 | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/01-hero-render.png" width="220"> | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/03-usage-scene.png" width="220"> | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/05-exploded-view.png" width="220"> |
-
-## Historical architecture illustrations
-
-These diagrams are retained from the pre-Pi implementation for project history;
-they do not describe the current runtime boundary above.
-
-![Earlier Dreamatic architecture](docs/assets/dreamatic-architect-v2.png)
-
-![Earlier Dreamatic agent workflow and tool map](docs/assets/dreamatic-agent-tool-map-editable.svg)
 
 ## License
 

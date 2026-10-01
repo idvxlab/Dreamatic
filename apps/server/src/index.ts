@@ -1,5 +1,5 @@
 import { createReadStream, watch } from "node:fs";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
@@ -50,8 +50,8 @@ async function streamWorkflow(request: IncomingMessage, response: ServerResponse
   const info = await stat(runDir);
   if (!info.isDirectory()) throw new Error("Run not found");
   const busPath = join(runDir, "bus.jsonl");
-  const initialLines = (await readFile(busPath, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
-  let seen = initialLines.length;
+  let readOffset = await stat(busPath).then((value) => value.size).catch(() => 0);
+  let pendingLine = "";
   let closed = false;
   let flushing = false;
   let flushAgain = false;
@@ -74,12 +74,26 @@ async function streamWorkflow(request: IncomingMessage, response: ServerResponse
     flushing = true;
     do {
       flushAgain = false;
-      const lines = (await readFile(busPath, "utf8").catch(() => "")).split(/\r?\n/).filter(Boolean);
-      if (lines.length < seen) seen = 0;
-      for (const line of lines.slice(seen)) {
-        try { send({ type: "workflow_event", event: JSON.parse(line) as unknown }); } catch { /* Retry incomplete appends on the next filesystem change. */ }
+      const size = await stat(busPath).then((value) => value.size).catch(() => 0);
+      if (size < readOffset) {
+        readOffset = 0;
+        pendingLine = "";
       }
-      seen = lines.length;
+      if (size > readOffset) {
+        const handle = await open(busPath, "r");
+        try {
+          const buffer = Buffer.alloc(size - readOffset);
+          const { bytesRead } = await handle.read(buffer, 0, buffer.length, readOffset);
+          readOffset += bytesRead;
+          const lines = `${pendingLine}${buffer.subarray(0, bytesRead).toString("utf8")}`.split(/\r?\n/);
+          pendingLine = lines.pop() ?? "";
+          for (const line of lines.filter(Boolean)) {
+            try { send({ type: "workflow_event", event: JSON.parse(line) as unknown }); } catch { /* Ignore malformed completed records. */ }
+          }
+        } finally {
+          await handle.close();
+        }
+      }
     } while (flushAgain && !closed);
     flushing = false;
   };

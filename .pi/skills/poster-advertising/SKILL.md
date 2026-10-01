@@ -1,157 +1,40 @@
 ---
 name: poster-advertising
-description: "Poster, advertising, event key-visual, and campaign communication guidance for Dreamatic: message hierarchy, visual hook, media adaptation, and critique focus."
+description: "Create poster, campaign, and advertising concepts through message hierarchy, audience insight, visual hooks, composition, typography, and format adaptation."
 license: MIT
 metadata:
-  audience: design-research, design-planner, design-designer, design-critic
-  workflow: ai-design-harness
-  domain_type: poster_advertising_design
+  audience: designer
+  domain_type: graphic_campaign_design
 ---
 
-# Poster & Advertising Design Skill
+# Poster and Advertising
 
-This skill supports `poster_advertising_design` runs. It is a first-pass domain
-framework for communication-first visuals.
+Use this optional module for posters, key visuals, campaign systems, launch graphics, and advertising concepts.
 
-## 1. Domain Positioning
+## Communication Frame
 
-`poster_advertising_design` covers:
+Clarify before styling:
 
-- standalone posters
-- event key visuals
-- advertising campaign images
-- recruitment or announcement posters
-- social-format adaptations of one communication idea
+- audience, communication goal, desired response, and viewing context;
+- primary message, supporting information, and mandatory content;
+- cultural context, tone, emotional promise, and potential sensitivities;
+- visual hook, mnemonic device, and reason the concept is ownable;
+- required formats, placements, reading distance, and time available to understand it.
 
-Use this domain when the main deliverable is the communication visual itself.
-If the brief asks for a broader identity and merchandise system, prefer
-`brand_cultural_design`.
+## Concept Development
 
-## 2. Scope Fields
+Build the proposal around one clear communication idea. Let imagery, typography, color, and composition reinforce that idea rather than compete for attention. Distinguish the campaign's transferable system from a single attractive layout.
 
-Read `brief.json::resolvedScope.domain_scope`:
+When references are available, extract useful principles such as hierarchy, rhetorical device, pacing, or image treatment. Do not imitate recognizable campaign assets or confuse popularity with relevance.
 
-```json
-{
-  "communication_goal": {
-    "campaign_goal": "string",
-    "target_action": "string",
-    "audience": "string"
-  },
-  "message_hierarchy": {
-    "key_message": "string",
-    "supporting_info": ["string"],
-    "info_density": "minimal | moderate | dense | string"
-  },
-  "visual_direction": {
-    "visual_tone": "string",
-    "visual_hook": "string",
-    "format_requirements": "string"
-  }
-}
-```
+## Proposal Coverage
 
-Primary should ask for missing key message, audience/action, or format only
-when these are not inferable from the brief.
+Choose deliverables according to the brief. A useful set may contain a master poster or key visual, one representative adaptation, and a concise rule board when consistency across formats matters. Add placement mockups only when context changes the design judgment; add a series only when variation is part of the concept.
 
-## 3. Research Guidance
+For every generated image, define the message it must communicate, composition, text zones, imagery, color behavior, format, acceptance criteria, and output size. Use lower resolution for exploratory or supporting layouts.
 
-Build a broad advertising and poster reference library covering:
+Treat generated text as visual content unless exact copy rendering is reliably supported. Preserve critical wording as structured copy for later production when necessary.
 
-- multiple similar campaigns, events, or poster systems
-- key visual and master-visual-system references
-- typography and information-hierarchy references
-- media-format, placement, and adaptation references
-- cultural and subject-matter imagery that can shape the visual hook
+## Quality Lens
 
-Research should prioritize communication references, not only institutional
-identity assets.
-Skip generic mood-board images that do not change copy hierarchy, format,
-placement, or the key visual.
-
-## 4. Planner Guidance
-
-Planner should define:
-
-- communication thesis
-- key message and supporting information hierarchy
-- visual hook and key visual/master visual logic
-- format set and aspect ratios
-- color and visual rules for adaptation
-- adaptation matrix: which message, crop, CTA, and visual element survives in each medium
-- image-generation plan tied to message hierarchy
-
-Recommended deliverable categories:
-
-- main poster
-- key visual or master visual
-- color and visual rules board
-- typography and information hierarchy board
-- social adaptation
-
-Optional additional categories:
-
-- banner or horizontal adaptation
-- poster series variation
-- typographic/detail crop
-- media placement mockup
-- campaign asset overview
-
-These are categories. If the brief names multiple media formats, campaign
-phases, or poster sizes, Planner may expand one category into several concrete
-PNG entries in `deliverable_manifest.json`.
-
-Planner should reason from the concrete communication problem before finalizing
-the manifest:
-
-- several messages, dates, speakers, products, or campaign phases -> add poster series variations
-- multiple channels or aspect ratios -> add banner/social/adaptation entries
-- dense information -> add typography or copy hierarchy detail board
-- public placement or launch context matters -> add media placement mockup
-- the brief needs a reusable campaign look -> make the key visual the anchor for every adaptation
-- several formats need to be understood as one system -> add a campaign asset overview
-- format constraints differ strongly, such as portrait poster plus wide web banner plus square social post -> define a format adaptation matrix before writing the manifest
-
-Record selected and omitted expansions in `design_plan.json::domain_handoff` so
-Designer and Critic can understand why the package has that shape.
-
-## 5. Designer Guidance
-
-Designer should produce PNGs that communicate quickly and clearly.
-
-Each image prompt should include:
-
-- key message or headline intent
-- visual hook and key visual/master visual logic
-- hierarchy: what should be seen first, second, third
-- color and visual rules that must carry across adaptations
-- tone and audience
-- format and aspect ratio
-- how the crop changes while preserving the same key visual, headline hierarchy, palette, and graphic device
-- required language or text handling
-- the selected consistency anchor, usually the main poster or key visual
-- any `domain_handoff.execution_notes` relevant to this deliverable
-
-Avoid generic decorative graphics with no message hierarchy.
-
-## 6. Critic Guidance
-
-Critic should evaluate:
-
-- whether the message is clear within a few seconds
-- whether hierarchy supports the intended action
-- whether visual impact fits the audience and topic
-- whether adaptations retain the same campaign idea
-- whether color, typography, and visual rules carry consistently across formats
-- whether the key message and CTA survive each format adaptation
-- whether the outputs are usable as poster/advertising visuals
-
-## 7. Later Professional Deepening
-
-Future work should add stronger references for:
-
-- campaign strategy
-- poster typography
-- information hierarchy systems
-- media adaptation rules
-- copy/image relationship
+Judge the proposal by message clarity, stopping power, hierarchy, distinctiveness, cultural fit, legibility, and adaptability. Expressive choices are welcome when they strengthen the intended response.

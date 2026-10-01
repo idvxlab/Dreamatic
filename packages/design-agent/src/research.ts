@@ -15,8 +15,16 @@ export interface WebSearchOptions {
   fetch?: FetchLike;
 }
 
+function normalizedUrlInput(value: string): string {
+  const trimmed = value.trim();
+  const markdown = trimmed.match(/^\[[^\]]*\]\((https?:\/\/[^\s)]+)\)$/iu);
+  if (markdown) return markdown[1]!;
+  const angleBracket = trimmed.match(/^<(https?:\/\/[^\s>]+)>$/iu);
+  return angleBracket?.[1] ?? trimmed;
+}
+
 function safeUrl(value: string): URL {
-  const url = new URL(value);
+  const url = new URL(normalizedUrlInput(value));
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("Research URLs must use HTTP or HTTPS");
   const host = url.hostname.toLowerCase();
   if (host === "localhost" || host === "::1" || /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) {
@@ -66,7 +74,11 @@ async function boundedFetch(
   const operation = options.operation ?? "Research fetch";
   try {
     return await withRetry(async () => {
-      const headers = new Headers({ "User-Agent": "Dreamatic/0.1 design research", Accept: accept });
+      const headers = new Headers({
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Dreamatic/0.1",
+        Accept: accept,
+        "Accept-Language": "en-US,en;q=0.9",
+      });
       new Headers(options.init?.headers).forEach((value, key) => headers.set(key, value));
       const response = await (options.fetch ?? globalThis.fetch)(url, {
         ...options.init,
@@ -77,7 +89,7 @@ async function boundedFetch(
       if ([408, 409, 425, 429, 500, 502, 503, 504].includes(response.status)) {
         throw new RetryableHttpError(response.status, `${operation} failed (${response.status})`);
       }
-      if (!response.ok) throw new Error(`${operation} failed (${response.status})`);
+      if (!response.ok) throw new Error(`${operation} returned HTTP ${response.status}`);
       const declared = Number(response.headers.get("content-length") ?? 0);
       if (declared > maxBytes) throw new Error(`${operation} response exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
       const bytes = Buffer.from(await response.arrayBuffer());
@@ -159,10 +171,14 @@ function sourceId(url: URL): string {
   return safeRunId(`${stem}-${createHash("sha256").update(url.href).digest("hex").slice(0, 10)}`);
 }
 
-export async function researchFetch(workspaceDir: string, params: { runId: string; url: string; id?: string; cacheText?: boolean }) {
+export async function researchFetch(
+  workspaceDir: string,
+  params: { runId: string; url: string; id?: string; cacheText?: boolean },
+  options: { fetch?: FetchLike } = {},
+) {
   const runId = safeRunId(params.runId);
   const url = safeUrl(params.url);
-  const { response, bytes } = await boundedFetch(url, "text/html,text/plain,application/json", MAX_PAGE_BYTES);
+  const { response, bytes } = await boundedFetch(url, "text/html,text/plain,application/json", MAX_PAGE_BYTES, options);
   const source = bytes.toString("utf8");
   const contentType = response.headers.get("content-type") ?? "";
   const text = /html/i.test(contentType) ? plainText(source) : source.replace(/\s+/g, " ").trim();

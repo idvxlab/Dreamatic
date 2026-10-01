@@ -8,9 +8,9 @@ import {
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadEnvFile } from "node:process";
-import { createDreamaticExtension } from "./extension.js";
+import { createDreamaticExtension, dreamaticPersonaTools } from "./extension.js";
 import { safeRunId } from "./paths.js";
-import { dreamaticProviderFromEnv } from "./provider.js";
+import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
 export { dreamaticSessionFailure } from "./session-status.js";
 
 export const DREAMATIC_ACTIVE_TOOLS = [
@@ -21,24 +21,30 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "grep",
   "find",
   "ls",
-  "use_skill",
-  "list_skills",
   "todo_write",
   "ask_user",
+  "list_skills",
+  "use_skill",
   "run_init",
   "design_bus_post",
   "design_bus_read",
+  "design_context_read",
   "spawn_agent",
   "websearch",
+  "websearch_batch",
   "research_fetch",
+  "research_fetch_batch",
   "research_asset_discover",
   "research_asset_fetch",
+  "research_asset_fetch_batch",
   "research_asset_validate",
   "view_image",
   "image_generate",
+  "image_generate_batch",
   "image_edit",
   "compare_images",
   "select_artifact",
+  "build_finalize",
   "artifact_lint",
   "export_package",
 ] as const;
@@ -59,11 +65,12 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
-  const persona = safeRunId(options.persona ?? "design-primary");
+  const persona = safeRunId(options.persona ?? "orchestrator");
   const profile = dreamaticProviderFromEnv();
   const personaPath = join(options.repoRoot, ".pi", "agents", `${persona}.md`);
   const personaSource = await readFile(personaPath, "utf8");
-  const { body: personaPrompt } = parseFrontmatter<Record<string, unknown>>(personaSource);
+  const { frontmatter, body: personaPrompt } = parseFrontmatter<{ allowed_tools?: unknown }>(personaSource);
+  const tools = dreamaticPersonaTools(persona, frontmatter.allowed_tools);
   const sessionDir = options.sessionDir ?? join(options.workspaceDir, "sessions");
   await mkdir(sessionDir, { recursive: true });
 
@@ -77,6 +84,7 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
     extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, ...(options.projectId ? { projectId: options.projectId } : {}) })],
   });
   await resourceLoader.reload();
+  const thinkingLevel = dreamaticThinkingLevel(persona);
 
   return createAgentSession({
     cwd: options.repoRoot,
@@ -86,7 +94,8 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
       : options.inMemory
       ? SessionManager.inMemory(options.repoRoot)
       : SessionManager.create(options.repoRoot, sessionDir),
-    tools: [...DREAMATIC_ACTIVE_TOOLS],
-    ...(profile ? { model: profile.model } : {}),
+    tools,
+    ...(profile ? { model: profile.modelForPersona(persona) } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
   });
 }

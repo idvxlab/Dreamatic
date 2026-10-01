@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { validateResearchAssets, webSearch } from "../dist/index.js";
+import { researchFetch, validateResearchAssets, webSearch } from "../dist/index.js";
 
 test("web search uses Serper when the provider and key are configured", async () => {
   let request;
@@ -38,6 +38,31 @@ test("web search falls back to DuckDuckGo when Serper is not configured", async 
   assert.equal(result.provider, "duckduckgo");
   assert.equal(result.count, 1);
   assert.match(requestedUrl, /^https:\/\/html\.duckduckgo\.com\/html\/\?q=product\+reference$/);
+});
+
+test("research fetch accepts a Markdown-wrapped URL and sends browser-compatible headers", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-fetch-url-"));
+  let request;
+  try {
+    const result = await researchFetch(workspace, {
+      runId: "test-run",
+      url: "[NASA](https://www.nasa.gov/lunar-surface-technology/)",
+    }, {
+      fetch: async (input, init) => {
+        request = { url: String(input), headers: new Headers(init.headers) };
+        return new Response("<html><title>Lunar technology</title><body>Evidence</body></html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      },
+    });
+    assert.equal(request.url, "https://www.nasa.gov/lunar-surface-technology/");
+    assert.match(request.headers.get("User-Agent"), /Mozilla\/5\.0/);
+    assert.equal(request.headers.get("Accept-Language"), "en-US,en;q=0.9");
+    assert.equal(result.title, "Lunar technology");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 });
 
 test("research asset validation creates a durable health report", async () => {

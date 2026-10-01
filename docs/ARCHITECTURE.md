@@ -24,9 +24,23 @@ The CLI enters at the shared session factory instead of the HTTP server:
 ```text
 dreamatic CLI
   -> createDreamaticSession
-  -> the same design-primary persona, Skills, tools, and Pi AgentSession
+  -> the same Orchestrator persona, runtime contracts, tools, and Pi AgentSession
   -> workspace/runs and workspace/sessions/cli
 ```
+
+## Agent architecture
+
+```text
+User -> Orchestrator -> Researcher -> Designer -> Reviewer
+                                  Designer <- issues
+                    approved Design Context -> Builder -> Product
+```
+
+- Agents reason.
+- Design Context remembers through durable Run files.
+- Orchestrator owns routing, state, gates, and bounded loops.
+- Builder executes only an approved Design Context.
+- Reviewer challenges Designer's proposal and never becomes a second Designer.
 
 ## Ownership
 
@@ -36,7 +50,7 @@ dreamatic CLI
   artifact manifests, workflow messages, and the design workspace.
 - The frontend never imports Pi packages. It consumes a stable Dreamatic API.
 
-## Initial compatibility choice
+## Runtime dependency choice
 
 The first implementation uses the mature coding-agent SDK rather than Pi's
 experimental server/client coordinator. The API boundary allows replacing the

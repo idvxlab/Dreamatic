@@ -42,7 +42,24 @@ export async function createDraftRun(workspaceDir: string, sessionId: string, ti
   await mkdir(runDir, { recursive: false });
   await Promise.all([
     writeFile(join(runDir, "brief.json"), JSON.stringify({ runId, sessionId, title, titleStatus: "temporary", brief: "", resolvedScope: {}, createdAt }, null, 2), "utf8"),
-    writeFile(join(runDir, "run-state.json"), JSON.stringify({ runId, status: "draft", stages: { research: "pending", planning: "pending", design: "pending", critique: "pending", export: "pending" }, createdAt, updatedAt: createdAt, lastEvent: "project_created" }, null, 2), "utf8"),
+    writeFile(join(runDir, "run-state.json"), JSON.stringify({ runId, status: "draft", stages: { research: "pending", design: "pending", review: "pending", build: "pending", export: "pending" }, createdAt, updatedAt: createdAt, lastEvent: "project_created" }, null, 2), "utf8"),
+    writeFile(join(runDir, "design-context.json"), JSON.stringify({
+      schemaVersion: 1,
+      runId,
+      status: "collecting",
+      revision: 0,
+      sections: {
+        requirements: "brief.json",
+        research: ["research/evidence.json", "research/research.md", "research/brand_lock.md", "research/assets/manifest.json", "research/assets/validation.json"],
+        designSpec: ["plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md"],
+        tokens: "plan/design_system.json",
+        components: "plan/design_plan.json",
+        decisions: "plan/task_breakdown.md",
+        reviewIssues: ["review/design-review.json", "review/design-review.md"],
+        implementation: "artifacts/artifact-manifest.json",
+      },
+      updatedAt: createdAt,
+    }, null, 2), "utf8"),
     writeFile(join(runDir, "bus.jsonl"), "", "utf8"),
   ]);
   return { id: runId, title };
@@ -137,7 +154,7 @@ export interface AgentSessionView {
 }
 
 export interface RunNoteView {
-  id: "research" | "plan" | "critique";
+  id: "research" | "plan" | "review";
   title: string;
   text: string;
   path: string;
@@ -162,7 +179,7 @@ export interface RunView {
 const NOTE_FILES: Array<{ id: RunNoteView["id"]; title: string; path: string }> = [
   { id: "research", title: "Research findings", path: "research/research.md" },
   { id: "plan", title: "Design rationale", path: "plan/task_breakdown.md" },
-  { id: "critique", title: "Visual critique", path: "review/critique.md" },
+  { id: "review", title: "Design challenges", path: "review/design-review.md" },
 ];
 
 function compactMarkdown(source: string): string {
@@ -267,10 +284,10 @@ interface SessionFileIndex {
 const sessionFileCache = new Map<string, SessionFileIndex>();
 
 const AGENT_TITLES: Record<string, string> = {
-  "design-research": "Research agent",
-  "design-planner": "Planning agent",
-  "design-designer": "Design agent",
-  "design-critic": "Critic agent",
+  researcher: "Researcher",
+  designer: "Designer",
+  reviewer: "Reviewer",
+  builder: "Builder",
 };
 
 function limitedText(value: string, limit = 1_200): string {
@@ -507,7 +524,7 @@ async function busActivity(runDir: string): Promise<TimelineView[]> {
         }
         continue;
       }
-      const failed = type.includes("fail") || type.includes("interrupted") || event.severity === "error";
+      const failed = type.includes("interrupted") || event.severity === "error";
       const artifactRefs = stringArray(event.artifactRefs);
       result.push({
         id: typeof event.id === "string" ? event.id : `bus-${index}`,
