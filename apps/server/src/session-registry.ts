@@ -1,5 +1,5 @@
 import { SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { createDreamaticSession, dreamaticSessionFailure, prepareDreamaticPrompt, withRetry, type DreamaticPromptImage } from "@dreamatic/design-agent";
+import { clarificationFromToolResult, createDreamaticSession, dreamaticSessionFailure, prepareDreamaticPrompt, stopAfterCommittedTurn, withRetry, type DreamaticPromptImage } from "@dreamatic/design-agent";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -42,48 +42,21 @@ interface ManagedSession {
 
 export function clarificationFromMessages(messages: readonly unknown[]): ClarificationRequest | undefined {
   let pending: ClarificationRequest | undefined;
+  const calls = new Set<string>();
   for (const raw of messages) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-    const message = raw as { role?: unknown; content?: unknown };
+    const message = raw as { role?: unknown; content?: unknown; toolCallId?: unknown; toolName?: unknown; isError?: unknown };
     if (message.role === "user") {
       pending = undefined;
-      continue;
-    }
-    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
-    for (const rawBlock of message.content) {
-      if (!rawBlock || typeof rawBlock !== "object" || Array.isArray(rawBlock)) continue;
-      const block = rawBlock as { type?: unknown; id?: unknown; name?: unknown; arguments?: unknown };
-      if (block.type !== "toolCall" || block.name !== "ask_user" || !block.arguments || typeof block.arguments !== "object" || Array.isArray(block.arguments)) continue;
-      const args = block.arguments as Record<string, unknown>;
-      if (!Array.isArray(args.questions)) continue;
-      const questions = args.questions.flatMap((rawQuestion, index): ClarificationQuestion[] => {
-        if (!rawQuestion || typeof rawQuestion !== "object" || Array.isArray(rawQuestion)) return [];
-        const question = rawQuestion as Record<string, unknown>;
-        const prompt = typeof question.question === "string" ? question.question : typeof question.prompt === "string" ? question.prompt : undefined;
-        if (!prompt) return [];
-        const options = Array.isArray(question.options) ? question.options.flatMap((rawOption): Array<{ label: string; description: string }> => {
-          if (typeof rawOption === "string") return [{ label: rawOption, description: rawOption }];
-          if (!rawOption || typeof rawOption !== "object" || Array.isArray(rawOption)) return [];
-          const option = rawOption as Record<string, unknown>;
-          return typeof option.label === "string" ? [{ label: option.label, description: typeof option.description === "string" ? option.description : option.label }] : [];
-        }) : undefined;
-        return [{
-          id: typeof question.id === "string" ? question.id : `question-${index + 1}`,
-          header: typeof question.header === "string" ? question.header : `Question ${index + 1}`,
-          question: prompt,
-          ...(options?.length ? { options } : {}),
-          multiple: question.multiple === true,
-          custom: question.custom !== false,
-          ...(typeof question.placeholder === "string" ? { placeholder: question.placeholder } : {}),
-          required: question.required !== false,
-        }];
-      });
-      if (questions.length) pending = {
-        id: typeof block.id === "string" ? block.id : `clarification-${questions.map((question) => question.id).join("-")}`,
-        title: typeof args.title === "string" ? args.title : "A few details before we begin",
-        ...(typeof args.context === "string" ? { context: args.context } : {}),
-        questions,
-      };
+      calls.clear();
+    } else if (message.role === "assistant" && Array.isArray(message.content)) {
+      for (const block of message.content) {
+        if (block?.type === "toolCall" && block.name === "ask_user" && typeof block.id === "string") calls.add(block.id);
+      }
+    } else if (message.role === "toolResult" && message.toolName === "ask_user" && typeof message.toolCallId === "string" && calls.has(message.toolCallId)) {
+      calls.delete(message.toolCallId);
+      const request = clarificationFromToolResult(message, message.toolCallId);
+      if (request && !pending) pending = request;
     }
   }
   return pending;
@@ -198,19 +171,35 @@ export class SessionRegistry {
       images,
     });
     const projectInstruction = ownedProjectId
-      ? `\n\n[DREAMATIC PROJECT OWNERSHIP]\nThis conversation belongs only to project ${ownedProjectId}. If starting its full design workflow, call run_init with runIdOverride exactly \"${ownedProjectId}\". Never create, select, or reuse another Run, even if its title or brief is similar.`
+      ? `\n\n[DREAMATIC PROJECT OWNERSHIP]\nThis conversation belongs only to project ${ownedProjectId}. History may contain other project ids; their briefs, deliverables, preferences and assumptions are not confirmed requirements for this project unless the user explicitly asks to reuse them. Assess missing intent from the current project's request and answers, not another project's completed design. If starting its full design workflow, call run_init with runIdOverride exactly \"${ownedProjectId}\". For explicit user-requested changes after completion, call run_revision with this same project id and the feedback delta; do not call run_init again. Never create, select, or reuse another Run, even if its title or brief is similar.`
       : "";
+    let committedPause = false;
+    const restoreTurnStop = stopAfterCommittedTurn(managed.session.agent, () => committedPause);
+    const unsubscribe = managed.session.subscribe((event) => {
+      if (event.type !== "tool_execution_end" || event.isError) return;
+      if ((event.toolName === "ask_user" && clarificationFromToolResult(event.result, event.toolCallId)) || event.toolName === "export_package") {
+        committedPause = true;
+      }
+    });
     try {
       await withRetry(async (attempt) => {
-        await managed.session.prompt(
-          attempt === 1 ? `${prepared.text}${projectInstruction}` : "The previous provider call failed transiently. Resume from completed tool results and durable Run files. Do not repeat completed work or create a new Run.",
-          attempt === 1 ? { images: prepared.images } : undefined,
-        );
+        try {
+          await managed.session.prompt(
+            attempt === 1 ? `${prepared.text}${projectInstruction}` : "The previous provider call failed transiently. Resume from completed tool results and durable Run files. Do not repeat completed work or create a new Run.",
+            attempt === 1 ? { images: prepared.images } : undefined,
+          );
+        } catch (error) {
+          if (committedPause && !managed.abortRequested) return;
+          throw error;
+        }
         if (managed.abortRequested) throw new Error("Run interrupted by user");
+        if (committedPause) return;
         const failure = dreamaticSessionFailure(managed.session.messages);
         if (failure) throw new Error(failure);
       }, { attempts: Math.max(1, Number(process.env.DREAMATIC_AGENT_RETRY_ATTEMPTS ?? 3)) });
     } finally {
+      unsubscribe();
+      restoreTurnStop();
       managed.abortRequested = false;
     }
   }

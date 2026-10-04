@@ -26,6 +26,16 @@ State assumptions when dimensions, regulations, site data, or technical evidence
 
 ## Reference Use
 
+Explore distinct organizing hypotheses through program adjacency, movement,
+section, threshold and environmental response, not only facade styling. Build
+qualitative adjacency and circulation relations, then test arrangements against
+arrival, privacy, daylight, servicing and accessible movement. Transfer patterns
+from landscape, infrastructure or temporal activities only with an explanation
+of spatial benefit. Develop structure/enclosure intent, material junctions and
+construction sequence at concept depth; distinguish site facts from proposed
+interventions. Compare use quality, context fit, material/maintenance implications
+and unresolved site/engineering tests.
+
 Judge references by what they can contribute rather than by visual similarity alone:
 
 - site references clarify environmental response;
@@ -33,11 +43,24 @@ Judge references by what they can contribute rather than by visual similarity al
 - experiential references clarify atmosphere, sequence, and human scale;
 - operational references expose accessibility, maintenance, and use constraints.
 
-Extract transferable principles and avoid copying a reference's appearance without its underlying logic.
+For a new spatial proposal, extract transferable principles and develop its
+own program, context response and spatial logic rather than pasting an unrelated
+precedent's appearance. For depicting an existing site or planning an adaptation,
+retain documented identifying geometry and context where the task requires it.
+Do not replace a recognizable building with a generic invented one solely
+because the source photo's reuse permissions are unknown. Keep observed site
+features, proposed changes and uncertainties distinct in prompts and diagrams.
 
 ## Proposal Coverage
 
-Choose only the views needed to communicate and execute the concept. Possible views include a hero perspective, zoning or plan logic, section, circulation sequence, key interior, material-and-light study, or critical detail.
+Map the spatial proposal comprehensively: context and orientation, overall
+organization, plans and sections, movement sequences, key interiors/exteriors,
+human-scale use scenarios, structural relationships, material/light studies,
+important details, environmental states and worthwhile scheme comparisons.
+Develop the applicable dimensions into readable dedicated views; one hero and
+one overview are not automatically sufficient. Image count follows coverage,
+without a preset ceiling unless the user limits it. These are conceptual views,
+not certified engineering drawings.
 
 For every planned image, define:
 

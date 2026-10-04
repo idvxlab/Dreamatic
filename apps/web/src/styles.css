@@ -221,6 +221,8 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .composer-wrap { position: relative; z-index: 2; min-width: 0; padding: 10px 14px 14px; background: linear-gradient(to bottom, rgba(246,245,240,.72), var(--panel) 18px); }
 .clarification-card { padding: 13px; border: 1px solid rgba(137,169,73,.38); border-radius: 12px; background: #fffef9; box-shadow: 0 8px 26px rgba(39,40,34,.1); }
 .clarification-heading { display: flex; align-items: flex-start; gap: 9px; }
+.clarification-heading > div { flex: 1; min-width: 0; }
+.clarification-heading > button { display: grid; place-items: center; flex: 0 0 auto; padding: 4px; border: 0; border-radius: 5px; background: transparent; color: inherit; cursor: pointer; }
 .clarification-heading > span { width: 27px; height: 27px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 8px; background: #292a25; color: var(--lime); }
 .clarification-heading strong { display: block; font-size: 11px; }
 .clarification-heading p { margin: 3px 0 0; color: #85877f; font-size: 8.5px; line-height: 1.45; }

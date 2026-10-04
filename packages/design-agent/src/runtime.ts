@@ -8,7 +8,7 @@ import {
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadEnvFile } from "node:process";
-import { createDreamaticExtension, dreamaticPersonaTools } from "./extension.js";
+import { createDreamaticExtension, dreamaticPersonaTools, dreamaticPersonaPromptBlock, validateDreamaticPersonaContracts } from "./extension.js";
 import { safeRunId } from "./paths.js";
 import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
 export { dreamaticSessionFailure } from "./session-status.js";
@@ -16,6 +16,7 @@ export { dreamaticSessionFailure } from "./session-status.js";
 export const DREAMATIC_ACTIVE_TOOLS = [
   "read",
   "write",
+  "write_json",
   "edit",
   "bash",
   "grep",
@@ -26,6 +27,7 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "list_skills",
   "use_skill",
   "run_init",
+  "run_revision",
   "design_bus_post",
   "design_bus_read",
   "design_context_read",
@@ -42,6 +44,7 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "image_generate",
   "image_generate_batch",
   "image_edit",
+  "image_edit_batch",
   "compare_images",
   "select_artifact",
   "build_finalize",
@@ -60,6 +63,7 @@ export interface CreateDreamaticSessionOptions {
 }
 
 export async function createDreamaticSession(options: CreateDreamaticSessionOptions) {
+  await validateDreamaticPersonaContracts(options.repoRoot);
   try {
     loadEnvFile(join(options.repoRoot, ".env"));
   } catch (error) {
@@ -79,9 +83,9 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
     agentDir: getAgentDir(),
     appendSystemPromptOverride: (base) => [
       ...base,
-      `# Active Dreamatic persona: ${persona}\n\n${personaPrompt}`,
+      dreamaticPersonaPromptBlock(`# Active Dreamatic persona: ${persona}\n\n${personaPrompt}`),
     ],
-    extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, ...(options.projectId ? { projectId: options.projectId } : {}) })],
+    extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, personaPath, ...(options.projectId ? { projectId: options.projectId } : {}) })],
   });
   await resourceLoader.reload();
   const thinkingLevel = dreamaticThinkingLevel(persona);

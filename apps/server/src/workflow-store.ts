@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { createInterface } from "node:readline";
+import { settleWorkflowRetries } from "@dreamatic/design-agent/workflow-retries";
 
 export type WorkflowKind = "message" | "tool" | "agent" | "references" | "milestone" | "retry" | "error";
 export type WorkflowStatus = "running" | "completed" | "interrupted" | "error" | "info";
@@ -39,6 +40,7 @@ interface SessionInvocation extends WorkflowEventView {
 
 const LIFECYCLE_TYPES = new Set([
   "agent_started",
+  "agent_progress",
   "agent_retry",
   "agent_finished",
   "agent_interrupted",
@@ -135,7 +137,9 @@ function toolLabel(tool: string): string {
     research_asset_fetch: "Saved reference image",
     research_asset_validate: "Validated reference library",
     image_generate: "Generated design image",
+    image_generate_batch: "Generated design images",
     image_edit: "Edited design image",
+    image_edit_batch: "Edited design images",
     view_image: "Inspected image",
     compare_images: "Compared design images",
     artifact_lint: "Checked deliverables",
@@ -391,6 +395,10 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
       if (at) invocation.at = at;
       continue;
     }
+    if (type === "agent_progress") {
+      if (typeof event.output === "string") invocation.output = compact(event.output, 1_200);
+      continue;
+    }
     if (type === "tool_started") {
       const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `${invocationId}-tool-${index}`;
@@ -505,10 +513,10 @@ function orchestratorLifecycleEvents(records: Record<string, unknown>[], runId: 
 }
 
 function busEvents(records: Record<string, unknown>[], runId: string): WorkflowEventView[] {
-  const result = records.flatMap((event, index) => {
+  const toNode = (event: Record<string, unknown>, index: number): WorkflowEventView[] => {
     try {
       const type = typeof event.type === "string" ? event.type : "workflow_update";
-      if (LIFECYCLE_TYPES.has(type)) return [];
+      if (LIFECYCLE_TYPES.has(type) || type === "operation_finished") return [];
       const failed = type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";
       const refs = [...collectPaths(event.artifactRefs, runId)];
@@ -527,9 +535,12 @@ function busEvents(records: Record<string, unknown>[], runId: string): WorkflowE
         ...(refs.length ? { artifactRefs: refs } : {}),
       }];
     } catch { return []; }
-  });
+  };
   const deduplicated = new Map<string, WorkflowEventView>();
-  for (const event of result) deduplicated.set(event.id, event);
+  for (const [index, record] of records.entries()) {
+    for (const node of settleWorkflowRetries([...deduplicated.values()], record)) deduplicated.set(node.id, node);
+    for (const node of toNode(record, index)) deduplicated.set(node.id, node);
+  }
   return [...deduplicated.values()];
 }
 
@@ -690,5 +701,6 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
 
   for (const invocation of allInvocations) sortEvents(invocation.children);
   const unmatchedInvocations = invocations.filter((invocation) => unused.has(invocation.id));
-  return sortEvents([...primary, ...unmatchedInvocations, ...unplacedMilestones]);
+  const workflow = sortEvents([...primary, ...unmatchedInvocations, ...unplacedMilestones]);
+  return busRecords.reduce((nodes, event) => settleWorkflowRetries(nodes, event), workflow);
 }

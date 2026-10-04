@@ -3,9 +3,102 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import { readCanvasState, writeCanvasState } from "../dist/canvas-store.js";
 import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, primeDraftRun, renameRun, runAgentSessions, runInventory } from "../dist/run-store.js";
 import { workflowInventory } from "../dist/workflow-store.js";
+
+test("Showcase preview permits external source tabs without enabling embedded scripts or top navigation", async () => {
+  const source = await readFile(new URL("../../web/src/components/Canvas.tsx", import.meta.url), "utf8");
+  const sandbox = /<iframe\b[^>]*sandbox="([^"]+)"/u.exec(source)?.[1].split(/\s+/u) ?? [];
+  assert.ok(sandbox.includes("allow-popups"));
+  assert.ok(sandbox.includes("allow-popups-to-escape-sandbox"));
+  assert.equal(sandbox.includes("allow-scripts"), false);
+  assert.equal(sandbox.some((permission) => permission.startsWith("allow-top-navigation")), false);
+});
+
+test("draft requests retain user text through clarification and artistic project renaming", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-original-request-"));
+  try {
+    const run = await createDraftRun(workspace, "session-request");
+    const original = "  为地方传统工艺设计展览  ";
+    await primeDraftRun(workspace, run.id, "session-request", original);
+    await primeDraftRun(workspace, run.id, "session-request", "偏好传统雅致风格");
+    await renameRun(workspace, run.id, "织忆新展");
+    const brief = JSON.parse(await readFile(join(workspace, "runs", run.id, "brief.json"), "utf8"));
+    assert.equal(brief.originalRequest, original);
+    assert.equal(brief.originalRequestSource, "server_user_input");
+    assert.equal(brief.title, "织忆新展");
+    assert.equal(brief.brief, original.trim());
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("persisted and streamed retries settle on success, failure and legacy completion", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-retry-status-"));
+  try {
+    const runDir = join(workspace, "runs", "retry-test");
+    await mkdir(runDir, { recursive: true });
+    const source = await readFile(new URL("../../web/src/workflow-live.ts", import.meta.url), "utf8");
+    const helperUrl = new URL("../../../packages/design-agent/dist/workflow-retries.js", import.meta.url).href;
+    const compiled = ts.transpileModule(source.replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+    const events = [
+      { type: "agent_started", invocationId: "builder-1", agent: "builder", at: "2026-01-01T00:00:00Z" },
+      { type: "operation_retry", operation: "image_generate", scope: "exploded", nextAttempt: 2, error: "Timed out", at: "2026-01-01T00:00:01Z" },
+      { type: "operation_retry", operation: "image_generate", scope: "hero", nextAttempt: 2, at: "2026-01-01T00:00:02Z" },
+      { type: "operation_finished", operation: "image_generate", scope: "exploded", status: "completed", at: "2026-01-01T00:00:03Z" },
+      { type: "operation_finished", operation: "image_generate", scope: "hero", status: "error", at: "2026-01-01T00:00:04Z" },
+      { type: "operation_retry", operation: "image_generate", scope: "hero", nextAttempt: 2, at: "2026-01-01T00:00:05Z" },
+      { type: "agent_retry", invocationId: "builder-1", agent: "builder", nextAttempt: 2, at: "2026-01-01T00:00:06Z" },
+      { type: "build_done", from_agent: "builder", summary: "Built", at: "2026-01-01T00:00:07Z" },
+      { type: "agent_finished", invocationId: "builder-1", agent: "builder", at: "2026-01-01T00:00:08Z" },
+      { type: "export_done", at: "2026-01-01T00:00:09Z" },
+    ];
+    const flatten = (nodes) => nodes.flatMap((node) => [node, ...flatten(node.children ?? [])]);
+    let live = [];
+    for (const [index, event] of events.entries()) {
+      live = applyWorkflowStreamEvent(live, event);
+      await writeFile(join(runDir, "bus.jsonl"), events.slice(0, index + 1).map(JSON.stringify).join("\n") + "\n");
+      const persisted = await workflowInventory(workspace, "retry-test");
+      for (const workflow of [live, persisted]) {
+        const nodes = flatten(workflow);
+        const exploded = nodes.find((node) => node.id === "retry-image_generate-exploded");
+        const hero = nodes.find((node) => node.id === "retry-image_generate-hero");
+        if (index === 3) { assert.equal(exploded?.status, "completed"); assert.equal(hero?.status, "running"); }
+        if (index === 4) assert.equal(hero?.status, "error");
+        if (index === 5) assert.equal(hero?.status, "running");
+        if (index >= 7) {
+          assert.equal(nodes.filter((node) => node.kind === "retry" && node.status === "running").length, 0);
+          assert.equal(hero?.status, "completed");
+          assert.match(hero?.label ?? "", /^Retry resolved/);
+        }
+      }
+    }
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("workflow retains model progress while a specialist is synthesizing", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-model-progress-"));
+  try {
+    const runDir = join(workspace, "runs", "progress-test");
+    await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, "bus.jsonl"), [
+      { type: "agent_started", invocationId: "research-1", agent: "researcher", task: "Collect evidence", at: "2026-01-01T00:00:00Z" },
+      { type: "agent_progress", invocationId: "research-1", agent: "researcher", output: "Generating research report · 30s · 500 streamed characters", at: "2026-01-01T00:00:30Z" },
+    ].map(JSON.stringify).join("\n") + "\n");
+    const workflow = await workflowInventory(workspace, "progress-test");
+    const agent = workflow.find((event) => event.id === "research-1");
+    assert.equal(agent?.status, "running");
+    assert.match(agent?.output ?? "", /500 streamed characters/);
+    assert.equal(agent?.detail, "Collect evidence");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
 
 test("new projects have an isolated draft Run before the agent starts", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "dreamatic-draft-"));
@@ -108,6 +201,11 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.equal(runs[0]?.activity.some((item) => item.label === "References ready"), true);
     assert.deepEqual(runs[0]?.notes.map((note) => note.id), ["research"]);
     assert.match(runs[0]?.notes[0]?.text ?? "", /Visible design evidence/);
+    assert.equal(runs[0]?.notes[0]?.path, "research/research.md");
+    await writeFile(join(runDir, "research/research-findings.md"), "# Findings\n\nCanonical design evidence");
+    const updatedRuns = await runInventory(workspace);
+    assert.equal(updatedRuns[0]?.notes[0]?.path, "research/research-findings.md");
+    assert.match(updatedRuns[0]?.notes[0]?.text ?? "", /Canonical design evidence/);
     assert.equal(runs[0]?.agentSessions[0]?.title, "Researcher");
     assert.equal(runs[0]?.agentSessions[0]?.status, "completed");
     assert.equal(runs[0]?.agentSessions[0]?.actionCount, 1);
@@ -135,6 +233,35 @@ test("canvas state and run assets share one durable Run", async () => {
     assert.match(deleted.trashedPath, /^\.trash\/runs\/sample-run-/);
     assert.equal(await stat(join(workspace, "runs", "sample-run")).then(() => true).catch(() => false), false);
     assert.equal(await stat(join(workspace, deleted.trashedPath)).then(() => true).catch(() => false), true);
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("revision snapshots stay out of current project inventories while SVG delivery remains visible", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-revision-inventory-"));
+  try {
+    await createDraftRun(workspace, "session-revision", "Revision project", "revision-project");
+    const runDir = join(workspace, "runs", "revision-project");
+    await mkdir(join(runDir, "artifacts"), { recursive: true });
+    await mkdir(join(runDir, "history", "previous", "artifacts"), { recursive: true });
+    await mkdir(join(runDir, "history", "previous", "plan"), { recursive: true });
+    await writeFile(join(runDir, "artifacts", "poster.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    await writeFile(join(runDir, "history", "previous", "artifacts", "old.png"), "old image");
+    await writeFile(join(runDir, "history", "previous", "plan", "design_plan.json"), "{}");
+    await writeFile(join(runDir, "bus.jsonl"), JSON.stringify({ id: "revision-1", type: "run_revision_started", summary: "User-requested refinement", from_agent: "orchestrator", at: "2026-10-03T00:00:00Z" }) + "\n");
+    for (const assets of [await assetInventory(workspace), await assetInventory(workspace, "revision-project")]) {
+      assert.equal(assets.length, 1);
+      assert.equal(assets[0].kind, "svg");
+    }
+    const project = (await runInventory(workspace)).find((run) => run.id === "revision-project");
+    assert.equal(project.assetCount, 1);
+    assert.equal(project.documents.some((path) => path.startsWith("history/")), false);
+    const workflow = await workflowInventory(workspace, "revision-project");
+    const flatten = (nodes) => nodes.flatMap((node) => [node, ...flatten(node.children ?? [])]);
+    const revision = flatten(workflow).find((event) => event.id === "revision-1");
+    assert.equal(revision.label, "User-requested refinement");
+    assert.equal(revision.at, "2026-10-03T00:00:00Z");
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }

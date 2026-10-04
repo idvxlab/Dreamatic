@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "npm run build",
+    "predev": "npm run build -w @dreamatic/design-agent && npm run build",
     "dev": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
+    "prestart": "npm run build -w @dreamatic/design-agent && npm run build",
     "start": "node dist/index.js"
   },
   "dependencies": {

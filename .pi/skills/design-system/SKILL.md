@@ -17,6 +17,15 @@ Start with one sentence describing the intended character and the principle that
 
 ## Core Decisions
 
+Do not freeze the first attractive motif into a consistency anchor before the
+concept is selected. Keep materially different candidate systems separate and
+test each against the same demanding applications. Compare expressive range,
+recognition, content resilience and production complexity; a system must support
+the subject rather than force every artifact into identical minimal geometry.
+On feedback, distinguish confirmed invariants from revisable proposals and
+trace a changed token or rule to affected components, views and prompts. Preserve
+user-approved relationships while revisiting the underlying thesis when rejected.
+
 Define only the dimensions that affect the requested artifacts:
 
 - palette roles, contrast behavior, and material or lighting implications;
@@ -28,7 +37,24 @@ Define only the dimensions that affect the requested artifacts:
 - one or more consistency anchors that must recur across outputs;
 - protected assets and explicit `do_not` constraints.
 
+For each prohibition, state whether it comes from user intent, an evidenced
+asset condition, a runtime limit or Designer's own consistency decision. Only
+the latter is a revisable creative rule. Do not import an upstream assumption
+as a universal ban or convert subject recognition into prohibited copying.
+Allow detailed, expressive and contextual applications while preserving the
+identity features that actually unify the family.
+Derive expressive density and medium from communication needs and the selected
+direction, not from an assumption that a coherent system must be restrained.
+Distinguish accurate subject depiction from copying an existing design.
+
 Adapt the system to the domain. A spatial system may prioritize material, light, and thresholds; a product system may prioritize geometry and CMF; a graphic system may prioritize grid, type, and image treatment.
+
+Separate conceptual invariants from their execution mechanism. For each critical
+invariant, specify whether written instructions suffice or a source asset and
+dependent editing are needed. Name source/output ids and preservation rules in
+the Design Spec; do not call a token or label an actual image input. Preserve
+identity-defining relationships while allowing different compositions, contexts
+and expressive density. Consistency is not uniform minimalism or identical layouts.
 
 ## Design Spec Contract
 

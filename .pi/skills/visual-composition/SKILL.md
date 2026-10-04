@@ -13,6 +13,14 @@ Use this optional module when layout and visual organization materially affect t
 
 ## Hierarchy
 
+Explore different reading paths, focal relationships, density and positive/
+negative space using the same content. Decompose precedents into spatial and
+perceptual relationships; recombine around this message instead of adopting a
+familiar template. Compare alternatives at the intended viewing distance and
+format for hierarchy, emotion, clarity and distinctiveness. Develop the chosen
+grid/rhythm, deliberate exceptions and adaptation rules. On feedback, change
+the composition mechanism when needed rather than recolor an unwanted layout.
+
 Make the intended reading order explicit. Give the primary idea a dominant signal, group supporting information, and reduce elements that compete without adding meaning. Hierarchy may come from scale, position, contrast, spacing, direction, or depth rather than size alone.
 
 ## Grid and Alignment

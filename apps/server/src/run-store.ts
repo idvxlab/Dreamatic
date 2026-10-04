@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
-import { basename, extname, join, relative } from "node:path";
+import { basename, dirname, extname, join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
+import { RUN_CONTEXT_SECTIONS, RUN_FILES, findRunDocument } from "@dreamatic/design-agent";
 
 export type TimelineKind = "thought" | "tool" | "result" | "error";
 
@@ -48,16 +49,7 @@ export async function createDraftRun(workspaceDir: string, sessionId: string, ti
       runId,
       status: "collecting",
       revision: 0,
-      sections: {
-        requirements: "brief.json",
-        research: ["research/evidence.json", "research/research.md", "research/brand_lock.md", "research/assets/manifest.json", "research/assets/validation.json"],
-        designSpec: ["plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md"],
-        tokens: "plan/design_system.json",
-        components: "plan/design_plan.json",
-        decisions: "plan/task_breakdown.md",
-        reviewIssues: ["review/design-review.json", "review/design-review.md"],
-        implementation: "artifacts/artifact-manifest.json",
-      },
+      sections: structuredClone(RUN_CONTEXT_SECTIONS),
       updatedAt: createdAt,
     }, null, 2), "utf8"),
     writeFile(join(runDir, "bus.jsonl"), "", "utf8"),
@@ -77,6 +69,8 @@ export async function primeDraftRun(workspaceDir: string, unsafeRunId: string, s
   if (!text) return;
   brief.sessionId = sessionId;
   brief.brief = text;
+  brief.originalRequest = rawBrief;
+  brief.originalRequestSource = "server_user_input";
   brief.title = text.slice(0, 72);
   brief.titleStatus = "temporary";
   await writeFile(briefPath, JSON.stringify(brief, null, 2), "utf8");
@@ -177,7 +171,7 @@ export interface RunView {
 }
 
 const NOTE_FILES: Array<{ id: RunNoteView["id"]; title: string; path: string }> = [
-  { id: "research", title: "Research findings", path: "research/research.md" },
+  { id: "research", title: "Research findings", path: RUN_FILES.researchFindings },
   { id: "plan", title: "Design rationale", path: "plan/task_breakdown.md" },
   { id: "review", title: "Design challenges", path: "review/design-review.md" },
 ];
@@ -198,8 +192,9 @@ function compactMarkdown(source: string): string {
 async function runNotes(runDir: string): Promise<RunNoteView[]> {
   const notes: RunNoteView[] = [];
   for (const candidate of NOTE_FILES) {
-    const text = await readFile(join(runDir, candidate.path), "utf8").then(compactMarkdown).catch(() => "");
-    if (text) notes.push({ ...candidate, text });
+    const existing = await findRunDocument(runDir, candidate.path);
+    const text = await readFile(existing?.absolutePath ?? join(runDir, candidate.path), "utf8").then(compactMarkdown).catch(() => "");
+    if (text) notes.push({ ...candidate, path: existing?.path ?? candidate.path, text });
   }
   return notes;
 }
@@ -213,6 +208,7 @@ function record(value: unknown): Record<string, unknown> {
 async function walk(directory: string): Promise<string[]> {
   const found: string[] = [];
   for (const child of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+    if (child.name === "history" && basename(dirname(directory)) === "runs") continue;
     const path = join(directory, child.name);
     if (child.isDirectory()) found.push(...await walk(path));
     else found.push(path);
@@ -242,7 +238,7 @@ export async function assetInventory(workspaceDir: string, runId?: string): Prom
   const root = runId ? join(workspaceDir, "runs", runId) : join(workspaceDir, "runs");
   const result: AssetView[] = [];
   for (const path of await walk(root)) {
-    if (!/\.(png|jpe?g|webp|gif|html|mp4|webm|glb|gltf)$/i.test(path)) continue;
+    if (!/\.(png|jpe?g|webp|gif|svg|html|mp4|webm|glb|gltf)$/i.test(path)) continue;
     const workspacePath = relative(workspaceDir, path).replaceAll("\\", "/");
     const resolvedRunId = runId ?? runIdFromPath(workspaceDir, path);
     if (resolvedRunId) {
@@ -610,7 +606,7 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
       stages,
       assetCount: files.filter((file) => {
         const runPath = relative(runDir, file).replaceAll("\\", "/");
-        return /\.(png|jpe?g|webp|gif|html)$/i.test(file) && (!runPath.startsWith("final/") || runPath === "final/00-index.html");
+        return /\.(png|jpe?g|webp|gif|svg|html)$/i.test(file) && (!runPath.startsWith("final/") || runPath === "final/00-index.html");
       }).length,
       documents,
       notes: await runNotes(runDir),

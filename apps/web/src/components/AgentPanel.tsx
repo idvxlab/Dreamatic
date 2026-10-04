@@ -20,6 +20,7 @@ interface AgentPanelProps {
   onSend: (text: string, images: PendingImage[]) => void;
   onStop: () => void;
   onAnswerClarification: (answers: Record<string, string>) => void;
+  onDismissClarification: () => void;
 }
 
 const SUGGESTIONS = [
@@ -73,7 +74,7 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
       setAgentOpen(open);
       if (open) window.requestAnimationFrame(() => target.scrollIntoView({ block: "start", behavior: "smooth" }));
     }}>
-      <summary><span><strong>{event.label}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} actions · {event.status}{at ? ` · ${at}` : ""}</small></span><ChevronDown size={14} /></summary>
+      <summary><span><strong>{event.label}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} actions · {event.status}{at ? ` · ${at}` : ""}</small>{event.status === "running" && event.output && <small>{event.output}</small>}</span><ChevronDown size={14} /></summary>
       <div className="workflow-agent-body">
         {event.detail && <section className="workflow-assignment"><h4>Assigned by Orchestrator</h4><p>{event.detail}</p></section>}
         {event.children?.length ? <div className="workflow-stream nested-stream">{event.children.map((child) => <WorkflowNode event={child} nested key={child.id} />)}</div> : null}
@@ -97,7 +98,7 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   </div>;
 }
 
-function ClarificationCard({ request, disabled, onSubmit }: { request: ClarificationRequest; disabled: boolean; onSubmit: (answers: Record<string, string>) => void }) {
+function ClarificationCard({ request, disabled, onSubmit, onDismiss }: { request: ClarificationRequest; disabled: boolean; onSubmit: (answers: Record<string, string>) => void; onDismiss: () => void }) {
   const [selected, setSelected] = useState<Record<string, string[]>>({});
   const [custom, setCustom] = useState<Record<string, string>>({});
   useEffect(() => { setSelected({}); setCustom({}); }, [request.id]);
@@ -109,7 +110,7 @@ function ClarificationCard({ request, disabled, onSubmit }: { request: Clarifica
     return { ...current, [questionId]: values.includes(label) ? values.filter((value) => value !== label) : [...values, label] };
   });
   return <section className="clarification-card" aria-label="Design brief questions">
-    <div className="clarification-heading"><span><Bot size={14} /></span><div><strong>{request.title}</strong>{request.context && <p>{request.context}</p>}</div></div>
+    <div className="clarification-heading"><span><Bot size={14} /></span><div><strong>{request.title}</strong>{request.context && <p>{request.context}</p>}</div><button type="button" onClick={onDismiss} aria-label="关闭需求确认，返回对话" title="关闭需求确认，返回对话"><X size={14} /></button></div>
     <div className="clarification-questions">{request.questions.map((question, index) => <fieldset key={question.id}>
       <legend><em>{index + 1}</em><span><b>{question.header}</b>{question.question}</span>{question.multiple && <small>Multiple</small>}{!question.required && <small>Optional</small>}</legend>
       {question.options?.length ? <div className="clarification-options">{question.options.map((option) => <button type="button" className={(selected[question.id] ?? []).includes(option.label) ? "selected" : ""} onClick={() => toggle(question.id, option.label, question.multiple)} key={option.label}><strong>{option.label}</strong><small>{option.description}</small></button>)}</div> : null}
@@ -119,7 +120,7 @@ function ClarificationCard({ request, disabled, onSubmit }: { request: Clarifica
   </section>;
 }
 
-export function AgentPanel({ timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification }: AgentPanelProps) {
+export function AgentPanel({ timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -201,7 +202,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
         )}
       </div>
       <div className="composer-wrap">
-        {clarification ? <ClarificationCard request={clarification} disabled={running} onSubmit={onAnswerClarification} /> : <>
+        {clarification ? <ClarificationCard request={clarification} disabled={running} onSubmit={onAnswerClarification} onDismiss={onDismissClarification} /> : <>
         {images.length > 0 && <div className="attachment-row">{images.map((image, index) => <span key={`${image.name}-${index}`}><ImagePlus size={13} />{image.name}<button onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={11} /></button></span>)}</div>}
         <div className="composer">
           <textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Describe the design outcome…" rows={3} />

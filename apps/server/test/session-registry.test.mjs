@@ -24,8 +24,13 @@ const requestMessage = {
   }],
 };
 
+const successfulResult = {
+  role: "toolResult", toolName: "ask_user", toolCallId: "question-call-1", isError: false,
+  content: [{ type: "text", text: JSON.stringify({ status: "waiting_for_user", ...requestMessage.content[0].arguments }) }],
+};
+
 test("restores a pending structured clarification from Pi messages", () => {
-  assert.deepEqual(clarificationFromMessages([{ role: "user", content: "做一个产品" }, requestMessage]), {
+  assert.deepEqual(clarificationFromMessages([{ role: "user", content: "做一个产品" }, requestMessage, successfulResult]), {
     id: "question-call-1",
     title: "先确认设计方向",
     questions: [{
@@ -44,5 +49,30 @@ test("restores a pending structured clarification from Pi messages", () => {
 });
 
 test("clears the pending clarification after the next user answer", () => {
-  assert.equal(clarificationFromMessages([requestMessage, { role: "user", content: "居家用户" }]), undefined);
+  assert.equal(clarificationFromMessages([requestMessage, successfulResult, { role: "user", content: "居家用户" }]), undefined);
+});
+
+test("does not publish unfinished or failed clarification calls", () => {
+  assert.equal(clarificationFromMessages([requestMessage]), undefined);
+  assert.equal(clarificationFromMessages([requestMessage, { ...successfulResult, isError: true }]), undefined);
+  assert.equal(clarificationFromMessages([successfulResult]), undefined);
+});
+
+test("failed clarification followed by a valid retry publishes only the retry", () => {
+  const failed = { ...successfulResult, isError: true };
+  const retry = { role: "assistant", content: [{ ...requestMessage.content[0], id: "retry" }] };
+  assert.equal(clarificationFromMessages([requestMessage, failed, retry, { ...successfulResult, toolCallId: "retry" }]).id, "retry");
+});
+
+test("restores all questions without a card count ceiling", () => {
+  const questions = Array.from({ length: 20 }, (_, index) => ({ ...requestMessage.content[0].arguments.questions[0], id: `question-${index}` }));
+  const result = { ...successfulResult, content: [{ type: "text", text: JSON.stringify({ status: "waiting_for_user", questions }) }] };
+  assert.equal(clarificationFromMessages([requestMessage, result]).questions.length, 20);
+});
+
+test("a later clarification cannot replace unanswered questions", () => {
+  const retry = { role: "assistant", content: [{ ...requestMessage.content[0], id: "retry" }] };
+  const messages = [requestMessage, successfulResult, retry, { ...successfulResult, toolCallId: "retry" }];
+  assert.equal(clarificationFromMessages(messages).id, "question-call-1");
+  assert.equal(clarificationFromMessages([...messages, { role: "user", content: "我的回答" }, retry, { ...successfulResult, toolCallId: "retry" }]).id, "retry");
 });

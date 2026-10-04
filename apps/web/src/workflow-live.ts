@@ -1,4 +1,5 @@
 import type { WorkflowEvent } from "./types";
+import { settleWorkflowRetries } from "../../../packages/design-agent/src/workflow-retries";
 
 const agentTitles: Record<string, string> = {
   researcher: "Researcher",
@@ -16,7 +17,9 @@ const toolTitles: Record<string, string> = {
   research_asset_fetch: "Saved reference image",
   research_asset_validate: "Validated reference library",
   image_generate: "Generated design image",
+  image_generate_batch: "Generated design images",
   image_edit: "Edited design image",
+  image_edit_batch: "Edited design images",
   view_image: "Inspected image",
   compare_images: "Compared design images",
   artifact_lint: "Checked deliverables",
@@ -71,6 +74,7 @@ function artifactRefs(value: unknown): string[] | undefined {
 }
 
 export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Record<string, unknown>): WorkflowEvent[] {
+  workflow = settleWorkflowRetries(workflow, event);
   const type = typeof event.type === "string" ? event.type : "";
   const invocationId = typeof event.invocationId === "string" ? event.invocationId : undefined;
   const at = typeof event.at === "string" ? event.at : new Date().toISOString();
@@ -86,6 +90,9 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
   }
   if (invocationId && type === "agent_started") {
     return updateAgent(workflow, invocationId, (agent) => ({ ...agent, status: "running", detail: text(event.task) ?? agent.detail, at }), event);
+  }
+  if (invocationId && type === "agent_progress") {
+    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, output: text(event.output) ?? agent.output }), event);
   }
   if (invocationId && type === "tool_started") {
     const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
@@ -162,7 +169,7 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
         ? { ...candidate, ...(completionAgent ? { status: "completed" as const, endedAt: at, output: typeof event.summary === "string" ? event.summary : candidate.output } : {}), children: sorted([...(candidate.children ?? []).filter((child) => child.id !== node.id), node]) }
         : candidate);
     }
-    return workflow.some((candidate) => candidate.id === node.id) ? workflow : sorted([...workflow, node]);
+    return sorted([...workflow.filter((candidate) => candidate.id !== node.id), node]);
   }
   return workflow;
 }

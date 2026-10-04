@@ -7,6 +7,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
 import type { Asset, ClarificationRequest, RunView, SessionView, TimelineItem, WorkflowEvent } from "./types";
 import { applyWorkflowStreamEvent } from "./workflow-live";
+import { clarificationFromToolResult } from "../../../packages/design-agent/src/clarification";
 
 function eventName(event: Record<string, unknown>): string {
   return typeof event.type === "string" ? event.type : "agent_event";
@@ -31,26 +32,6 @@ function pause(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-function clarificationFromEvent(event: Record<string, unknown>): ClarificationRequest | undefined {
-  if (event.toolName !== "ask_user" || !event.args || typeof event.args !== "object" || Array.isArray(event.args)) return undefined;
-  const args = event.args as Record<string, unknown>;
-  if (!Array.isArray(args.questions)) return undefined;
-  const questions = args.questions.flatMap((raw, index): ClarificationRequest["questions"] => {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
-    const question = raw as Record<string, unknown>;
-    const prompt = typeof question.question === "string" ? question.question : typeof question.prompt === "string" ? question.prompt : undefined;
-    if (!prompt) return [];
-    const options = Array.isArray(question.options) ? question.options.flatMap((rawOption): Array<{ label: string; description: string }> => {
-      if (typeof rawOption === "string") return [{ label: rawOption, description: rawOption }];
-      if (!rawOption || typeof rawOption !== "object" || Array.isArray(rawOption)) return [];
-      const option = rawOption as Record<string, unknown>;
-      return typeof option.label === "string" ? [{ label: option.label, description: typeof option.description === "string" ? option.description : option.label }] : [];
-    }) : undefined;
-    return [{ id: typeof question.id === "string" ? question.id : `question-${index + 1}`, header: typeof question.header === "string" ? question.header : `Question ${index + 1}`, question: prompt, ...(options?.length ? { options } : {}), multiple: question.multiple === true, custom: question.custom !== false, ...(typeof question.placeholder === "string" ? { placeholder: question.placeholder } : {}), required: question.required !== false }];
-  });
-  if (!questions.length) return undefined;
-  return { id: String(event.toolCallId ?? crypto.randomUUID()), title: typeof args.title === "string" ? args.title : "A few details before we begin", ...(typeof args.context === "string" ? { context: args.context } : {}), questions };
-}
 
 export function App() {
   const initialized = useRef(false);
@@ -313,11 +294,6 @@ export function App() {
     if (type === "tool_execution_start") {
       setPendingAgentStatus(undefined);
       setStreamingText("");
-      const clarification = clarificationFromEvent(event);
-      if (clarification && activeId) {
-        setLiveClarification({ sessionId: activeId, request: clarification });
-        setAnsweredClarificationId(undefined);
-      }
       const label = typeof event.toolName === "string" ? event.toolName : "Using tool";
       const id = String(event.toolCallId ?? crypto.randomUUID());
       setTimeline((current) => [...current, { id, kind: "tool", label, active: true }]);
@@ -332,6 +308,10 @@ export function App() {
       }]);
     } else if (type === "tool_execution_end") {
       const id = String(event.toolCallId ?? "");
+      if (event.toolName === "ask_user" && event.isError !== true && activeId) {
+        const request = clarificationFromToolResult(event.result, id);
+        if (request) setLiveClarification((current) => current?.sessionId === activeId ? current : { sessionId: activeId, request });
+      }
       setTimeline((current) => current.map((entry) => entry.id === id ? { ...entry, active: false, kind: "result" } : entry));
       setWorkflow((current) => current.map((entry) => entry.id === id ? {
         ...entry,
@@ -438,7 +418,7 @@ export function App() {
           </aside>
         )}
       </section>
-      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} />}
+      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
       {navigationOpen && <button className="navigation-scrim" aria-label="Close project navigation" onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label="Close agent panel" onClick={() => setPanelOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>Server unavailable</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? "Connecting…" : "Reconnect"}</button></div>}

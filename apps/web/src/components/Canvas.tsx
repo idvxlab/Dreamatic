@@ -29,7 +29,7 @@ function overviewText(run: RunView, visualCount: number) {
 
 function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
   const visual = assets
-    .filter((asset) => /^(png|jpg|jpeg|webp|gif)$/.test(asset.kind))
+    .filter((asset) => /^(png|jpg|jpeg|webp|gif|svg)$/.test(asset.kind))
     .sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true }));
   const candidates: Array<{ role: Asset["role"]; title: string; items: Asset[] }> = [
     { role: "reference", title: "Reference library", items: visual.filter((asset) => asset.role === "reference") },
@@ -112,7 +112,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
   const [elements, setElements] = useState<CanvasElementState[]>([]);
   const [saving, setSaving] = useState(false);
-  const visualAssets = useMemo(() => assets.filter((asset) => /^(png|jpg|jpeg|webp|gif)$/.test(asset.kind)), [assets]);
+  const visualAssets = useMemo(() => assets.filter((asset) => /^(png|jpg|jpeg|webp|gif|svg)$/.test(asset.kind)), [assets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,7 +239,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
       </div>
       {mode === "showcase" && showcaseUrl ? (
         <section className="showcase-view">
-          <iframe title={`${run?.title ?? "Dreamatic"} showcase`} src={showcaseUrl} sandbox="allow-same-origin" />
+          <iframe title={`${run?.title ?? "Dreamatic"} showcase`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" />
           <a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open showcase</a>
         </section>
       ) : (

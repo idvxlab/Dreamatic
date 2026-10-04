@@ -35,7 +35,7 @@ flow, and Builder executes.
 | --- | --- |
 | Brief-to-delivery workflow | One continuous process from requirements and research to reviewed visual output and export |
 | Five-role agent architecture | Orchestrator coordinates Researcher, Designer, Reviewer, and Builder without overlapping ownership |
-| Optional design knowledge | Skills may enrich domain reasoning, but Agent contracts and runtime validation are self-contained |
+| Design-domain knowledge | Designer selects and loads relevant modules before concept development and reassesses them when scope changes; Agent contracts remain self-contained |
 | Evidence-grounded research | Web search, source reading, reference-image collection, validation, deduplication, and a persistent research library |
 | Visual production toolchain | Image generation, multi-reference editing, visual inspection, side-by-side comparison, artifact selection, and linting |
 | Artifact-set delivery | Produces an organized family of visuals, plans, research, review records, manifests, and a self-contained final package—not just one image |
@@ -142,6 +142,14 @@ npm run dev
 If port `5173` is occupied, Vite automatically prints and uses the next free
 port. Do not close the terminal while a Web-started task is running.
 
+After changing runtime code or an Agent's `allowed_tools`, stop and restart the
+development server with `npm run dev`. `npm run dev` and `npm start` rebuild the
+runtime before launch; rebuilding alone does not update an already running
+Node process. Persona/tool contracts are checked before session creation and
+workflow dispatch. Configuration mismatches stop the turn instead of repeatedly
+spawning an incompatible agent. Resume the pending stage in the existing Run
+after restarting; completed research and design do not need to be repeated.
+
 ## Configuration
 
 Dreamatic loads `<repo>/.env` for both Web and CLI. The Web Settings panel can
@@ -219,6 +227,185 @@ the provider error body. It works the same way on macOS, Linux, and Windows.
 
 ### Workspace and recovery
 
+Model watchdogs distinguish first-output waiting from a stalled active stream.
+Before the first content delta, the role's model-turn deadline applies; only
+after streaming begins does the idle-stream timeout apply. This avoids aborting
+buffered design responses at 120 seconds while retaining bounded deadlines.
+Designer recovery reads existing Design Spec checkpoints and explicit
+`missingFiles` through Design Context; absent unfinished outputs are not errors.
+
+Design quality is specified before production: Designer retains concise distinct
+concepts, criterion-based comparisons, decision links, implementation assumptions
+and user-feedback preservation/change intent in the existing Design Plan.
+Domain Skills provide specialized exploration and development methods, while
+the five Agent contracts remain usable without them. Research distinguishes
+source freshness, corroborated findings and opportunity hypotheses; Reviewer
+challenges concept quality as well as executable contracts. Evidence review
+respects information type: external factual assertions and
+operational claims need appropriate verification; original design hypotheses,
+metaphors and clearly speculative concepts need coherent design reasoning, not
+proof of an existing precedent. Uncertainty is assessed by consequence and
+project stage, not automatically converted into a creativity-blocking defect.
+Exploration breadth
+does not impose an image quota. Unless the user explicitly sets a count or asks
+for fewer images, developed alternatives, scenarios, details, states and
+applications should receive enough visual coverage to communicate the design
+conclusions. A task-specific visual coverage matrix maps those conclusions to
+deliverables; a few heroes or one crowded overview are not the default complete
+result. Discarded duplicates need not be rendered. Optimize size and concurrency
+rather than silently narrowing the approved image set.
+Builder remains a one-pass executor without an unrequested visual-audit loop.
+Prompt guidance cannot validate physical engineering, guarantee current sources,
+or visually certify generated outputs. Explicit user feedback can reopen a
+completed project with `run_revision`, preserving prior evidence and confirmed
+decisions in an archived snapshot and carrying the feedback delta forward.
+Agents never overwrite runtime-owned `design-context.json` or `run-state.json`;
+completion events update these indexes.
+
+Specialist invocations receive their authoritative Run id and directory in both
+the system context and initial/recovery task. Run ownership errors identify the
+correct assignment. Context, bus and visual reads reject mismatched Runs;
+filesystem hooks also prevent browsing sibling Runs or reading through symlinks
+into them, without blocking shared Skills. Specialists never infer their Run
+from an artistic title or a similar older project.
+
+Structured attempts return actionable
+managed-file guidance, while fallback `write`/`edit` attempts are blocked.
+`write_json` reports mismatched image-plan/deliverable ids before publication
+without guessing or changing design content. Failed research pages are not
+fetched again for image discovery in the same batch.
+
+Reference acquisition is coverage-driven, not a fixed one-or-two-image quota.
+`research_fetch_batch` accepts `referenceImageCount` (positive integer); when
+omitted, it retains discovered likely and article-context candidates instead
+of defaulting to one image. Explicit counts still select the highest-ranked set
+alongside `saveLeadImageAs`, retaining several page images in the same call.
+Neither compact nor full Runs impose a per-page or per-Run reference-count
+ceiling, including Runs whose older Briefs still contain referenceAssets budgets.
+`research_asset_discover` also returns all eligible candidates when `limit` is
+omitted; explicit limits remain available for deliberate subsets. Keep initial
+search capacity for image-specific follow-up when important visual coverage is missing.
+Initial budgets remain compact: 3 queries/4 fetches; full: 8 queries/10 fetches.
+A specific `refinementReason` enables one bounded reserve per resource up to
+twice its initial budget. Attempted queries/URLs are tracked to prevent unchanged
+requests, including failed attempts, from consuming that reserve. Discovery screens obvious
+QR codes, print/share controls, page icons and small decorations before applying
+the candidate limit. Optional `referenceFocusTerms` prioritizes image metadata
+matches without rejecting article-context images solely for different captions
+or terminology. Such candidates carry `relevance_status: "uncertain"`; matching
+candidates are `likely`, not visually verified. Unmatched images without article
+support remain excluded. Navigation, footer, author
+portraits and placeholders are screened separately from article figures.
+`includeIdentityAssets` explicitly retains existing marks for a task-specific
+visual study, preservation or adaptation need. Ordinary brand research records
+existing-identity evidence as source URLs instead of downloading site logos for
+duplication checks; identity evidence does not fill subject-image coverage.
+These heuristics do not verify image content.
+Filtering uses decoded filenames (including camel-case and numbered names),
+image captions, alt/title, per-image descriptions and accessible labels.
+Explicit logo/icon and page-utility evidence overrides a subject keyword match
+before downloads or reference-count selection. Logos require explicit
+`includeIdentityAssets`; `assetKind` alone no longer enables them. Icon/pictogram
+research can explicitly set `includeIconAssets`; QR codes, favicons and sharing
+controls remain excluded. Unknown candidates remain unreviewed, not proven
+relevant. Exclusion reasons are returned for audit and replacement selection.
+Existing-identity preservation or authorized redesign can also request those
+assets; inclusion itself does not establish reuse permissions. Research reports
+source-backed usage conditions and unknowns, not creative prohibitions.
+The runtime retains actual input in `brief.json::originalRequest` with
+`originalRequestSource`. The Server captures it before clarification; CLI/Pi
+initialization preserves the initial prompt separately from resolved `brief` and
+creative `title`. Specialists receive this provenance independently of their
+assigned task. Titles and Agent summaries must never be reported as original
+wording or substituted for research seed terms. Legacy Runs without recoverable
+source text expose a provenance gap, not an invented quote.
+
+Research uses terminology-first discovery across domains, preserving the user's
+subject and resolving useful scientific, cultural or other specialist terms from
+relevant sources before convergence. Source selection combines primary or
+institutional evidence, trusted general/specialist reporting, and practice/user
+context. Relevant reporting can be a first-choice source of background, current
+developments and credited reference images, not just a lead to academic papers.
+Consequential technical claims still require appropriately scoped original
+evidence or an explicit reported/unverified label. Full research seeks three
+applicable source classes and compact research two; unavailable/inapplicable
+classes are explained rather than enforced as tool gates or padded with noise.
+Research records source categories and coverage in existing evidence files;
+syndicated copies of one story do not count as independent origins.
+Visual-concept delivery does not remove this research step. HTML discovery
+ranks figure captions with task terms, retains figure ids,
+and prefers linked full-size images or responsive `srcset`/`picture` candidates
+to thumbnails. Captions and figure labels are preserved in saved descriptions;
+they remain metadata, not visual verification. Access-verification pages,
+including Anubis challenges, are rejected instead of cached or mined for images.
+PDF text/figure extraction is not supported: seek accessible HTML or author
+pages and report any remaining evidence gap rather than treating an abstract
+or generic photo as full-paper/structure coverage.
+`research_fetch` and batch sources accept `researchTerms` to select relevant
+passages anywhere in readable HTML article content, while retaining the full
+readable page in the text cache. Responses expose `matchedTerms`,
+`extractionMethod` and `contentScope`; lexical matches are retrieval clues,
+not proof of substantive relevance. Batch image discovery reuses the fetched
+HTML rather than requesting the same source again. Researcher can also select
+references using `research_asset_discover` and `research_asset_fetch_batch`;
+discovery with `runId` reuses available session HTML. Downloads run with a
+concurrency of three, while manifest writes and hash duplicate checks are
+serialized per Run. Saved descriptions contain
+image-specific captions and labels; page-level context is stored separately as
+`source_context`.
+Batch results expose `researchGaps` for unavailable sources, missing terms and
+unusable images. Researcher uses these clues to inspect cached passages or
+search changed terminology, languages or primary sources, preserving useful
+results. It reserves search capacity for this refinement rather than exhausting
+all queries before reading any evidence. Iteration stops when coverage is
+adequate or remaining search/source budgets are exhausted, with unresolved
+gaps reported explicitly; it does not repeat unchanged failed requests.
+Saved assets carry `visual_review_status: "unreviewed"`. Designer first screens
+the retained library using labelled `view_image(paths)` batches; clearly
+identified utilities may be rejected from metadata. Useful or ambiguous images
+get deeper analysis, without repeated audits. Design Context exposes canonical
+view paths, including legacy `local_path` aliases, and reports missing asset
+dispositions or metadata-only visual adoption. These checks assess declared
+coverage, not prove actual reasoning. Designer records adoption, transformation, rejection or
+deferral in `design_plan.json::reference_use_decisions`, linking adopted features
+to decisions and prompts. Uninspected assets cannot be claimed as visually
+verified. Text-only `image_generate` receives prompts, not reference pixels;
+reference paths are provenance unless an approved `image_edit` uploads them.
+Studying existing marks or design examples is allowed and differs from directly
+reproducing them. Inspiration, sending pixels and final asset reuse require
+separate decisions; do not derive blanket reference bans from uncertain rights.
+Designer distinguishes a real subject from its source photo and existing marks:
+new product concepts call for independently developed solutions, while place
+branding and subject communication may require recognizable identifying features.
+Designer owns creative judgment; specialist Skills contain discipline-specific
+methods. `brand_lock.md` and legacy research fields remain interface-compatible
+evidence inputs, not a whitelist of permissible design styles.
+Each saved path is published to the live reference library, including all
+items in batch results. `list_skills` uses Pi discovery cached per invocation
+and exposes discipline metadata; `refresh` discovers catalog changes. Designer
+chooses Skills from intent and deliverables, not hard-coded keyword routing.
+`use_skill` supports `role: primary|supporting`, explicit `deactivate`, and
+`reload`. Switching the primary replaces the prior primary; unchanged bodies
+are not duplicated, changed files are reloaded, and unavailable modules yield
+actionable fallback guidance without changing the active selection. Switching
+changes applicability, not historical model context. New specialist invocations
+start fresh and must load needed Skill bodies from their persisted selection
+rationale; a saved selection is not loaded knowledge.
+Skill combinations use one domain lead and scoped
+application/craft support. Reviewer checks style-intent fit and prompt quality
+before Builder executes, without adding post-generation visual audits.
+
+On macOS, active Dreamatic tasks prevent idle system sleep with a scoped
+`caffeinate -i` assertion. It ends when the agent finishes, stops, or the session
+shuts down. Set `DREAMATIC_PREVENT_IDLE_SLEEP=false` to disable it. This does not
+keep the display on, change power settings, or override lid-close/manual sleep.
+Host sleep pauses local execution and delays timeout/heartbeat callbacks; do
+not attribute those wall-clock gaps entirely to remote provider latency.
+
+Operation retries receive a terminal status on recovery, failure or cancellation.
+The live UI and persisted workflow also reconcile older retry records when the
+owning stage or Run completes, so historical timeouts do not remain spinning.
+
 ```env
 PORT=4310
 DREAMATIC_WORKSPACE=./workspace
@@ -231,10 +418,29 @@ DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS=2
 DREAMATIC_IMAGE_EDIT_TIMEOUT_MS=180000
 ```
 
-Image generation uses a bounded concurrency of two by default. Builder creates
-the primary consistency anchor first, then may generate two independent
-supporting views together. Image editing has a shorter, separate retry budget
+Image generation uses a bounded concurrency of two by default, configurable
+from one to eight with `DREAMATIC_IMAGE_CONCURRENCY`. Independent tasks in
+`image_generate_batch` start concurrently, including views sharing written
+consistency rules. An explicit `anchorId` retains anchor-first scheduling for
+dependent batches. Each completed image emits progress immediately; successful
+outputs are retained when another item fails. Raise concurrency only when the
+provider supports it. Image editing has a shorter, separate retry budget
 because a stalled edit endpoint should not block the Run for fifteen minutes.
+`image_edit_batch` applies the same concurrency bound to ready independent edits,
+including siblings sharing a completed source image. It rejects duplicate ids,
+output paths and source dependencies inside the batch, reports per-item progress
+and preserves partial success. Run source/edit chains in successive groups;
+use text-only generation for companions that need shared style, not exact pixels.
+Batching reduces serial waiting; it does not fix provider timeouts. Retry failed
+required items only within the existing limits, without regenerating successes.
+
+Run JSON can be persisted with `write_json(runId, path, data)`: `path` is relative
+to the Run and `data` is an object. Runtime serialization and atomic replacement
+avoid malformed nested JSON and partial writes; existing stage schemas and the
+legacy `write` tool remain supported. Compact Design Context excludes tool and
+heartbeat events, minifies JSON without truncating execution-critical prompts,
+and retains file hashes. Specialist metrics record first streamed delta and
+first visible text separately from the SDK's assistant-message start time.
 
 Web and CLI must point to the same `DREAMATIC_WORKSPACE`. This is what makes a
 CLI-created, interrupted, or completed project appear in the React workspace.
@@ -379,6 +585,77 @@ They describe prior design outputs, not the current TypeScript architecture.
 | Hero render | Usage scene | Form language |
 |---|---|---|
 | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/01-hero-render.png" width="220"> | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/03-usage-scene.png" width="220"> | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/05-exploded-view.png" width="220"> |
+
+## Role Ownership and Revisions
+
+- Run writes are enforced by role: Researcher → research, Designer → plan,
+  Reviewer → review, Builder → artifacts, Orchestrator → progress/handoff notes.
+  The runtime owns Brief, state, context, bus, acquisition validation and delivery metadata.
+- Designer authors three canonical JSON specifications. Completion derives the
+  acceptance and execution Markdown companions when not custom-authored; existing
+  consumers still receive the same five files. Runtime normalization never invents
+  prompts or decides creative direction.
+- Designer first establishes source-linked understanding of consequential subject
+  terms and informative reference figures, retaining concise `subject_understanding`
+  entries in the existing Design Spec. Decisions, prompts and acceptance criteria
+  carry the defining properties rather than relying on a specialist name or
+  decorative resemblance. Reviewer challenges material meaning mismatches without
+  requiring literal imitation, exhaustive research or proven concept performance.
+  This descriptive addition does not introduce a new stage, schema gate, mandatory
+  Skill or Builder image audit; legacy plans remain valid.
+- Run files use a fixed layout under `workspace/runs/<runId>/`: research narrative
+  `research/research-findings.md`, evidence `research/evidence.json`, specifications
+  `plan/design_system.json`/`plan/design_plan.json`, deliverables
+  `plan/deliverable_manifest.json`, acceptance `plan/acceptance_criteria.md`,
+  execution `plan/task_breakdown.md`, review `review/design-review.md`/`.json`,
+  Showcase `artifacts/00-gallery.html`, exported delivery `final/00-index.html`.
+  Runtime and Server share this contract. Legacy `research/research.md` and
+  `review/review.md`/`.json` remain readable; new Agent writes use canonical names.
+  Do not rename these paths in prompts or use project titles as filenames.
+- Builder authors local HTML/SVG layouts and all Showcase content. Finalization
+  uses its existing page, never Orchestrator-generated replacement content.
+  Before writing the page, Builder loads the independent `showcase-layout`
+  Skill for theme headings/separators, weighted principal/supporting/context
+  image grids, responsive typography and presentation interactions. Its base
+  Agent contract remains sufficient if that Skill is removed. Skill discovery
+  and loading respect the specialist audience, avoiding Designer/Builder mixing.
+  Finalization
+  requires a nonempty Builder-authored gallery; no substitute page is generated.
+  Orchestrator packages the existing page and gives a text-only delivery summary,
+  without writing page content or changing its layout.
+  Showcase copy describes the works: title and collection overview, distinct
+  captions for each image, then a concluding summary. Internal reasoning,
+  prompts and workflow logs remain outside visible page copy. Generated/edited
+  images expose Prompts on hover, matched by exact local path and preferring
+  actual generation sidecars; missing sidecars use explicitly labeled plan
+  Prompts. Reference captions clamp to two lines with full text on hover/focus,
+  without expanding the grid on focus, while citation/source links remain visible.
+  Reference thumbnails open their original source in a new window/tab; unknown
+  sources remain non-clickable. Optional `design_plan.json`
+  `showcase` copy supplies `overview`, deliverable-id-keyed `captions` and `summary`.
+  Finalization appends every retained reference image and a deduplicated source
+  list from research evidence and cached sources. Missing images are labeled;
+  the appendix uses compact 88px-high thumbnails, 11px captions and 12px
+  bibliography text, retaining source links and readable theme colors.
+  Numbered figure-source links point to IEEE-style bibliography entries. Available authors,
+  publication dates, journal/publisher, volume/issue/pages, DOI and access dates
+  are formatted in a consistent numbered academic layout; duplicate records
+  enrich missing metadata and matching DOIs are deduplicated. Missing citation
+  details are never invented, and formatting requires no additional retrieval.
+  reference sections refresh on revisions without duplicating the appendix.
+  HTTP(S) source hyperlinks are allowed, but all embedded resources stay local
+  and are included in the exported package. No extra network or model calls are needed.
+  Designer specifies copy and typography directly in image prompts; existing
+  generation/editing tools can render them in the artwork without a separate
+  compositor. Gallery captions are supplementary, not substitutes for required
+  in-image copy. Generative rendering does not guarantee flawless text accuracy.
+- `ask_user` supports kickoff, concept choices and revisions. Explicit feedback
+  after completion opens `run_revision` on the same project, archiving the previous
+  delivery and invalidating old approval gates. Unchanged outputs can be retained;
+  changed outputs require a new Designer/Reviewer cycle before execution.
+- Delivery metadata separates reviewed specifications, mechanically valid files,
+  unassessed visual fidelity, unvalidated engineering feasibility and pending user
+  acceptance. Fast one-pass production does not add a second visual audit.
 
 ## License
 

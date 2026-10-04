@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
+import { validateDreamaticPersonaContracts } from "@dreamatic/design-agent";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
 import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, newProjectId, primeDraftRun, renameRun, runAgentSessions, runInventory } from "./run-store.js";
 import { workflowInventory } from "./workflow-store.js";
@@ -19,6 +20,7 @@ const workspaceDir = configuredWorkspace
   : join(repoRoot, "workspace");
 const webDist = join(repoRoot, "apps", "web", "dist");
 const port = Number(process.env.PORT ?? 4310);
+await validateDreamaticPersonaContracts(repoRoot);
 await mkdir(workspaceDir, { recursive: true });
 
 const registry = new SessionRegistry(repoRoot, workspaceDir);
