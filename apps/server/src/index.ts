@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createReadStream, watch } from "node:fs";
 import { mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -8,6 +9,8 @@ import { validateDreamaticPersonaContracts } from "@dreamatic/design-agent";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
 import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, newProjectId, primeDraftRun, renameRun, runAgentSessions, runInventory } from "./run-store.js";
 import { workflowInventory } from "./workflow-store.js";
+import { recordRequest, serverPerformance } from "./performance-store.js";
+import { compactPromptEvent, streamWriter } from "./stream-writer.js";
 import { SessionRegistry } from "./session-registry.js";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -43,6 +46,15 @@ function json(response: ServerResponse, status: number, value: unknown): void {
   response.end(JSON.stringify(value));
 }
 
+function conditionalJson(request: IncomingMessage, response: ServerResponse, value: unknown): void {
+  const body = JSON.stringify(value);
+  const etag = `"${createHash("sha256").update(body).digest("hex")}"`;
+  response.setHeader("ETag", etag);
+  response.setHeader("Cache-Control", "private, no-cache");
+  if (request.headers["if-none-match"] === etag) { response.writeHead(304); response.end(); return; }
+  response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" }); response.end(body);
+}
+
 async function streamWorkflow(request: IncomingMessage, response: ServerResponse, unsafeRunId: string): Promise<void> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(unsafeRunId)) throw new Error("Invalid run id");
   const runId = unsafeRunId;
@@ -63,8 +75,9 @@ async function streamWorkflow(request: IncomingMessage, response: ServerResponse
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
+  const writer = streamWriter(response);
   const send = (value: unknown) => {
-    if (!closed) response.write(`data: ${JSON.stringify(value)}\n\n`);
+    if (!closed) writer.send(`data: ${JSON.stringify(value)}\n\n`);
   };
   send({ type: "snapshot", workflow: await workflowInventory(workspaceDir, runId) });
 
@@ -104,14 +117,14 @@ async function streamWorkflow(request: IncomingMessage, response: ServerResponse
     if (!filename || filename.toString() === "bus.jsonl") void flush();
   });
   const heartbeat = setInterval(() => {
-    if (!closed) response.write(": heartbeat\n\n");
+    if (!closed) writer.send(": heartbeat\n\n");
   }, 15_000);
   const cleanup = () => {
     if (closed) return;
     closed = true;
     clearInterval(heartbeat);
     watcher.close();
-    response.end();
+    writer.end();
   };
   request.once("close", cleanup);
   response.once("close", cleanup);
@@ -191,6 +204,8 @@ function resolveAsset(path: string): string {
 }
 
 const server = createServer(async (request, response) => {
+  const requestAt = performance.now();
+  response.once("finish", () => { recordRequest(request.method ?? "GET", (request.url ?? "/").split("?")[0]!, response.statusCode, performance.now() - requestAt); });
   response.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
   response.setHeader("Access-Control-Allow-Headers", "content-type");
   if (request.method === "OPTIONS") {
@@ -201,6 +216,9 @@ const server = createServer(async (request, response) => {
 
   try {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    if (request.method === "GET" && url.pathname === "/api/performance") {
+      json(response, 200, serverPerformance()); return;
+    }
     if (request.method === "GET" && url.pathname === "/api/health") {
       const runCount = (await readdir(join(workspaceDir, "runs"), { withFileTypes: true }).catch(() => []))
         .filter((entry) => entry.isDirectory()).length;
@@ -231,7 +249,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/sessions") {
-      json(response, 200, await registry.list());
+      conditionalJson(request, response, await registry.list());
       return;
     }
     if (request.method === "POST" && url.pathname === "/api/sessions") {
@@ -268,16 +286,20 @@ const server = createServer(async (request, response) => {
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       });
-      const send = (value: unknown) => response.write(`${JSON.stringify(value)}\n`);
-      const unsubscribe = registry.subscribe(promptMatch[1], (event) => send({ type: "agent_event", event }));
+      const writer = streamWriter(response);
+      const send = (value: unknown) => writer.send(`${JSON.stringify(value)}\n`);
+      const unsubscribe = registry.subscribe(promptMatch[1], (event) => {
+        const value = input.compactEvents ? compactPromptEvent(event as unknown as Record<string, unknown>) : event;
+        if (value) send({ type: "agent_event", event: value });
+      });
       try {
         await registry.prompt(promptMatch[1], input.text, images, projectId);
-        send({ type: "snapshot", session: registry.view(promptMatch[1]) });
+        send({ type: "snapshot", session: registry.view(promptMatch[1], !input.compactEvents) });
       } catch (error) {
         send({ type: "error", message: error instanceof Error ? error.message : String(error) });
       } finally {
         unsubscribe();
-        response.end();
+        writer.end();
       }
       return;
     }
@@ -287,11 +309,11 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/assets") {
-      json(response, 200, await assetInventory(workspaceDir));
+      conditionalJson(request, response, await assetInventory(workspaceDir));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/runs") {
-      json(response, 200, await runInventory(workspaceDir));
+      conditionalJson(request, response, await runInventory(workspaceDir, { summary: url.searchParams.get("summary") === "1" }));
       return;
     }
     const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
@@ -305,9 +327,17 @@ const server = createServer(async (request, response) => {
       json(response, 200, await deleteRun(workspaceDir, decodeURIComponent(runMatch[1])));
       return;
     }
+    const runDetailMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+    if (request.method === "GET" && runDetailMatch?.[1]) {
+      const runId = decodeURIComponent(runDetailMatch[1]);
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(runId)) throw new Error("Invalid run id");
+      const run = (await runInventory(workspaceDir, { runId }))[0];
+      if (run) conditionalJson(request, response, run); else json(response, 404, { error: "Run not found" });
+      return;
+    }
     const runAssetsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/assets$/);
     if (request.method === "GET" && runAssetsMatch?.[1]) {
-      json(response, 200, await assetInventory(workspaceDir, decodeURIComponent(runAssetsMatch[1])));
+      conditionalJson(request, response, await assetInventory(workspaceDir, decodeURIComponent(runAssetsMatch[1])));
       return;
     }
     const agentSessionsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/agent-sessions$/);

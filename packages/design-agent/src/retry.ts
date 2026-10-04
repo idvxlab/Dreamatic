@@ -12,6 +12,7 @@ export interface RetryOptions {
   signal?: AbortSignal;
   onRetry?: (notice: RetryNotice) => void | Promise<void>;
   sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
+  random?: () => number;
 }
 
 export class RetryableHttpError extends Error {
@@ -30,8 +31,8 @@ export function isRetryableError(error: unknown): boolean {
 
 async function defaultSleep(delayMs: number, signal?: AbortSignal): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, delayMs);
-    const abort = () => { clearTimeout(timer); reject(signal?.reason ?? new Error("Aborted")); };
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, delayMs);
+    const abort = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); reject(signal?.reason ?? new Error("Aborted")); };
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
   });
@@ -50,9 +51,10 @@ export async function withRetry<T>(operation: (attempt: number) => Promise<T>, o
       lastError = error;
       if (attempt >= attempts || !isRetryableError(error)) throw error;
       const exponential = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
+      const jitter = options.random ? Math.floor(exponential * options.random() * 0.25) : 0;
       const delayMs = error instanceof RetryableHttpError && error.retryAfterMs !== undefined
-        ? Math.min(maxDelayMs, Math.max(exponential, error.retryAfterMs))
-        : exponential;
+        ? Math.max(exponential, error.retryAfterMs) + jitter
+        : Math.min(maxDelayMs, exponential + jitter);
       await options.onRetry?.({ attempt, nextAttempt: attempt + 1, delayMs, error: error instanceof Error ? error.message : String(error) });
       await sleep(delayMs, options.signal);
     }

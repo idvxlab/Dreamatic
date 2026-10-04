@@ -19,7 +19,8 @@
     "start": "npm run start -w @dreamatic/server",
     "cli": "npm run start -w @dreamatic/cli --",
     "diagnose:image-edit": "node scripts/diagnose-image-edit.mjs",
-    "compact-session": "node scripts/compact-visual-session.mjs"
+    "compact-session": "node scripts/compact-visual-session.mjs",
+    "diagnose:performance": "node scripts/diagnose-performance.mjs"
   },
   "devDependencies": {
     "typescript": "5.9.3"

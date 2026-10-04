@@ -1,3 +1,4 @@
+import { indexedJsonl } from "./jsonl-index.js";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
@@ -39,6 +40,9 @@ interface SessionInvocation extends WorkflowEventView {
 }
 
 const LIFECYCLE_TYPES = new Set([
+  "agent_cleanup_metrics",
+  "image_request_metrics",
+  "image_item_finished",
   "agent_started",
   "agent_progress",
   "agent_retry",
@@ -163,35 +167,10 @@ function sortEvents(events: WorkflowEventView[]): WorkflowEventView[] {
 }
 
 async function sessionLines(path: string): Promise<Record<string, unknown>[]> {
-  const result: Record<string, unknown>[] = [];
-  const input = createReadStream(path, { encoding: "utf8" });
-  const lines = createInterface({ input, crlfDelay: Infinity });
-  for await (const line of lines) {
-    if (!line) continue;
-    try {
-      // Session history can contain inline image payloads smaller than the old
-      // size threshold. Letting those strings reach collectPaths makes its path
-      // matcher scan hundreds of thousands of base64 characters repeatedly.
-      const safeLine = line.includes('"data"') || line.includes('"b64_json"') || line.includes('"imageData"') || line.includes('"base64"')
-        ? line.replace(/"(?:data|b64_json|imageData|base64)"\s*:\s*"[^"]*"/gu, '"data":"[image payload omitted]"')
-        : line;
-      result.push(record(JSON.parse(safeLine) as unknown));
-    } catch {
-      // A session may end with a partial line after interruption.
-    }
-  }
-  return result;
+  return (await indexedJsonl(path)).rows;
 }
-
 async function fileContains(path: string, needle: string): Promise<boolean> {
-  const input = createReadStream(path, { encoding: "utf8" });
-  let tail = "";
-  for await (const chunk of input) {
-    const text = tail + String(chunk);
-    if (text.includes(needle)) return true;
-    tail = text.slice(-Math.max(needle.length - 1, 0));
-  }
-  return false;
+  return (await indexedJsonl(path)).source.includes(needle);
 }
 
 async function childInvocations(path: string, agent: string, runId: string): Promise<SessionInvocation[]> {
@@ -358,10 +337,7 @@ async function primaryEvents(path: string, runId: string): Promise<WorkflowEvent
 }
 
 async function readBusRecords(runDir: string): Promise<Record<string, unknown>[]> {
-  const lines = await readFile(join(runDir, "bus.jsonl"), "utf8").catch(() => "");
-  return lines.split(/\r?\n/).filter(Boolean).flatMap((line) => {
-    try { return [record(JSON.parse(line) as unknown)]; } catch { return []; }
-  });
+  return (await indexedJsonl(join(runDir, "bus.jsonl")).catch(() => ({ rows: [] }))).rows;
 }
 
 function lifecycleInvocations(records: Record<string, unknown>[], runId: string): SessionInvocation[] {

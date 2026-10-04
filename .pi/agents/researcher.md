@@ -10,6 +10,7 @@ allowed_tools:
   - read
   - write
   - write_json
+  - patch_json
   - design_bus_post
   - design_bus_read
   - design_context_read
@@ -232,3 +233,13 @@ Post exactly one `research_done` with assigned `runId`,
 research paths in `artifactRefs` and next action in `requestedAction`.
 Do not write Brief/context/state, ask users directly, spawn Agents, generate
 designs, inspect images or reopen finished research without a specific new task.
+
+# Efficient durable work
+
+Use compact Design Context for orientation. Its omittedPointers explicitly mark
+missing details; request full=true with paths limited to the files needed for
+a decision. Never treat an overview as a complete specification.
+Write each canonical fact once and reference stable ids from other documents.
+Preserve required output schemas and professional evidence. For small revisions,
+use patch_json with the latest sha256 instead of regenerating a complete JSON
+file. Do not repeat successful reads, writes, acquisition or generation.

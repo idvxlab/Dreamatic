@@ -19,9 +19,11 @@ import { resolveInside, safeRunId } from "./paths.js";
 import { RUN_CONTEXT_SECTIONS, RUN_DOCUMENT_ALIASES, canonicalRunDocument, runDocumentCandidates, findRunDocument } from "./run-files.js";
 import { createModelImagePreview } from "./image-preview.js";
 import { createIdleSleepGuard } from "./idle-sleep.js";
+import { showcaseTemplate } from "./showcase-template.js";
 import { annotateShowcasePrompts, appendShowcaseReferences } from "./showcase.js";
 import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
-import { discoverResearchAssets, fetchResearchAsset, researchFetch, validateResearchAssets, webSearch } from "./research.js";
+import { discoverResearchAssets, fetchResearchAsset, hasResearchPageCache, researchFetch, validateResearchAssets, webSearch } from "./research.js";
+import { boundedResponseBytes, imageRequestScheduler, projectContext, serializeJsonWrite } from "./performance.js";
 import { dreamaticSessionFailure, stopAfterCommittedTurn } from "./session-status.js";
 import { isRetryableStatus, retryAfterMs, RetryableHttpError, withRetry, type RetryNotice } from "./retry.js";
 
@@ -66,11 +68,11 @@ const STAGE_REQUIRED_FILES: Record<string, string[]> = {
 };
 
 export const DREAMATIC_PERSONA_TOOL_POLICY = {
-  orchestrator: ["read", "write", "write_json", "edit", "ls", "grep", "find", "ask_user", "todo_write", "run_init", "run_revision", "spawn_agent", "design_bus_post", "design_bus_read", "export_package"],
-  researcher: ["read", "write", "write_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
-  designer: ["read", "write", "write_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
-  reviewer: ["read", "write", "write_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"],
-  builder: ["read", "write", "write_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "build_finalize"],
+  orchestrator: ["read", "write", "write_json", "patch_json", "edit", "ls", "grep", "find", "ask_user", "todo_write", "run_init", "run_revision", "spawn_agent", "design_bus_post", "design_bus_read", "export_package"],
+  researcher: ["read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
+  designer: ["read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
+  reviewer: ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"],
+  builder: ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "showcase_template", "build_finalize"],
 } as const;
 
 const DREAMATIC_SPECIALISTS = new Set(Object.keys(DREAMATIC_PERSONA_TOOL_POLICY).filter((persona) => persona !== "orchestrator"));
@@ -227,30 +229,48 @@ async function workflowBudget(runDir: string): Promise<{ profile: "compact" | "f
   return { profile, budget: WORKFLOW_BUDGETS[profile] };
 }
 
-async function consumeWorkflowBudget(workspaceDir: string, runId: string, field: keyof WorkflowBudget, count: number, refinementReason?: string, requests: string[] = []) {
+const acquisitionLocks = new Map<string, Promise<void>>();
+async function consumeWorkflowBudget(workspaceDir: string, runId: string, field: keyof WorkflowBudget, count: number, refinementReason?: string, requests: string[] = [], refreshUrls: string[] = []) {
   const safeId = safeRunId(runId);
-  const { profile, budget } = await workflowBudget(resolveInside(workspaceDir, join("runs", safeId)));
-  const key = `${resolve(workspaceDir)}:${safeId}:${field}`;
-  const reason = refinementReason?.trim();
-  const identities = requests.map((request) => field === "searchQueries" ? request.trim().replace(/\s+/gu, " ").toLowerCase() : request.trim());
-  const seen = workflowRequests.get(key) ?? new Set<string>();
-  if (new Set(identities).size !== identities.length || identities.some((request) => seen.has(request))) throw new Error("Research request already attempted. Reuse acquired results or change keywords/source for the unresolved gap.");
-  const next = (workflowUsage.get(key) ?? 0) + count;
-  const refinement = workflowRefinements.get(key) ?? reason;
-  const limit = budget[field] * (refinement ? 2 : 1);
-  if (next > limit) throw new Error(`${profile} workflow ${field} budget exceeded: ${next}/${limit}. A material evidence/figure gap can enable one bounded refinement reserve via refinementReason; otherwise report remaining gaps.`);
-  if (reason) workflowRefinements.set(key, reason);
-  workflowUsage.set(key, next);
-  for (const request of identities) seen.add(request);
-  workflowRequests.set(key, seen);
-  return { profile, field, used: next, limit, remaining: limit - next, ...(refinement ? { baseLimit: budget[field], refinementReason: refinement } : {}) };
+  const runDir = resolveInside(workspaceDir, join("runs", safeId));
+  const previous = acquisitionLocks.get(runDir) ?? Promise.resolve();
+  let release!: () => void;
+  const lock = new Promise<void>((resolve) => { release = resolve; });
+  acquisitionLocks.set(runDir, lock);
+  await previous;
+  try {
+    const { profile, budget } = await workflowBudget(runDir);
+    const events = (await readFile(join(runDir, "bus.jsonl"), "utf8").catch(() => "")).split(/\r?\n/u).filter(Boolean).flatMap((line) => { try { return [JSON.parse(line) as Record<string, unknown>]; } catch { return []; } });
+    const revision = events.findLast((event) => event.type === "run_revision_started");
+    const cycle = String(revision?.id ?? revision?.at ?? "initial");
+    const ledgerPath = join(runDir, ".performance", "acquisition-budget.json");
+    type Entry = { used: number; requests: string[]; refinement?: string };
+    const stored = await readFile(ledgerPath, "utf8").then((source) => JSON.parse(source) as { cycle: string; fields: Partial<Record<keyof WorkflowBudget, Entry>> }).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; return undefined; });
+    const fields = stored?.cycle === cycle ? stored.fields : {};
+    const entry = fields[field] ?? { used: 0, requests: [] };
+    const identities = requests.map((request) => field === "searchQueries" ? request.trim().replace(/\s+/gu, " ").toLowerCase() : request.trim());
+    if (new Set(identities).size !== identities.length) throw new Error("Research request already attempted; duplicate batch items are not allowed");
+    const reusable = field === "sourceFetches" ? await Promise.all(identities.map(async (url) => !refreshUrls.includes(url) && await hasResearchPageCache(workspaceDir, safeId, url))) : identities.map(() => false);
+    const seen = new Set(entry.requests);
+    if (identities.some((request, index) => seen.has(request) && !reusable[index] && !refreshUrls.includes(request))) throw new Error("Research request already attempted. Reuse acquired results or change keywords/source for the unresolved gap.");
+    const next = entry.used + Math.max(0, count - reusable.filter(Boolean).length);
+    const refinement = entry.refinement ?? refinementReason?.trim();
+    const limit = budget[field] * (refinement ? 2 : 1);
+    if (next > limit) throw new Error(`${profile} workflow ${field} budget exceeded: ${next}/${limit}. A material evidence/figure gap can enable one bounded refinement reserve via refinementReason; otherwise report remaining gaps.`);
+    fields[field] = { used: next, requests: [...new Set([...entry.requests, ...identities])], ...(refinement ? { refinement } : {}) };
+    await mkdir(dirname(ledgerPath), { recursive: true });
+    const temporary = `${ledgerPath}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify({ cycle, fields })); await rename(temporary, ledgerPath);
+    return { profile, field, used: next, limit, remaining: limit - next, ...(reusable.some(Boolean) ? { cacheHits: reusable.filter(Boolean).length } : {}), ...(refinement ? { baseLimit: budget[field], refinementReason: refinement } : {}) };
+  } finally { release(); if (acquisitionLocks.get(runDir) === lock) acquisitionLocks.delete(runDir); }
 }
 
-async function mapWithConcurrency<T, R>(items: T[], concurrency: number, operation: (item: T, index: number) => Promise<R>): Promise<R[]> {
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, operation: (item: T, index: number) => Promise<R>, signal?: AbortSignal): Promise<R[]> {
   const results = new Array<R>(items.length);
   let cursor = 0;
   const workers = Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, async () => {
     while (cursor < items.length) {
+      signal?.throwIfAborted();
       const index = cursor++;
       results[index] = await operation(items[index]!, index);
     }
@@ -809,37 +829,56 @@ async function resilientFetch(
       throw new Error(message);
     }
     operationAttempts.set(budgetKey, used + 1);
-    const timeout = AbortSignal.timeout(timeoutMs);
-    const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+    let timedOut = false;
+    let queueMs = 0;
+    let requestMs = 0;
+    let headersMs = 0;
+    let bodyMs = 0;
+    let responseBytes = 0;
+    const startedAt = performance.now();
     try {
+      const response = await imageRequestScheduler().run(`${options.workspaceDir}:${options.runId}`, async () => {
+      const timeout = AbortSignal.timeout(timeoutMs);
+      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+      const requestAt = performance.now();
+      try {
       const response = await fetch(endpoint, { ...init, signal });
+      headersMs = performance.now() - requestAt;
       if (isRetryableStatus(response.status)) {
         const detail = (await response.text()).slice(0, 600);
         throw new RetryableHttpError(response.status, `${options.operation} failed (${response.status}): ${detail}`, retryAfterMs(response));
       }
-      const bytes = await response.arrayBuffer();
+      const bodyAt = performance.now();
+      const bytes = await boundedResponseBytes(response, Math.max(1024, Number(process.env.DREAMATIC_IMAGE_RESPONSE_MAX_BYTES ?? 67_108_864) || 67_108_864));
+      bodyMs = performance.now() - bodyAt; responseBytes = bytes.byteLength;
       const completeResponse = new Response(bytes, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
       });
+      return completeResponse;
+      } finally { timedOut = timeout.aborted; requestMs = performance.now() - requestAt; }
+      }, options.signal, (waitMs) => { queueMs = waitMs; });
       operationAttempts.delete(budgetKey);
       operationLastErrors.delete(budgetKey);
-      return completeResponse;
+      return response;
     } catch (error) {
       let failure = error instanceof Error ? error : new Error(String(error));
-      if (timeout.aborted && !options.signal?.aborted) {
+      if (timedOut && !options.signal?.aborted) {
         const target = new URL(endpoint);
         target.search = "";
         failure = new Error(`${options.operation} timed out after ${timeoutMs} ms while calling ${target.toString()}`);
       }
       operationLastErrors.set(budgetKey, failure.message.slice(0, 800));
       throw failure;
+    } finally {
+      await appendWorkflowLifecycleEvent(options.workspaceDir, options.runId, { type: "image_request_metrics", operation: options.operation, imageId: options.budgetScope, attempt: used + 1, queueMs: Math.round(queueMs), headersMs: Math.round(headersMs), bodyMs: Math.round(bodyMs), responseBytes, requestMs: Math.round(requestMs), durationMs: Math.round(performance.now() - startedAt), timedOut });
     }
   };
   try {
     const response = await withRetry(request, {
       attempts,
+      random: Math.random,
       ...(options.signal ? { signal: options.signal } : {}),
       onRetry: async (notice) => {
         await durableRetryNotice(options.workspaceDir, options.runId, options.operation, notice, options.budgetScope);
@@ -1167,7 +1206,9 @@ async function saveImageResponse(
   references: string[] = [],
   outputPath?: string,
   metadata: Record<string, unknown> = {},
+  signal?: AbortSignal
 ): Promise<SavedImage> {
+  signal?.throwIfAborted();
   const item = payload.data?.[0];
   if (!item) throw new Error("Image provider returned no image data");
   let bytes: Buffer;
@@ -1178,6 +1219,8 @@ async function saveImageResponse(
       workspaceDir,
       runId,
       operation: "image_download",
+      budgetScope: imageId,
+      ...(signal ? { signal } : {}),
     });
     if (!response.ok) throw new Error(`Failed to download generated image: ${response.status}`);
     bytes = Buffer.from(await response.arrayBuffer());
@@ -1193,6 +1236,7 @@ async function saveImageResponse(
     outputPath,
   );
   await mkdir(dirname(imagePath), { recursive: true });
+  signal?.throwIfAborted();
   await writeFile(imagePath, bytes);
   const workspacePath = relative(workspaceDir, imagePath).replaceAll("\\", "/");
   const sidecarPath = `${imagePath}.json`;
@@ -1258,24 +1302,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     return catalog;
   };
   const imageConcurrency = Math.max(1, Math.min(8, Math.floor(Number(process.env.DREAMATIC_IMAGE_CONCURRENCY ?? 2)) || 2));
-  let activeImageOperations = 0;
-  const imageOperationWaiters: Array<() => void> = [];
   let activeSpecialistInvocation: { id: string; agent: string } | undefined;
   let revisionOpening = false;
   const currentSpecialistInvocation = () => activeSpecialistInvocation;
-  const enqueueImageOperation = <T>(operation: () => Promise<T>): Promise<T> => {
-    return (async () => {
-      if (activeImageOperations >= imageConcurrency) {
-        await new Promise<void>((resolve) => imageOperationWaiters.push(resolve));
-      }
-      activeImageOperations += 1;
-      try {
-        return await operation();
-      } finally {
-        activeImageOperations -= 1;
-        imageOperationWaiters.shift()?.();
-      }
-    })();
+  const enqueueImageOperation = <T>(operation: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+    signal?.throwIfAborted();
+    return operation(); // HTTP attempts use the shared scheduler; backoff releases its slot.
   };
   const generateImage = (params: ImageGenerateTask, signal?: AbortSignal, onRetry?: (notice: RetryNotice) => void): Promise<Record<string, unknown>> => enqueueImageOperation(async () => {
     const size = params.size ?? imageSizeCeiling();
@@ -1309,7 +1341,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       intent: params.intent,
       acceptanceCriteria: params.acceptanceCriteria,
       preserve: params.preserve ?? [],
-    });
+    }, signal);
     return {
       ok: true,
       action: "image_generate",
@@ -1590,9 +1622,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       label: "Search design references",
       description: "Search the public web for design research sources. Returns compact titles, URLs, and snippets; fetch important sources separately.",
       parameters: Type.Object({ runId: Type.Optional(Type.String()), query: Type.String(), limit: Type.Optional(Type.Number({ minimum: 1, maximum: 12 })) }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         if (params.runId) await consumeWorkflowBudget(workspaceDir, params.runId, "searchQueries", 1);
-        return textResult(await webSearch(params.query, params.limit));
+        return textResult(await webSearch(params.query, params.limit, signal ? { signal } : {}));
       },
     });
 
@@ -1614,11 +1646,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           topicGroups: Type.Array(Type.Array(Type.String({ minLength: 1 }), { minItems: 1 }), { minItems: 1 }),
         }), { maxItems: 8, description: "Per-query subject groups, overriding shared topicGroups. Match query strings exactly. Use for mixed subtopics; never apply robot-brand groups to a muscle/lattice query." })),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         const budget = await consumeWorkflowBudget(workspaceDir, params.runId, "searchQueries", params.queries.length, params.refinementReason, params.queries);
+        signal?.throwIfAborted();
         const results = await mapWithConcurrency(params.queries, 3, async (query) => {
+          signal?.throwIfAborted();
           try {
-            const search = await webSearch(query, params.limitPerQuery);
+            const search = await webSearch(query, params.limitPerQuery, signal ? { signal } : {});
             const queryGroups = params.queryTopics?.find((topic) => topic.query.trim() === query.trim())?.topicGroups ?? params.topicGroups;
             const groups = queryGroups?.map((group) => group.map((term) => term.trim().toLowerCase()).filter(Boolean)).filter((group) => group.length);
             const matchedResultIndices = groups?.length ? search.results.flatMap((result, index) => {
@@ -1635,6 +1669,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
                 : "Category coverage remains unestablished. Simplify the combined-category query or use a discovered alias before spending remaining searches on generic background.",
             } } : {}) };
           } catch (error) {
+            signal?.throwIfAborted();
             return { ok: false, query, error: error instanceof Error ? error.message : String(error) };
           }
         });
@@ -1653,10 +1688,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         cacheText: Type.Optional(Type.Boolean()),
         researchTerms: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 16, description: "Core concepts and supported aliases to locate relevant passages throughout the text. Do not substitute project titles or host-only keywords." })),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         await consumeWorkflowBudget(workspaceDir, params.runId, "sourceFetches", 1);
         try {
-          return textResult(await researchFetch(workspaceDir, params));
+          return textResult(await researchFetch(workspaceDir, params, signal ? { signal } : {}));
         } catch (error) {
           return textResult({
             ok: false,
@@ -1680,6 +1715,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           url: Type.String(),
           id: Type.Optional(Type.String()),
           cacheText: Type.Optional(Type.Boolean()),
+          refresh: Type.Optional(Type.Boolean({ description: "Explicitly refetch this source and consume acquisition budget." })),
           researchTerms: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 16, description: "Core terms and supported aliases for full-text passage selection; defaults to referenceFocusTerms. Include subject terms before host/application terms." })),
           saveLeadImageAs: Type.Optional(Type.String({ description: "When provided, discover and save ranked reference candidates under this asset id, excluding obvious page utilities." })),
           referenceImageCount: Type.Optional(Type.Integer({ minimum: 1, description: "Requested number of distinct page images. If omitted, retain discovered likely and article-context candidates instead of silently selecting one. No per-page or per-Run reference-count ceiling." })),
@@ -1692,10 +1728,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           assetAllowedForEdit: Type.Optional(Type.Boolean()),
         }), { minItems: 1, maxItems: 10 }),
       }),
-      async execute(_id, params) {
-        const budget = await consumeWorkflowBudget(workspaceDir, params.runId, "sourceFetches", params.sources.length, params.refinementReason, params.sources.map((source) => source.url));
+      async execute(_id, params, signal) {
+        const budget = await consumeWorkflowBudget(workspaceDir, params.runId, "sourceFetches", params.sources.length, params.refinementReason, params.sources.map((source) => source.url), params.sources.filter((source) => source.refresh).map((source) => source.url));
         const maxTextChars = Math.floor(12_000 / params.sources.length);
         const results: Array<Record<string, unknown>> = await mapWithConcurrency(params.sources, 3, async (source) => {
+          signal?.throwIfAborted();
           let fetched: Record<string, unknown>;
           let pageHtml: string | undefined;
           const researchTerms = source.researchTerms ?? source.referenceFocusTerms;
@@ -1705,8 +1742,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               url: source.url,
               ...(source.id !== undefined ? { id: source.id } : {}),
               cacheText: true,
+              ...(source.refresh ? { refresh: true } : {}),
               ...(researchTerms ? { researchTerms } : {}),
-            }, { maxTextChars, onHtml: (html) => { pageHtml = html; } });
+            }, { ...(signal ? { signal } : {}), maxTextChars, onHtml: (html) => { pageHtml = html; } });
             if (pageHtml !== undefined) {
               const page = { html: pageHtml, url: typeof fetched.url === "string" ? fetched.url : source.url };
               researchPages.set(`${safeRunId(params.runId)}:${source.url}`, page);
@@ -1714,6 +1752,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               while (researchPages.size > 48) researchPages.delete(researchPages.keys().next().value!);
             }
           } catch (error) {
+            signal?.throwIfAborted();
             fetched = {
               ok: false,
               ...(source.id ? { id: source.id } : {}),
@@ -1721,13 +1760,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               error: error instanceof Error ? error.message : String(error),
             };
           }
+          signal?.throwIfAborted();
           if (!source.saveLeadImageAs) return fetched;
           if (fetched.ok === false) return {
             ...fetched,
             leadImageError: "Image discovery skipped because the source page could not be fetched. Retain successful sources and replace only a consequential gap; do not retry this unchanged page for images.",
           };
           try {
+            signal?.throwIfAborted();
             const discovery = await discoverResearchAssets(typeof fetched.url === "string" && fetched.url ? fetched.url : source.url, source.referenceImageCount ?? Number.MAX_SAFE_INTEGER, {
+              ...(signal ? { signal } : {}),
               ...(source.referenceFocusTerms ? { focusTerms: source.referenceFocusTerms } : {}),
               includeIdentityAssets: source.includeIdentityAssets ?? false,
               includeIconAssets: source.includeIconAssets ?? false,
@@ -1738,6 +1780,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               ? { ...fetched, leadImageCandidate: candidates[0], referenceImageCandidates: candidates, excludedImageCandidates: discovery.excluded }
               : { ...fetched, excludedImageCandidates: discovery.excluded, leadImageError: "No reference candidates had sufficient task relevance and article context. Record the gap or choose a source with relevant figures; do not pad the requested count with unrelated images." };
           } catch (error) {
+            signal?.throwIfAborted();
             return { ...fetched, leadImageError: error instanceof Error ? error.message : String(error) };
           }
         });
@@ -1761,8 +1804,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
                 matchedTerms: (candidate as { matched_terms: string[] }).matched_terms,
                 ...(source.assetDoNotReplace !== undefined ? { doNotReplace: source.assetDoNotReplace } : {}),
                 ...(source.assetAllowedForEdit !== undefined ? { allowedForEdit: source.assetAllowedForEdit } : {}),
-              });
+              }, signal);
             } catch (error) {
+              signal?.throwIfAborted();
               return { ok: false, error: error instanceof Error ? error.message : String(error) };
             }
           });
@@ -1804,11 +1848,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         includeIdentityAssets: Type.Optional(Type.Boolean()),
         includeIconAssets: Type.Optional(Type.Boolean()),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         const cached = params.runId ? researchPages.get(`${safeRunId(params.runId)}:${params.pageUrl}`) : undefined;
         if (params.runId && !cached) await consumeWorkflowBudget(workspaceDir, params.runId, "sourceFetches", 1, params.refinementReason, [params.pageUrl]);
         return textResult(await discoverResearchAssets(cached?.url ?? params.pageUrl, params.limit, {
           ...(cached ? { html: cached.html } : {}),
+          ...(signal ? { signal } : {}),
           ...(params.runId ? { onHtml: (html: string) => {
             researchPages.set(`${safeRunId(params.runId!)}:${params.pageUrl}`, { html, url: cached?.url ?? params.pageUrl });
             while (researchPages.size > 48) researchPages.delete(researchPages.keys().next().value!);
@@ -1834,8 +1879,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         doNotReplace: Type.Optional(Type.Boolean()),
         allowedForEdit: Type.Optional(Type.Boolean()),
       }),
-      async execute(_id, params) {
-        return textResult(await fetchResearchAsset(workspaceDir, params));
+      async execute(_id, params, signal) {
+        return textResult(await fetchResearchAsset(workspaceDir, params, signal));
       },
     });
 
@@ -1855,11 +1900,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           allowedForEdit: Type.Optional(Type.Boolean()),
         }), { minItems: 1 }),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
+        signal?.throwIfAborted();
         const results = await mapWithConcurrency(params.assets, 3, async (asset) => {
+          signal?.throwIfAborted();
           try {
-            return await fetchResearchAsset(workspaceDir, { runId: params.runId, ...asset });
+            return await fetchResearchAsset(workspaceDir, { runId: params.runId, ...asset }, signal);
           } catch (error) {
+            signal?.throwIfAborted();
             return { ok: false, id: asset.id, url: asset.url, error: error instanceof Error ? error.message : String(error) };
           }
         });
@@ -1876,7 +1924,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         minUsableAssets: Type.Optional(Type.Number({ minimum: 0, maximum: 30 })),
         requireLogo: Type.Optional(Type.Boolean()),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         return textResult(await validateResearchAssets(workspaceDir, params));
       },
     });
@@ -2183,16 +2231,18 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const output = committedDuringPrompt
             ? `${params.agent} committed ${committedDuringPrompt}; runtime ended the completed specialist session without an additional summary round.`
             : finalAssistantText(session.messages);
+          const validationStartedAt = performance.now();
           const committedEvent = inferredRunId
             ? await assertStageCommitted(workspaceDir, inferredRunId, params.agent, startingEventCount)
             : "not-required";
+          const validationMs = Math.round(performance.now() - validationStartedAt);
           await lifecycleWrites;
           await emitLifecycle({
             type: "agent_finished",
             output,
             committedEvent,
             status: "completed",
-            metrics: { durationMs: Date.now() - agentStartedAt, tools: Object.fromEntries(toolMetrics), modelTurns },
+            metrics: { durationMs: Date.now() - agentStartedAt, validationMs, tools: Object.fromEntries(toolMetrics), modelTurns },
           });
           return {
             content: [{ type: "text", text: output || `${params.agent} completed without a text summary.` }],
@@ -2216,6 +2266,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           if (activeSpecialistInvocation?.id === invocationId) activeSpecialistInvocation = undefined;
           signal?.removeEventListener("abort", abort);
           unsubscribe();
+          const cleanupStartedAt = performance.now();
           session.dispose();
           if (childSessionFile) {
             await compactVisualSession(childSessionFile).catch((error) => {
@@ -2225,6 +2276,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               });
             });
           }
+          await emitLifecycle({ type: "agent_cleanup_metrics", durationMs: Math.round(performance.now() - cleanupStartedAt) }).catch(() => undefined);
         }
       },
     });
@@ -2546,7 +2598,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       },
     });
 
-    pi.registerTool({
+    const writeJsonToolUnlocked = defineTool({
       name: "write_json",
       label: "Write structured project data",
       description: "Atomically serialize Run JSON. The argument envelope is {runId, path, data}: runId and path belong at the root; data is only the file content. Pass data as an object, not a serialized string. Never write design-context.json or run-state.json: completion events update those runtime-owned files.",
@@ -2628,6 +2680,49 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       },
     });
 
+    const writeJsonTool = defineTool({
+      ...writeJsonToolUnlocked,
+      async execute(id, input, signal, onUpdate, context) {
+        const params = requiredRecord(input, "write_json arguments");
+        const path = resolveInside(workspaceDir, join("runs", safeRunId(requiredString(params, "runId", "write_json")), requiredString(params, "path", "write_json")));
+        return serializeJsonWrite(path, () => writeJsonToolUnlocked.execute(id, input, signal, onUpdate, context));
+      },
+    });
+    pi.registerTool(writeJsonTool);
+    pi.registerTool({
+      name: "patch_json",
+      label: "Patch structured project data",
+      description: "Update only changed JSON fields using JSON pointers. Pass the file sha256 from a prior read/save to prevent stale overwrites. All normal role and schema validation applies; never rewrite unrelated completed content.",
+      parameters: Type.Object({ runId: Type.String(), path: Type.String(), sha256: Type.String(), updates: Type.Array(Type.Object({ pointer: Type.String(), value: Type.Unknown() }), { minItems: 1 }) }),
+      async execute(id, params, signal, onUpdate, context) {
+        assertAssignedRun(params.runId, "patch_json");
+        const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
+        const path = resolveInside(runDir, params.path);
+        return serializeJsonWrite(path, async () => {
+          signal?.throwIfAborted();
+          await assertRoleWrite(workspaceDir, params.runId, options.parentInvocation?.agent ?? "orchestrator", path);
+          const source = await readFile(path, "utf8");
+          if (createHash("sha256").update(source).digest("hex") !== params.sha256) throw new Error("JSON changed since it was read; reload this file before patching");
+          const data = parseRunJson(source, params.path);
+          for (const update of params.updates) {
+            if (!update.pointer.startsWith("/") || /~(?![01])/u.test(update.pointer)) throw new Error("Use a non-root valid JSON pointer");
+            const keys = update.pointer.slice(1).split("/").map((key) => key.replaceAll("~1", "/").replaceAll("~0", "~"));
+            if (keys.some((key) => ["__proto__", "prototype", "constructor"].includes(key))) throw new Error("Unsafe JSON pointer");
+            let target: Record<string, unknown> | unknown[] = requiredRecord(data, "JSON root");
+            for (const key of keys.slice(0, -1)) {
+              const child: unknown = Reflect.get(target, key);
+              if (!child || typeof child !== "object") throw new Error(`Missing JSON parent: ${update.pointer}`);
+              target = child as Record<string, unknown>;
+            }
+            const key = keys.at(-1)!;
+            if (Array.isArray(target) && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= target.length)) throw new Error("Array patches must address an existing item");
+            Reflect.set(target, key, update.value);
+          }
+          return writeJsonToolUnlocked.execute(id, { runId: params.runId, path: params.path, data }, signal, onUpdate, context);
+        });
+      },
+    });
+
     pi.registerTool({
       name: "design_context_read",
       label: "Read compact Design Context",
@@ -2635,6 +2730,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       parameters: Type.Object({
         runId: Type.String(),
         audience: Type.Union([Type.Literal("researcher"), Type.Literal("designer"), Type.Literal("reviewer"), Type.Literal("builder")]),
+        paths: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
+        full: Type.Optional(Type.Boolean({ description: "Read complete selected JSON files only when omitted details are required." })),
       }),
       async execute(_id, params) {
         assertAssignedRun(params.runId, "design_context_read");
@@ -2648,7 +2745,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         } as const;
         const files = [];
         const missingFiles: string[] = [];
-        for (const path of [...common, ...byAudience[params.audience]]) {
+        for (const path of params.paths ?? [...common, ...byAudience[params.audience]]) {
+          if (![...common, ...byAudience[params.audience]].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
           const existing = await findRunDocument(runDir, path);
           const source = await readFile(existing?.absolutePath ?? resolveInside(runDir, path), "utf8").catch((error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") return undefined;
@@ -2657,20 +2755,22 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           if (source === undefined) { missingFiles.push(path); continue; }
           const limit = path.endsWith("design_plan.json") ? 24_000 : 12_000;
           const isJson = path.endsWith(".json");
-          const compactSource = isJson ? JSON.stringify(parseRunJson(source, path)) : source;
+          const projected = isJson && !params.full ? projectContext(parseRunJson(source, path), limit) : undefined;
+          const compactSource = isJson ? JSON.stringify(projected?.content ?? parseRunJson(source, path)) : source;
           files.push({
             path: existing?.path ?? path,
             ...(existing && existing.path !== path ? { canonicalPath: path } : {}),
             sha256: createHash("sha256").update(source).digest("hex"),
-            truncated: !isJson && compactSource.length > limit,
-            content: !isJson && compactSource.length > limit ? `${compactSource.slice(0, limit)}\n[truncated; use read for a targeted detail]` : compactSource,
+            truncated: projected ? projected.omittedPointers.length > 0 : !params.full && !isJson && compactSource.length > limit,
+            ...(projected ? { omittedPointers: projected.omittedPointers } : {}),
+            content: !params.full && !isJson && compactSource.length > limit ? `${compactSource.slice(0, limit)}\n[truncated; use read for a targeted detail]` : compactSource,
           });
         }
         const busSource = await readFile(resolveInside(runDir, "bus.jsonl"), "utf8").catch(() => "");
         const recentEvents = busSource.split(/\r?\n/).filter(Boolean).flatMap((line) => {
           try {
             const event = JSON.parse(line) as Record<string, unknown>;
-            if (/^(agent_|tool_|orchestrator_tool_|operation_|image_item_)/.test(String(event.type))) return [];
+            if (/^(agent_|tool_|orchestrator_tool_|operation_|image_item_|image_request_)/.test(String(event.type))) return [];
             return [{ id: event.id, type: event.type, from_agent: event.from_agent, to: event.to, summary: event.summary, artifactRefs: event.artifactRefs, requestedAction: event.requestedAction, round: event.round, at: event.at }];
           } catch { return []; }
         });
@@ -2688,10 +2788,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           }
           return { asset_id: asset.id, file, viewPath, visual_review_status: asset.visual_review_status ?? "unreviewed", relevance_status: asset.relevance_status ?? "uncertain", relevance_basis: asset.relevance_basis, likely_relevance: asset.likely_relevance ?? asset.description, instruction: viewPath ? "Use view_image(paths) for visual screening; metadata and lexical-match status are not visual evidence." : "Missing or invalid asset path; record the acquisition gap." };
         }) : [];
-        const planSource = files.find((file) => file.path === "plan/design_plan.json")?.content;
-        const referenceReview = referenceReviewCoverage(referenceManifest, planSource ? JSON.parse(planSource) as Record<string, unknown> : undefined);
+        const planRecord = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+        const referenceReview = referenceReviewCoverage(referenceManifest, planRecord);
         return textResult({ ok: true, runId: params.runId, audience: params.audience, files, missingFiles, recentEvents: cycleEvents, referenceInventory, referenceReview,
-          instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. Read directly only for an omitted or truncated detail." });
+          instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. For omitted JSON details, call design_context_read with paths containing only the needed file and full=true. Preserve all deliverable and reference identities; an overview is not the complete specification." });
       },
     });
 
@@ -2808,6 +2908,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const notify = (notice: RetryNotice) => onUpdate?.({ content: [{ type: "text", text: `Image generation retry ${notice.nextAttempt}: ${notice.error}` }], details: { retry: notice } });
         let completed = 0;
         const generate = async (task: ImageGenerateTask): Promise<Record<string, unknown>> => {
+          signal?.throwIfAborted();
+          const itemStartedAt = performance.now();
           let result: Record<string, unknown>;
           try {
             result = await generateImage(task, signal, notify);
@@ -2815,6 +2917,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             result = { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) };
           }
           completed += 1;
+          await appendWorkflowLifecycleEvent(workspaceDir, params.runId, { type: "image_item_finished", imageId: task.id, durationMs: Math.round(performance.now() - itemStartedAt), status: result.ok ? "completed" : "error", result });
           const output = `Image ${task.id}: ${result.ok ? "saved" : "failed"} · ${completed}/${tasks.length}`;
           onUpdate?.({ content: [{ type: "text", text: output }], details: { id: task.id, completed, total: tasks.length, result } });
           await appendWorkflowLifecycleEvent(workspaceDir, params.runId, {
@@ -2824,13 +2927,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           return result;
         };
         if (!params.anchorId) {
-          const results = await mapWithConcurrency(tasks, imageConcurrency, generate);
+          const results = await mapWithConcurrency(tasks, imageConcurrency, generate, signal);
           return textResult({ action: "image_generate_batch", count: results.length, ...batchSummary(results) });
         }
         const anchorResult = await generate(anchor);
         const remaining = tasks.filter((_, index) => index !== anchorIndex);
         const results = anchorResult.ok === true
-          ? [anchorResult, ...await mapWithConcurrency(remaining, imageConcurrency, generate)]
+          ? [anchorResult, ...await mapWithConcurrency(remaining, imageConcurrency, generate, signal)]
           : [anchorResult, ...remaining.map((task) => ({ ok: false, id: task.id, skipped: true, error: `Skipped because consistency anchor ${anchor.id} failed` }))];
         return textResult({ action: "image_generate_batch", anchorId: anchor.id, count: results.length, ...batchSummary(results) });
       },
@@ -2909,7 +3012,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             changes: params.changes,
             preserve: params.preserve,
             acceptanceCriteria: params.acceptanceCriteria,
-          },
+          }, signal,
         );
         const summary = {
           ok: true,
@@ -2956,6 +3059,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         }
         let completed = 0;
         const results = await mapWithConcurrency(params.tasks, imageConcurrency, async (task) => {
+          signal?.throwIfAborted();
+          const itemStartedAt = performance.now();
           let result: Record<string, unknown>;
           try {
             const edited = await imageEditTool.execute(`${_id}:${task.id}`, { runId: params.runId, ...task }, signal, onUpdate, context);
@@ -2964,6 +3069,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             result = { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) };
           }
           completed += 1;
+          await appendWorkflowLifecycleEvent(workspaceDir, params.runId, { type: "image_item_finished", imageId: task.id, durationMs: Math.round(performance.now() - itemStartedAt), status: result.ok ? "completed" : "error", result });
           const output = `Image ${task.id}: ${result.ok ? "saved" : "failed"} · ${completed}/${params.tasks.length}`;
           onUpdate?.({ content: [{ type: "text", text: output }], details: { id: task.id, completed, total: params.tasks.length, result } });
           await appendWorkflowLifecycleEvent(workspaceDir, params.runId, {
@@ -2973,6 +3079,116 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           return result;
         });
         return textResult({ action: "image_edit_batch", count: results.length, ...batchSummary(results) });
+      },
+    });
+
+    pi.registerTool({
+      name: "execute_image_plan",
+      label: "Execute approved image plan",
+      description: "Execute approved stored image tasks by id without restating prompts. Reuses outputs only when prompt, size and image hash match. Pass independent ids together; edit dependencies within this request are scheduled after their sources. No design decisions are invented.",
+      parameters: Type.Object({ runId: Type.String(), ids: Type.Array(Type.String(), { minItems: 1 }), reuse: Type.Optional(Type.Boolean()) }),
+      async execute(id, params, signal, onUpdate, context) {
+        if (options.parentInvocation?.agent !== "builder") throw new Error("Only Builder may execute an approved plan");
+        assertAssignedRun(params.runId, "execute_image_plan");
+        const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
+        const bus = (await readFile(join(runDir, "bus.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+        const gate = currentWorkflowCycle(bus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1);
+        if (gate?.type !== "design_review_pass") throw new Error("A current approved specification is required");
+        await assertStageCommitted(workspaceDir, params.runId, "reviewer", 0);
+        await assertStageCommitted(workspaceDir, params.runId, "designer", 0);
+        const plan = await readJsonRecord(runDir, "plan/design_plan.json");
+        const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
+        const entries = requiredArray(plan, "image_generation_plan", "plan").map((item) => requiredRecord(item, "image plan entry"));
+        const deliverables = requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable"));
+        if (new Set(params.ids).size !== params.ids.length) throw new Error("Plan ids must be unique");
+        const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : typeof value === "string" && value.trim() ? [value] : [];
+        const tasks = params.ids.map((taskId) => {
+          const entry = entries.find((item) => item.id === taskId);
+          const deliverable = deliverables.find((item) => item.id === taskId);
+          if (!entry || !deliverable) throw new Error(`Unknown approved deliverable: ${taskId}`);
+          const method = entry.method ?? deliverable.method;
+          if (!["image_generate", "image_edit"].includes(String(method))) throw new Error(`Unsupported planned method: ${String(method)}`);
+          const prompt = requiredString(entry, "prompt_seed", `Plan ${taskId}`);
+          const negative = typeof entry.negative_prompt_seed === "string" ? entry.negative_prompt_seed.trim() : "";
+          const outputPath = requiredString(deliverable, "file", `Deliverable ${taskId}`);
+          const path = artifactOutputPath(workspaceDir, params.runId, taskId, method === "image_edit" ? "edits" : "generated-images", outputPath);
+          const referenceImagePaths = (method === "image_edit" ? strings(entry.referenceImagePaths ?? entry.reference_image_paths) : []).map((path) => isAbsolute(path) ? path : path.startsWith("runs/") ? resolveInside(workspaceDir, path) : resolveInside(runDir, path));
+          const acceptanceCriteria = strings(entry.acceptanceCriteria ?? entry.acceptance_criteria ?? entry.acceptance_test);
+          if (!acceptanceCriteria.length) throw new Error(`Plan ${taskId} needs acceptance criteria`);
+          return { id: taskId, method, path, outputPath, prompt: negative ? `${prompt}\n\nAvoid: ${negative}` : prompt, size: typeof entry.size === "string" ? entry.size : imageSizeCeiling(), intent: typeof entry.intent === "string" ? entry.intent : typeof deliverable.purpose === "string" ? deliverable.purpose : taskId, acceptanceCriteria, preserve: strings(entry.preserve ?? entry.preservation_rules ?? entry.preservation), referenceImagePaths, diagnosis: strings(entry.diagnosis ?? entry.edit_diagnosis), changes: strings(entry.changes ?? entry.edit_changes) };
+        });
+        const pending = [...tasks];
+        const results: Record<string, unknown>[] = [];
+        const unsuccessful = new Set<string>();
+        while (pending.length) {
+          signal?.throwIfAborted();
+          const ready = pending.filter((task) => !task.referenceImagePaths.some((path) => pending.some((candidate) => candidate.path === path)));
+          if (!ready.length) throw new Error("Image plan contains cyclic edit dependencies");
+          const batch = await mapWithConcurrency(ready, imageConcurrency, async (task) => {
+            const startedAt = performance.now();
+            let result: Record<string, unknown>;
+            try {
+              if (task.referenceImagePaths.some((path) => unsuccessful.has(path))) throw new Error("Required source generation failed");
+              const referenceHashes = await Promise.all(task.referenceImagePaths.map(async (path) => { await assertAssignedRead(path, context?.cwd ?? workspaceDir); return createHash("sha256").update(await readFile(path)).digest("hex"); }));
+              const fingerprint = createHash("sha256").update(JSON.stringify({ task, referenceHashes })).digest("hex");
+              const sidecar = params.reuse !== false ? await readFile(`${task.path}.json`, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>).catch(() => undefined) : undefined;
+              const bytes = sidecar?.planFingerprint === fingerprint ? await readFile(task.path).catch(() => undefined) : undefined;
+              if (bytes?.length && createHash("sha256").update(bytes).digest("hex") === sidecar?.imageSha256) {
+                result = { ok: true, id: task.id, path: relative(workspaceDir, task.path), reused: true };
+              } else {
+                if (task.method === "image_generate") result = await generateImage({ runId: params.runId, ...task }, signal);
+                else {
+                  if (!task.referenceImagePaths.length || !task.diagnosis.length || !task.changes.length || !task.preserve.length) throw new Error(`Plan ${task.id} needs explicit referenceImagePaths, diagnosis, changes and preserve; request specification correction`);
+                  const edited = await imageEditTool.execute(`${id}:${task.id}`, { runId: params.runId, ...task }, signal, onUpdate, context);
+                  result = { ...(edited.details as Record<string, unknown>), id: task.id };
+                }
+                const current = JSON.parse(await readFile(`${task.path}.json`, "utf8")) as Record<string, unknown>;
+                await writeFile(`${task.path}.json`, JSON.stringify({ ...current, planFingerprint: fingerprint, imageSha256: createHash("sha256").update(await readFile(task.path)).digest("hex") }, null, 2));
+              }
+            } catch (error) {
+              signal?.throwIfAborted();
+              unsuccessful.add(task.path);
+              result = { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) };
+            }
+            await appendWorkflowLifecycleEvent(workspaceDir, params.runId, { type: "image_item_finished", imageId: task.id, invocationId: options.parentInvocation?.id, agent: "builder", durationMs: Math.round(performance.now() - startedAt), status: result.ok ? "completed" : "error", result });
+            onUpdate?.(textResult(result));
+            return result;
+          }, signal);
+          results.push(...batch);
+          for (const task of ready) pending.splice(pending.indexOf(task), 1);
+        }
+        return textResult({ action: "execute_image_plan", ...batchSummary(results) });
+      },
+    });
+    pi.registerTool({
+      name: "showcase_template",
+      label: "Build showcase from captions",
+      description: "Render a local responsive gallery from approved deliverable ids, captions and thematic sections. All required image outputs must be included. Finalization adds references and prompt attribution. Use custom HTML when the approved design requires it.",
+      parameters: Type.Object({ runId: Type.String(), title: Type.String(), sections: Type.Array(Type.Object({ title: Type.String(), items: Type.Array(Type.Object({ id: Type.String(), caption: Type.String() }), { minItems: 1 }) }), { minItems: 1 }) }),
+      async execute(_id, params, signal) {
+        if (options.parentInvocation?.agent !== "builder") throw new Error("Only Builder may render a showcase");
+        assertAssignedRun(params.runId, "showcase_template");
+        signal?.throwIfAborted();
+        const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
+        const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
+        const deliverables = requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable"));
+        const covered = new Set(params.sections.flatMap((section) => section.items.map((item) => item.id)));
+        for (const item of deliverables) if (item.required === true && !covered.has(String(item.id))) throw new Error(`Showcase omits required deliverable: ${String(item.id)}`);
+        const sections = [];
+        for (const section of params.sections) {
+          const items = [];
+          for (const item of section.items) {
+            const entry = deliverables.find((entry) => entry.id === item.id);
+            if (!entry) throw new Error(`Unknown deliverable: ${item.id}`);
+            const path = artifactOutputPath(workspaceDir, params.runId, item.id, "generated-images", requiredString(entry, "file", "deliverable"));
+            if (!(await stat(path)).isFile()) throw new Error(`Missing image: ${item.id}`);
+            items.push({ ...item, path });
+          }
+          sections.push({ title: section.title, items });
+        }
+        const path = join(runDir, "artifacts", "00-gallery.html");
+        await writeFile(path, showcaseTemplate(params.title, sections, dirname(path)));
+        return textResult({ ok: true, path: relative(workspaceDir, path), instruction: "Showcase saved; call build_finalize when all required outputs are ready." });
       },
     });
 

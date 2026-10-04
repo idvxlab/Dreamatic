@@ -635,10 +635,10 @@ test("export_package rejects unapproved or unimplemented design context", async 
 });
 
 test("persona tool policies keep reasoning separate from execution", () => {
-  const researcher = dreamaticPersonaTools("researcher", ["read", "write", "write_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
-  const designer = dreamaticPersonaTools("designer", ["read", "write", "write_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
-  const reviewer = dreamaticPersonaTools("reviewer", ["read", "write", "write_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"]);
-  const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "build_finalize"]);
+  const researcher = dreamaticPersonaTools("researcher", ["read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
+  const designer = dreamaticPersonaTools("designer", ["read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
+  const reviewer = dreamaticPersonaTools("reviewer", ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"]);
+  const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "showcase_template", "build_finalize"]);
   assert.equal(researcher.includes("view_image"), false);
   assert.equal(researcher.includes("research_asset_validate"), false);
   assert.equal(researcher.includes("bash"), false);
@@ -738,7 +738,7 @@ test("write_json preserves nested data, atomically replaces files and enforces t
   }
 });
 
-test("compact Design Context retains complete JSON prompts and excludes execution chatter", async () => {
+test("compact Design Context marks omitted JSON details and supports full targeted reads", async () => {
   const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-context-"));
   try {
     const runDir = join(workspaceDir, "runs", "demo");
@@ -752,8 +752,12 @@ test("compact Design Context retains complete JSON prompts and excludes executio
     ].map((event) => JSON.stringify(event)).join("\n"));
     const { tools } = await registeredTools(workspaceDir);
     const context = JSON.parse((await tools.get("design_context_read").execute("context", { runId: "demo", audience: "builder" })).content[0].text);
-    assert.equal(context.files[0].truncated, false);
-    assert.deepEqual(JSON.parse(context.files[0].content), plan);
+    assert.equal(context.files[0].truncated, true);
+    assert.equal(JSON.parse(context.files[0].content).image_generation_plan[0].id, "hero");
+    assert.ok(context.files[0].omittedPointers.includes("/image_generation_plan/0/prompt_seed"));
+    const full = JSON.parse((await tools.get("design_context_read").execute("full", { runId: "demo", audience: "builder", paths: ["plan/design_plan.json"], full: true })).content[0].text);
+    assert.equal(full.files[0].truncated, false);
+    assert.deepEqual(JSON.parse(full.files[0].content), plan);
     assert.equal(context.recentEvents.length, 1);
     assert.equal(context.recentEvents[0].type, "design_review_pass");
     assert.equal(context.recentEvents[0].commitReceipt, undefined);
@@ -2384,4 +2388,94 @@ test("withRetry respects retryable HTTP failures and Retry-After", async () => {
     return true;
   }, { attempts: 2, baseDelayMs: 10, maxDelayMs: 5_000, sleep: async (delay) => { delays.push(delay); } });
   assert.deepEqual(delays, [2_500]);
+});
+
+test("approved plan executes by id, reuses verified images and rejects a stale gate", async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-plan-execution-"));
+  const fetchOriginal = globalThis.fetch;
+  const keyOriginal = process.env.DREAMATIC_IMAGE_API_KEY;
+  let requests = 0;
+  try {
+    const runDir = join(workspaceDir, "runs/demo");
+    await mkdir(join(runDir, "plan"), { recursive: true });
+    await mkdir(join(runDir, "review"), { recursive: true });
+    const files = {};
+    for (const [path, source] of [["review/design-review.md", "Approved"], ["review/design-review.json", JSON.stringify({ verdict: "pass" })]]) {
+      await writeFile(join(runDir, path), source);
+      files[path] = (await import('node:crypto')).createHash('sha256').update(source).digest('hex');
+    }
+    const event = { type: "design_review_pass", from_agent: "reviewer", to: "orchestrator", commitReceipt: { files } };
+    await writeFile(join(runDir, "bus.jsonl"), JSON.stringify(event) + '\n');
+    await writeFile(join(runDir, "plan/design_plan.json"), JSON.stringify({ image_generation_plan: [{ id: "hero", method: "image_generate", prompt_seed: "Approved concept", negative_prompt_seed: "Watermark", acceptance_test: "Readable", size: "512x512" }] }));
+    await writeFile(join(runDir, "plan/deliverable_manifest.json"), JSON.stringify({ deliverables: [{ id: "hero", method: "image_generate", file: "artifacts/hero.png", required: true }] }));
+    const designFiles = {};
+    for (const path of ["plan/design_system.json", "plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md", "plan/task_breakdown.md"]) {
+      if (!["plan/design_plan.json", "plan/deliverable_manifest.json"].includes(path)) await writeFile(join(runDir, path), path.endsWith('.json') ? '{}' : 'Approved');
+      designFiles[path] = (await import('node:crypto')).createHash('sha256').update(await readFile(join(runDir, path))).digest('hex');
+    }
+    await writeFile(join(runDir, 'bus.jsonl'), [JSON.stringify({ type: 'design_spec_ready', from_agent: 'designer', to: 'orchestrator', commitReceipt: { files: designFiles } }), JSON.stringify(event)].join('\n') + '\n');
+    process.env.DREAMATIC_IMAGE_API_KEY = "test";
+    globalThis.fetch = async (_url, init) => { requests++; assert.equal(JSON.parse(init.body).prompt, 'Approved concept\n\nAvoid: Watermark'); return new Response(JSON.stringify({ data: [{ b64_json: PNG_1X1.toString('base64') }] })); };
+    const { tools } = await registeredTools(workspaceDir, { parentInvocation: { id: "builder", agent: "builder", runId: "demo" } });
+    const execute = () => tools.get('execute_image_plan').execute('execute', { runId: 'demo', ids: ['hero'] });
+    assert.equal(JSON.parse((await execute()).content[0].text).succeeded, 1);
+    const reused = JSON.parse((await execute()).content[0].text);
+    assert.equal(reused.results[0].reused, true);
+    assert.equal(requests, 1);
+    await writeFile(join(runDir, 'artifacts/hero.png'), 'modified');
+    await execute(); assert.equal(requests, 2);
+    await tools.get('showcase_template').execute('showcase', { runId: 'demo', title: '<Concept>', sections: [{ title: 'Concept', items: [{ id: 'hero', caption: 'Approved intent' }] }] });
+    assert.match(await readFile(join(runDir, 'artifacts/00-gallery.html'), 'utf8'), /&lt;Concept&gt;/);
+    await assert.rejects(tools.get('showcase_template').execute('missing', { runId: 'demo', title: 'Concept', sections: [{ title: 'Concept', items: [] }] }), /omits required/);
+    await writeFile(join(runDir, 'bus.jsonl'), JSON.stringify({ type: 'design_revision_ready' }) + '\n', { flag: 'a' });
+    await assert.rejects(execute(), /approved specification/);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+    if (keyOriginal === undefined) delete process.env.DREAMATIC_IMAGE_API_KEY; else process.env.DREAMATIC_IMAGE_API_KEY = keyOriginal;
+    await rm(workspaceDir, { recursive: true, force: true });
+  }
+});
+
+test("JSON patches preserve unrelated data and reject stale file hashes", async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), 'dreamatic-patch-'));
+  try {
+    const { tools } = await registeredTools(workspaceDir, { parentInvocation: { id: 'designer', agent: 'designer', runId: 'demo' } });
+    const saved = JSON.parse((await tools.get('write_json').execute('write', { runId: 'demo', path: 'plan/design_system.json', data: { unchanged: 'keep', nested: { value: 1 } } })).content[0].text);
+    const params = { runId: 'demo', path: 'plan/design_system.json', sha256: saved.sha256, updates: [{ pointer: '/nested/value', value: 2 }] };
+    await tools.get('patch_json').execute('patch', params);
+    const data = JSON.parse(await readFile(join(workspaceDir, 'runs/demo/plan/design_system.json'), 'utf8'));
+    assert.equal(data.unchanged, 'keep'); assert.equal(data.nested.value, 2);
+    await assert.rejects(tools.get('patch_json').execute('stale', params), /changed since/);
+  } finally { await rm(workspaceDir, { recursive: true, force: true }); }
+});
+
+test('research acquisition survives new invocations and cached sources do not consume acquisition twice', async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), 'dreamatic-acquisition-recovery-'));
+  const previousFetch = globalThis.fetch;
+  let requests = 0;
+  try {
+    const runDir = join(workspaceDir, 'runs/demo'); await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, 'brief.json'), JSON.stringify({ workflowProfile: 'compact' }));
+    globalThis.fetch = async () => { requests++; return new Response('<article>Cellular actuator material.</article>', { headers: { 'content-type': 'text/html' } }); };
+    const params = { runId: 'demo', sources: [{ url: 'https://example.com/paper' }] };
+    const first = (await registeredTools(workspaceDir)).tools;
+    await first.get('research_fetch_batch').execute('fetch', params);
+    const recovered = (await registeredTools(workspaceDir)).tools;
+    await recovered.get('research_fetch_batch').execute('cached', params);
+    assert.equal(requests, 1);
+    const ledger = JSON.parse(await readFile(join(runDir, '.performance/acquisition-budget.json'), 'utf8'));
+    assert.equal(ledger.fields.sourceFetches.used, 1);
+    assert.deepEqual(ledger.fields.sourceFetches.requests, ['https://example.com/paper']);
+  } finally { globalThis.fetch = previousFetch; await rm(workspaceDir, { recursive: true, force: true }); }
+});
+
+test('concurrent patches with the same version cannot both overwrite a JSON file', async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), 'dreamatic-patch-race-'));
+  try {
+    const { tools } = await registeredTools(workspaceDir, { parentInvocation: { id: 'designer', agent: 'designer', runId: 'demo' } });
+    const saved = JSON.parse((await tools.get('write_json').execute('write', { runId: 'demo', path: 'plan/design_system.json', data: { nested: { value: 0 } } })).content[0].text);
+    const attempts = await Promise.allSettled([1, 2].map((value) => tools.get('patch_json').execute(`patch-${value}`, { runId: 'demo', path: 'plan/design_system.json', sha256: saved.sha256, updates: [{ pointer: '/nested/value', value }] })));
+    assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
+    assert.equal(attempts.filter((result) => result.status === 'rejected').length, 1);
+  } finally { await rm(workspaceDir, { recursive: true, force: true }); }
 });

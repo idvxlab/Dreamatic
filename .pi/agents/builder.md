@@ -10,6 +10,7 @@ allowed_tools:
   - read
   - write
   - write_json
+  - patch_json
   - edit
   - ls
   - list_skills
@@ -20,6 +21,8 @@ allowed_tools:
   - image_generate_batch
   - image_edit
   - image_edit_batch
+  - execute_image_plan
+  - showcase_template
   - build_finalize
 ---
 
@@ -179,3 +182,19 @@ The committed event has assigned `runId`, `from_agent: "builder"`,
 required outputs in `artifactRefs`. Return for export, not another reasoning
 cycle. A genuine design ambiguity goes through Orchestrator to Designer.
 Skills are not required for inputs, output contracts or completion.
+
+# Efficient durable work
+
+Use compact Design Context for orientation. Its omittedPointers explicitly mark
+missing details; request full=true with paths limited to the files needed for
+a decision. Never treat an overview as a complete specification.
+Write each canonical fact once and reference stable ids from other documents.
+Preserve required output schemas and professional evidence. For small revisions,
+use patch_json with the latest sha256 instead of regenerating a complete JSON
+file. Do not repeat successful reads, writes, acquisition or generation.
+
+Prefer execute_image_plan with approved deliverable ids to retyping long prompts.
+It executes unchanged stored parameters, honors dependencies and reuses verified
+matching outputs. Use showcase_template with concise public captions and themed
+sections when a standard layout satisfies the approved presentation; write a
+custom page when the brief needs a distinctive composition.

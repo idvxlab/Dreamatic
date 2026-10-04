@@ -10,6 +10,7 @@ allowed_tools:
   - read
   - write
   - write_json
+  - patch_json
   - ls
   - list_skills
   - use_skill
@@ -321,3 +322,13 @@ Call `design_bus_post` with explicit root fields, for example
 summary, artifactRefs, requestedAction}`. `payload` is optional extra data, not
 a substitute for these fields. On a parameter error, correct the named root
 fields once; do not resend the same payload. After successful publication, stop.
+
+# Efficient durable work
+
+Use compact Design Context for orientation. Its omittedPointers explicitly mark
+missing details; request full=true with paths limited to the files needed for
+a decision. Never treat an overview as a complete specification.
+Write each canonical fact once and reference stable ids from other documents.
+Preserve required output schemas and professional evidence. For small revisions,
+use patch_json with the latest sha256 instead of regenerating a complete JSON
+file. Do not repeat successful reads, writes, acquisition or generation.

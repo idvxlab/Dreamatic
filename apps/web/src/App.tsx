@@ -1,6 +1,6 @@
 import { Cloud, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
+import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, getRun, listRunAssets, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
 import { Canvas } from "./components/Canvas";
 import { Sidebar } from "./components/Sidebar";
@@ -47,6 +47,14 @@ export function App() {
   const [selectedAsset, setSelectedAsset] = useState<string>();
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [streamingText, setStreamingText] = useState("");
+  const textBuffer = useRef("");
+  const textTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const resetStreamingText = () => { if (textTimer.current) clearTimeout(textTimer.current); textTimer.current = undefined; textBuffer.current = ""; setStreamingText(""); };
+  const appendStreamingText = (delta: string) => {
+    textBuffer.current += delta;
+    if (!textTimer.current) textTimer.current = setTimeout(() => { const text = textBuffer.current; textBuffer.current = ""; textTimer.current = undefined; setStreamingText((current) => current + text); }, 60);
+  };
+  useEffect(() => () => { if (textTimer.current) clearTimeout(textTimer.current); }, []);
   const [running, setRunning] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [pendingAgentStatus, setPendingAgentStatus] = useState<string>();
@@ -111,10 +119,20 @@ export function App() {
   }, [loadWorkspace]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      void Promise.all([listRuns(), listAssets(), listSessions()]).then(([nextRuns, nextAssets, nextSessions]) => {
+    let disposed = false;
+    let fetching = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      if (disposed || fetching) return;
+      fetching = true;
+      try {
+        const [nextRuns, nextAssets, nextSessions, detail] = await Promise.all([
+          listRuns(), activeRunId ? listRunAssets(activeRunId) : listAssets(), listSessions(),
+          activeRunId ? getRun(activeRunId).catch(() => undefined) : Promise.resolve(undefined),
+        ]);
+        if (disposed) return;
         const recovering = !workspaceReady.current;
-        setRuns(nextRuns);
+        setRuns(nextRuns.map((run) => run.id === detail?.id ? detail : run));
         setAssets(nextAssets);
         setSessions(nextSessions);
         setActiveRunId((current) => {
@@ -139,10 +157,17 @@ export function App() {
             awaitingRun.current = false;
           }
         }
-      }).catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [activeId]);
+      } catch { /* Existing state remains visible during reconnection. */ }
+      finally {
+        fetching = false;
+        if (!disposed) timer = setTimeout(() => void refresh(), document.hidden ? 60_000 : agentRunning ? 3_000 : 15_000);
+      }
+    };
+    const wake = () => { clearTimeout(timer); void refresh(); };
+    void refresh();
+    document.addEventListener("visibilitychange", wake);
+    return () => { disposed = true; clearTimeout(timer); document.removeEventListener("visibilitychange", wake); };
+  }, [activeId, activeRunId, agentRunning]);
 
   useEffect(() => {
     if (!activeRunId) {
@@ -151,9 +176,6 @@ export function App() {
     }
     let disposed = false;
     setWorkflow([]);
-    void getWorkflow(activeRunId).then((next) => {
-      if (!disposed) setWorkflow(next);
-    }).catch(() => undefined);
     const closeStream = streamWorkflow(activeRunId, (message) => {
       if (disposed) return;
       if (message.type === "snapshot") setWorkflow(message.workflow);
@@ -179,7 +201,7 @@ export function App() {
       setActiveRunId(session.projectId);
       setWorkflow([]);
       setTimeline([]);
-      setStreamingText("");
+      resetStreamingText();
       setLiveClarification(undefined);
       setAnsweredClarificationId(undefined);
       setPendingAgentStatus(undefined);
@@ -209,7 +231,7 @@ export function App() {
     }
     setWorkflow([]);
     setTimeline([]);
-    setStreamingText("");
+    resetStreamingText();
     setPendingAgentStatus(undefined);
     setLiveClarification(undefined);
     setAnsweredClarificationId(undefined);
@@ -287,13 +309,13 @@ export function App() {
       const update = event.assistantMessageEvent;
       if (update && typeof update === "object" && "type" in update && update.type === "text_delta" && "delta" in update && typeof update.delta === "string") {
         setPendingAgentStatus(undefined);
-        setStreamingText((current) => current + update.delta);
+        appendStreamingText(update.delta);
       }
       return;
     }
     if (type === "tool_execution_start") {
       setPendingAgentStatus(undefined);
-      setStreamingText("");
+      resetStreamingText();
       const label = typeof event.toolName === "string" ? event.toolName : "Using tool";
       const id = String(event.toolCallId ?? crypto.randomUUID());
       setTimeline((current) => [...current, { id, kind: "tool", label, active: true }]);
@@ -326,7 +348,7 @@ export function App() {
     setRunning(true);
     awaitingRun.current = true;
     runIdsBeforePrompt.current = new Set(runs.map((run) => run.id));
-    setStreamingText("");
+    resetStreamingText();
     const userText = presentation?.userText ?? text;
     setPendingAgentStatus(presentation?.waitingLabel ?? (activeRun?.status === "draft" ? "正在理解设计需求，并判断是否需要进一步澄清…" : "正在理解你的消息并决定下一步…"));
     setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "thought", label: userText, detail: images.length ? `${images.length} reference image${images.length > 1 ? "s" : ""}` : undefined }]);
@@ -344,12 +366,13 @@ export function App() {
     }
     try {
       await streamPrompt(activeId, text, images.map(({ name, data, mimeType }) => ({ name, data, mimeType })), receive, activeRunId);
-      const [nextRuns, nextAssets, persistedWorkflow] = await Promise.all([
+      const [nextRuns, nextAssets, persistedWorkflow, detail] = await Promise.all([
         listRuns(),
-        listAssets(),
+        activeRunId ? listRunAssets(activeRunId) : listAssets(),
         activeRunId ? getWorkflow(activeRunId) : Promise.resolve(undefined),
+        activeRunId ? getRun(activeRunId).catch(() => undefined) : Promise.resolve(undefined),
       ]);
-      setRuns(nextRuns);
+      setRuns(nextRuns.map((run) => run.id === detail?.id ? detail : run));
       setAssets(nextAssets);
       if (persistedWorkflow) setWorkflow(persistedWorkflow);
       const ownedRun = nextRuns.find((run) => run.sessionId === activeId);
@@ -360,7 +383,7 @@ export function App() {
       awaitingRun.current = false;
       setRunning(false);
       setPendingAgentStatus(undefined);
-      setStreamingText("");
+      resetStreamingText();
     }
   }
 

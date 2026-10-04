@@ -379,3 +379,19 @@ test("research asset validation creates a durable health report", async () => {
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+test('research cache reuses raw content and recomputes excerpts, refresh fetches again', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-source-cache-'));
+  let requests = 0;
+  try {
+    const options = { fetch: async () => { requests++; return new Response('<article>Alpha mechanism. Beta material.</article>', { headers: { 'content-type': 'text/html' } }); } };
+    const first = await researchFetch(workspace, { runId: 'demo', url: 'https://example.com/paper' }, options);
+    const cached = await researchFetch(workspace, { runId: 'demo', url: 'https://example.com/paper', researchTerms: ['Beta'] }, options);
+    assert.equal(first.cacheHit, false); assert.equal(cached.cacheHit, true); assert.equal(requests, 1);
+    await researchFetch(workspace, { runId: 'demo', url: 'https://example.com/paper', refresh: true }, options);
+    assert.equal(requests, 2);
+    const controller = new AbortController(); controller.abort(new Error('cancelled'));
+    await assert.rejects(researchFetch(workspace, { runId: 'demo', url: 'https://example.com/paper' }, { ...options, signal: controller.signal }), /cancelled/);
+    assert.equal(requests, 2);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});

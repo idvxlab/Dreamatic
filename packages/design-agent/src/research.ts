@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile, rename } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { resolveInside, safeRunId } from "./paths.js";
 import { RetryableHttpError, withRetry } from "./retry.js";
@@ -27,6 +27,7 @@ type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<
 
 export interface WebSearchOptions {
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
   fetch?: FetchLike;
 }
 
@@ -171,7 +172,7 @@ async function boundedFetch(
   url: URL,
   accept: string,
   maxBytes: number,
-  options: { fetch?: FetchLike; init?: RequestInit; operation?: string } = {},
+  options: { fetch?: FetchLike | undefined; init?: RequestInit; operation?: string; signal?: AbortSignal | undefined } = {},
 ): Promise<{ response: Response; bytes: Buffer }> {
   const operation = options.operation ?? "Research fetch";
   try {
@@ -186,7 +187,7 @@ async function boundedFetch(
         ...options.init,
         redirect: "follow",
         headers,
-        signal: AbortSignal.timeout(45_000),
+        signal: options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(45_000)]) : AbortSignal.timeout(45_000),
       });
       if ([408, 409, 425, 429, 500, 502, 503, 504].includes(response.status)) {
         throw new RetryableHttpError(response.status, `${operation} failed (${response.status})`);
@@ -197,7 +198,7 @@ async function boundedFetch(
       const bytes = Buffer.from(await response.arrayBuffer());
       if (bytes.length > maxBytes) throw new Error(`${operation} response exceeds ${Math.round(maxBytes / 1024 / 1024)} MB`);
       return { response, bytes };
-    }, { attempts: 3 });
+    }, { attempts: 3, ...(options.signal ? { signal: options.signal } : {}), random: Math.random });
   } catch (error) {
     throw new Error(`${operation} failed: ${describeNetworkError(error)}`, { cause: error });
   }
@@ -215,9 +216,10 @@ function searchConfiguration(env: NodeJS.ProcessEnv): { provider: "serper"; apiK
   return { provider: "duckduckgo", ...(provider && provider !== "duckduckgo" ? { fallbackReason: `Unsupported search provider '${provider}'.` } : {}) };
 }
 
-async function serperSearch(query: string, limit: number, apiKey: string, fetcher?: FetchLike) {
+async function serperSearch(query: string, limit: number, apiKey: string, fetcher?: FetchLike, signal?: AbortSignal) {
   const { bytes } = await boundedFetch(new URL(SERPER_SEARCH_URL), "application/json", MAX_PAGE_BYTES, {
     ...(fetcher ? { fetch: fetcher } : {}),
+    signal,
     operation: "Serper search",
     init: {
       method: "POST",
@@ -248,10 +250,10 @@ export async function webSearch(query: string, limit = 8, options: WebSearchOpti
   if (!normalizedQuery) throw new Error("Search query must not be empty");
   const cappedLimit = Math.max(1, Math.min(12, limit));
   const configuration = searchConfiguration(options.env ?? process.env);
-  if (configuration.provider === "serper") return serperSearch(normalizedQuery, cappedLimit, configuration.apiKey, options.fetch);
+  if (configuration.provider === "serper") return serperSearch(normalizedQuery, cappedLimit, configuration.apiKey, options.fetch, options.signal);
   const url = new URL("https://html.duckduckgo.com/html/");
   url.searchParams.set("q", normalizedQuery);
-  const { bytes } = await boundedFetch(url, "text/html", MAX_PAGE_BYTES, { ...(options.fetch ? { fetch: options.fetch } : {}), operation: "DuckDuckGo search" });
+  const { bytes } = await boundedFetch(url, "text/html", MAX_PAGE_BYTES, { ...(options.fetch ? { fetch: options.fetch } : {}), signal: options.signal, operation: "DuckDuckGo search" });
   const html = bytes.toString("utf8");
   const results: Array<{ title: string; url: string; snippet: string }> = [];
   const blocks = html.split(/class="result\s+results_links[^>]*"/i).slice(1);
@@ -275,20 +277,34 @@ function sourceId(url: URL): string {
 
 export async function researchFetch(
   workspaceDir: string,
-  params: { runId: string; url: string; id?: string; cacheText?: boolean; researchTerms?: string[] },
-  options: { fetch?: FetchLike; maxTextChars?: number; onHtml?: (html: string) => void } = {},
+  params: { runId: string; url: string; id?: string; cacheText?: boolean; refresh?: boolean; researchTerms?: string[] },
+  options: { fetch?: FetchLike; maxTextChars?: number; onHtml?: (html: string) => void; signal?: AbortSignal } = {},
 ) {
   const runId = safeRunId(params.runId);
   const url = safeUrl(params.url);
-  const { response, bytes } = await boundedFetch(url, "text/html,text/plain,application/json", MAX_PAGE_BYTES, options);
-  const source = bytes.toString("utf8");
-  const contentType = response.headers.get("content-type") ?? "";
-  if (/application\/pdf/iu.test(contentType) || bytes.subarray(0, 5).toString("ascii") === "%PDF-") {
+  options.signal?.throwIfAborted();
+  const cacheKey = createHash("sha256").update(url.href).digest("hex");
+  const cachePath = resolveInside(workspaceDir, join("runs", runId, "research", "sources", `${cacheKey}.page-cache.json`));
+  const ttl = Math.max(0, Number(process.env.DREAMATIC_RESEARCH_CACHE_TTL_MS ?? 86_400_000) || 0);
+  const cached = !params.refresh && ttl > 0 ? await readFile(cachePath, "utf8").then((text) => JSON.parse(text) as { version: number; url: string; finalUrl: string; fetchedAt: number; contentType: string; source: string }).catch(() => undefined) : undefined;
+  const cacheHit = Boolean(cached && cached.version === 1 && cached.url === url.href && Date.now() - cached.fetchedAt < ttl);
+  const fetched = cacheHit ? undefined : await boundedFetch(url, "text/html,text/plain,application/json", MAX_PAGE_BYTES, options);
+  const source = cacheHit ? cached!.source : fetched!.bytes.toString("utf8");
+  const contentType = cacheHit ? cached!.contentType : fetched!.response.headers.get("content-type") ?? "";
+  const finalUrl = cacheHit ? cached!.finalUrl : fetched!.response.url || url.href;
+  if (/application\/pdf/iu.test(contentType) || source.startsWith("%PDF-")) {
     throw new Error("Research fetch cannot extract PDF text or figures. Use the paper's readable HTML article, publisher abstract or author repository; do not treat binary PDF bytes as research evidence.");
   }
   const text = /html/i.test(contentType) ? plainText(source) : source.replace(/\s+/g, " ").trim();
   const title = /html/i.test(contentType) ? plainText(source.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? url.hostname) : url.hostname;
   rejectVerificationPage(title, text);
+  options.signal?.throwIfAborted();
+  if (!cacheHit && ttl > 0) {
+    await mkdir(dirname(cachePath), { recursive: true });
+    const temporary = `${cachePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    await writeFile(temporary, JSON.stringify({ version: 1, url: url.href, finalUrl, fetchedAt: Date.now(), contentType, source }));
+    await rename(temporary, cachePath);
+  }
   const content = /html/i.test(contentType) ? researchContent(source) : undefined;
   options.onHtml?.(source);
   let cachedPath: string | undefined;
@@ -296,13 +312,13 @@ export async function researchFetch(
     const id = params.id?.trim() ? safeRunId(params.id) : sourceId(url);
     const path = resolveInside(workspaceDir, join("runs", runId, "research", "sources", `${id}.txt`));
     await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, `${title}\n${response.url}\n\n${text}\n`, "utf8");
+    await writeFile(path, `${title}\n${finalUrl}\n\n${text}\n`, "utf8");
     cachedPath = relative(workspaceDir, path).replaceAll("\\", "/");
   }
   const maxTextChars = Math.max(1, Math.min(24_000, options.maxTextChars ?? 24_000));
   const readableText = content ? plainText(content.html) : text;
   const excerpt = focusedExcerpt(readableText, params.researchTerms ?? [], maxTextChars);
-  return { ok: true, url: response.url || url.href, title, text: excerpt.text, textChars: text.length, truncated: readableText.length > maxTextChars, extractionMethod: excerpt.method, matchedTerms: excerpt.matchedTerms, contentScope: content?.scoped ? "article" : "page", contentType, ...(cachedPath ? { cachedPath } : {}) };
+  return { ok: true, cacheHit, url: finalUrl, title, text: excerpt.text, textChars: text.length, truncated: readableText.length > maxTextChars, extractionMethod: excerpt.method, matchedTerms: excerpt.matchedTerms, contentScope: content?.scoped ? "article" : "page", contentType, ...(cachedPath ? { cachedPath } : {}) };
 }
 
 function absoluteAssetUrl(raw: string, pageUrl: URL): string | undefined {
@@ -314,6 +330,7 @@ function absoluteAssetUrl(raw: string, pageUrl: URL): string | undefined {
 }
 
 export async function discoverResearchAssets(page: string, limit = Number.MAX_SAFE_INTEGER, options: {
+  signal?: AbortSignal;
   fetch?: FetchLike;
   includeIdentityAssets?: boolean;
   includeIconAssets?: boolean;
@@ -322,7 +339,7 @@ export async function discoverResearchAssets(page: string, limit = Number.MAX_SA
   onHtml?: (html: string) => void;
 } = {}) {
   const pageUrl = safeUrl(page);
-  const html = options.html ?? (await boundedFetch(pageUrl, "text/html", MAX_PAGE_BYTES, options.fetch ? { fetch: options.fetch } : {})).bytes.toString("utf8");
+  const html = options.html ?? (await boundedFetch(pageUrl, "text/html", MAX_PAGE_BYTES, { fetch: options.fetch, signal: options.signal })).bytes.toString("utf8");
   const content = researchContent(html);
   const contentText = plainText(content.html).toLowerCase();
   rejectVerificationPage(plainText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? ""), plainText(html));
@@ -498,11 +515,11 @@ interface ResearchAsset {
   fetched_at: string;
 }
 
-export async function fetchResearchAsset(workspaceDir: string, params: { runId: string; id: string; url: string; kind?: string; description?: string; sourcePageUrl?: string; sourceContext?: string; relevanceBasis?: string; relevanceStatus?: "likely" | "uncertain"; matchedTerms?: string[]; doNotReplace?: boolean; allowedForEdit?: boolean }) {
+export async function fetchResearchAsset(workspaceDir: string, params: { runId: string; id: string; url: string; kind?: string; description?: string; sourcePageUrl?: string; sourceContext?: string; relevanceBasis?: string; relevanceStatus?: "likely" | "uncertain"; matchedTerms?: string[]; doNotReplace?: boolean; allowedForEdit?: boolean }, signal?: AbortSignal) {
   const runId = safeRunId(params.runId);
   const id = safeRunId(params.id);
   const url = safeUrl(params.url);
-  const { response, bytes } = await boundedFetch(url, "image/*", MAX_ASSET_BYTES);
+  const { response, bytes } = await boundedFetch(url, "image/*", MAX_ASSET_BYTES, { signal });
   const type = imageType(response.headers.get("content-type") ?? "", bytes, url);
   const assetDir = resolveInside(workspaceDir, join("runs", runId, "research", "assets"));
   await mkdir(assetDir, { recursive: true });
@@ -576,4 +593,13 @@ export async function validateResearchAssets(workspaceDir: string, params: { run
   await mkdir(dirname(validationPath), { recursive: true });
   await writeFile(validationPath, JSON.stringify(validation, null, 2), "utf8");
   return { ok: true, validation, path: relative(workspaceDir, validationPath).replaceAll("\\", "/") };
+}
+
+export async function hasResearchPageCache(workspaceDir: string, runId: string, input: string): Promise<boolean> {
+  const url = safeUrl(input);
+  const key = createHash('sha256').update(url.href).digest('hex');
+  const path = resolveInside(workspaceDir, join('runs', safeRunId(runId), 'research', 'sources', `${key}.page-cache.json`));
+  const ttl = Math.max(0, Number(process.env.DREAMATIC_RESEARCH_CACHE_TTL_MS ?? 86_400_000) || 0);
+  const cached = await readFile(path, 'utf8').then((text) => JSON.parse(text) as { version: number; url: string; fetchedAt: number }).catch(() => undefined);
+  return Boolean(cached && cached.version === 1 && cached.url === url.href && Date.now() - cached.fetchedAt < ttl);
 }

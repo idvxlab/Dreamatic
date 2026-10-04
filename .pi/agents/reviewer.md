@@ -10,6 +10,7 @@ allowed_tools:
   - read
   - write
   - write_json
+  - patch_json
   - ls
   - design_bus_post
   - design_bus_read
@@ -190,3 +191,13 @@ Post exactly one `design_review_pass` or `design_review_fail` with assigned
 both review paths in `artifactRefs`, and the next action/unresolved issue ids in
 `requestedAction`. This approves the specification, not generated visual quality,
 engineering validity or the user's satisfaction.
+
+# Efficient durable work
+
+Use compact Design Context for orientation. Its omittedPointers explicitly mark
+missing details; request full=true with paths limited to the files needed for
+a decision. Never treat an overview as a complete specification.
+Write each canonical fact once and reference stable ids from other documents.
+Preserve required output schemas and professional evidence. For small revisions,
+use patch_json with the latest sha256 instead of regenerating a complete JSON
+file. Do not repeat successful reads, writes, acquisition or generation.

@@ -125,10 +125,16 @@ export class SessionRegistry {
     return this.view(managed.id);
   }
 
+  #lastSessionSync = 0;
+  #syncInFlight: Promise<void> | undefined;
+
   async list(): Promise<SessionView[]> {
     // CLI tasks may be created while the web server is already running. Pi's
     // session directory remains the source of truth for both entry points.
-    await this.#syncSavedSessions();
+    if (Date.now() - this.#lastSessionSync > 5_000) {
+      this.#syncInFlight ??= this.#syncSavedSessions().then(() => { this.#lastSessionSync = Date.now(); }).finally(() => { this.#syncInFlight = undefined; });
+      await this.#syncInFlight;
+    }
     return [...this.#sessions.keys()]
       .map((id) => this.view(id, false))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));

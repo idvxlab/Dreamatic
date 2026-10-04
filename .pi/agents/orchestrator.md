@@ -15,6 +15,7 @@ allowed_tools:
   - read
   - write
   - write_json
+  - patch_json
   - edit
   - ls
   - grep
@@ -243,3 +244,13 @@ key intent/tradeoffs and remaining risks from committed summaries. Distinguish
 specification approval, produced files, mechanical integrity, visual fidelity,
 engineering validity and user acceptance. Current delivery is static imagery and
 local presentation, not proof of implemented software, motion or physical products.
+
+# Efficient durable work
+
+Use compact Design Context for orientation. Its omittedPointers explicitly mark
+missing details; request full=true with paths limited to the files needed for
+a decision. Never treat an overview as a complete specification.
+Write each canonical fact once and reference stable ids from other documents.
+Preserve required output schemas and professional evidence. For small revisions,
+use patch_json with the latest sha256 instead of regenerating a complete JSON
+file. Do not repeat successful reads, writes, acquisition or generation.

@@ -1,3 +1,5 @@
+import type { Dirent } from "node:fs";
+import { indexedJsonl } from "./jsonl-index.js";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -205,9 +207,21 @@ function record(value: unknown): Record<string, unknown> {
     : {};
 }
 
+const directoryEntries = new Map<string, { mtimeMs: number; entries: Dirent[] }>();
+async function cachedEntries(directory: string): Promise<Dirent[]> {
+  const info = await stat(directory).catch(() => undefined);
+  if (!info) { directoryEntries.delete(directory); return []; }
+  const cached = directoryEntries.get(directory);
+  if (cached?.mtimeMs === info.mtimeMs) return cached.entries;
+  const entries = await readdir(directory, { withFileTypes: true }).catch(() => []);
+  directoryEntries.delete(directory); directoryEntries.set(directory, { mtimeMs: info.mtimeMs, entries });
+  while (directoryEntries.size > 2048) directoryEntries.delete(directoryEntries.keys().next().value!);
+  return entries;
+}
+
 async function walk(directory: string): Promise<string[]> {
   const found: string[] = [];
-  for (const child of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+  for (const child of await cachedEntries(directory)) {
     if (child.name === "history" && basename(dirname(directory)) === "runs") continue;
     const path = join(directory, child.name);
     if (child.isDirectory()) found.push(...await walk(path));
@@ -322,7 +336,8 @@ async function indexAgentSession(path: string, agent: string): Promise<AgentSess
   const cached = agentSessionCache.get(path);
   if (cached?.mtimeMs === info.mtimeMs) return cached.session;
 
-  const source = await readFile(path, "utf8").catch(() => "");
+  const jsonl = await indexedJsonl(path);
+  const source = jsonl.source;
   const actions = new Map<string, AgentActionView>();
   const tasks: string[] = [];
   const assistantOutputs: string[] = [];
@@ -332,9 +347,9 @@ async function indexAgentSession(path: string, agent: string): Promise<AgentSess
   let updatedAt: string | undefined;
   let finalAssistantState: "running" | "completed" | "interrupted" = "running";
 
-  for (const [index, line] of source.split(/\r?\n/).filter(Boolean).entries()) {
+  for (const [index, value] of jsonl.rows.entries()) {
     try {
-      const envelope = record(JSON.parse(line) as unknown);
+      const envelope = record(value);
       const at = typeof envelope.timestamp === "string" ? envelope.timestamp : undefined;
       if (at) {
         createdAt ??= at;
@@ -452,13 +467,14 @@ async function indexSessionFile(path: string, label: "CLI task" | "Design brief"
   const info = await stat(path);
   const cached = sessionFileCache.get(path);
   if (cached?.mtimeMs === info.mtimeMs) return cached;
-  const source = await readFile(path, "utf8").catch(() => "");
+  const jsonl = await indexedJsonl(path);
+  const source = jsonl.source;
   const activity: TimelineView[] = [];
   const canonicalRunIds = new Set<string>();
   let sessionId: string | undefined;
-  for (const [index, line] of source.split(/\r?\n/).filter(Boolean).entries()) {
+  for (const [index, value] of jsonl.rows.entries()) {
     try {
-      const envelope = record(JSON.parse(line) as unknown);
+      const envelope = record(value);
       if (envelope.type === "session" && typeof envelope.id === "string") sessionId = envelope.id;
       if (envelope.type !== "message") continue;
       const message = record(envelope.message);
@@ -492,10 +508,11 @@ async function indexSessionFile(path: string, label: "CLI task" | "Design brief"
 async function busActivity(runDir: string): Promise<TimelineView[]> {
   const result: TimelineView[] = [];
   const retryByOperation = new Map<string, TimelineView>();
-  const lines = await readFile(join(runDir, "bus.jsonl"), "utf8").catch(() => "");
-  for (const [index, line] of lines.split(/\r?\n/).filter(Boolean).entries()) {
+  const rows = (await indexedJsonl(join(runDir, "bus.jsonl")).catch(() => ({ rows: [] }))).rows;
+  for (const [index, value] of rows.entries()) {
     try {
-      const event = record(JSON.parse(line) as unknown);
+      const event = record(value);
+      if (["agent_cleanup_metrics", "image_request_metrics", "image_item_finished"].includes(String(event.type))) continue;
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       const operation = typeof event.operation === "string" ? event.operation : type;
       if (type === "operation_retry") {
@@ -566,11 +583,11 @@ async function showcasePath(runDir: string): Promise<string | undefined> {
   return undefined;
 }
 
-export async function runInventory(workspaceDir: string): Promise<RunView[]> {
+export async function runInventory(workspaceDir: string, options: { summary?: boolean; runId?: string } = {}): Promise<RunView[]> {
   const runsDir = join(workspaceDir, "runs");
   const runs: RunView[] = [];
   for (const entry of await readdir(runsDir, { withFileTypes: true }).catch(() => [])) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || (options.runId && entry.name !== options.runId)) continue;
     const runDir = join(runsDir, entry.name);
     const info = await stat(runDir);
     const brief: Record<string, unknown> = await readFile(join(runDir, "brief.json"), "utf8").then((source) => record(JSON.parse(source) as unknown)).catch(() => ({}));
@@ -580,12 +597,12 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
     const documents = files
       .filter((path) => {
         const runPath = relative(runDir, path).replaceAll("\\", "/");
-        return !runPath.startsWith("final/") && /\.(md|json)$/i.test(path) && !/[\\/](brief|run-state)\.json$/i.test(path);
+        return !runPath.startsWith("final/") && !runPath.startsWith(".performance/") && !/\.(page-cache|acquisition-budget)\.json$/u.test(path) && /\.(md|json)$/i.test(path) && !/[\\/](brief|run-state)\.json$/i.test(path);
       })
       .map((path) => relative(runDir, path).replaceAll("\\", "/"));
-    const session = await sessionActivity(workspaceDir, entry.name);
-    const childSessions = await agentSessions(runDir);
-    const activity = [...await busActivity(runDir), ...session.activity]
+    const session = options.summary && typeof brief.sessionId === "string" ? { sessionId: brief.sessionId, activity: [] } : await sessionActivity(workspaceDir, entry.name);
+    const childSessions = options.summary ? [] : await agentSessions(runDir);
+    const activity = options.summary ? [] : [...await busActivity(runDir), ...session.activity]
       .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")))
       .slice(-40);
     const rawBrief = typeof brief.brief === "string" ? brief.brief.trim() : "";
@@ -608,8 +625,8 @@ export async function runInventory(workspaceDir: string): Promise<RunView[]> {
         const runPath = relative(runDir, file).replaceAll("\\", "/");
         return /\.(png|jpe?g|webp|gif|svg|html)$/i.test(file) && (!runPath.startsWith("final/") || runPath === "final/00-index.html");
       }).length,
-      documents,
-      notes: await runNotes(runDir),
+      documents: options.summary ? [] : documents,
+      notes: options.summary ? [] : await runNotes(runDir),
       activity,
       agentSessions: childSessions.map(agentSessionSummary),
       ...(path ? { showcasePath: relative(workspaceDir, path).replaceAll("\\", "/") } : {}),

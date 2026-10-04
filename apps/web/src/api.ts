@@ -6,8 +6,29 @@ async function parse<T>(response: Response): Promise<T> {
   return value as T;
 }
 
+const getCache = new Map<string, { etag: string; value: unknown }>();
+const getInFlight = new Map<string, Promise<unknown>>();
+async function conditionalGet<T>(url: string): Promise<T> {
+  const pending = getInFlight.get(url);
+  if (pending) return pending as Promise<T>;
+  const request = fetchConditional<T>(url); getInFlight.set(url, request);
+  try { return await request; } finally { if (getInFlight.get(url) === request) getInFlight.delete(url); }
+}
+async function fetchConditional<T>(url: string): Promise<T> {
+  const cached = getCache.get(url);
+  const response = await fetch(url, cached ? { headers: { "If-None-Match": cached.etag } } : {});
+  if (response.status === 304 && cached) return cached.value as T;
+  const value = await parse<T>(response);
+  const etag = response.headers.get("etag");
+  if (etag) {
+    getCache.delete(url); getCache.set(url, { etag, value });
+    while (getCache.size > 128) getCache.delete(getCache.keys().next().value!);
+  }
+  return value;
+}
+
 export async function listSessions(): Promise<SessionView[]> {
-  return parse(await fetch("/api/sessions"));
+  return conditionalGet("/api/sessions");
 }
 
 export async function createSession(projectId?: string, title?: string): Promise<SessionView> {
@@ -19,11 +40,11 @@ export async function abortSession(sessionId: string): Promise<{ id: string; int
 }
 
 export async function listAssets(): Promise<Asset[]> {
-  return parse(await fetch("/api/assets"));
+  return conditionalGet("/api/assets");
 }
 
 export async function listRunAssets(runId: string): Promise<Asset[]> {
-  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/assets`));
+  return conditionalGet(`/api/runs/${encodeURIComponent(runId)}/assets`);
 }
 
 export async function getCanvasState(runId: string): Promise<CanvasState | null> {
@@ -39,7 +60,11 @@ export async function saveCanvasState(runId: string, state: CanvasState): Promis
 }
 
 export async function listRuns(): Promise<RunView[]> {
-  return parse(await fetch("/api/runs"));
+  return conditionalGet("/api/runs?summary=1");
+}
+
+export async function getRun(runId: string): Promise<RunView> {
+  return conditionalGet(`/api/runs/${encodeURIComponent(runId)}`);
 }
 
 export async function renameRun(runId: string, title: string): Promise<{ id: string; title: string }> {
@@ -137,7 +162,7 @@ export async function streamPrompt(
   const response = await fetch(`/api/sessions/${sessionId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, images, projectId }),
+    body: JSON.stringify({ text, images, projectId, compactEvents: true }),
   });
   if (!response.ok || !response.body) throw new Error(`Request failed: ${response.status}`);
   const reader = response.body.getReader();
