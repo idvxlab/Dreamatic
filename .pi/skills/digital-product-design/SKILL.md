@@ -4,6 +4,9 @@ description: "Define digital product concepts, feature architecture, value propo
 metadata:
   audience: designer
   domain_type: digital_product_design
+  design_categories: [ux]
+  module_type: discipline
+  supported_outputs: [html]
 ---
 
 # Digital Product Design
@@ -45,16 +48,18 @@ physical controls, software and service without assuming universal connectivity.
 ## Proposal and delivery
 Map applicable journeys, roles, major task steps, navigation, content variants,
 normal/empty/loading/error states, device contexts and meaningful concept
-alternatives. Plan enough screen and scenario images to explain the developed
+alternatives. Design enough pages, states and scenarios to explain the developed
 decisions, not just one representative journey. Include more than a polished landing screen when the outcome depends
 on several tasks, roles or states. Write intended behavior, content, rules and
 validation hypotheses into the canonical Design Spec.
-There is no image-count ceiling unless the user specifies one; prioritize
-readable coverage over cramming many consequential states into one tiny board.
+Choose page/state coverage from the task and requested scope; keep consequential
+flows directly inspectable rather than cramming them into a tiny overview.
 
 Distinguish a conceptual interface image from a functional application.
-Dreamatic's current output is image-based: specify screens, explanatory
-content and behavior for later execution without promising deployed software.
+For UI tasks, author HTML/CSS/JS page prototypes with realistic content and
+local interaction, using html-interface for the delivery contract. Builder
+generates those approved sources. Record real data/integration dependencies
+without claiming that a local prototype implements deployed services.
 
 ## Quality judgment
 A strong concept connects an important user need to a comprehensible and

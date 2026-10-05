@@ -6,7 +6,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 import { loadEnvFile } from "node:process";
 import { createDreamaticExtension, dreamaticPersonaTools, dreamaticPersonaPromptBlock, validateDreamaticPersonaContracts } from "./extension.js";
 import { safeRunId } from "./paths.js";
@@ -45,6 +45,9 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "image_generate_batch",
   "image_edit",
   "image_edit_batch",
+  "execute_image_plan",
+  "execute_design_plan",
+  "html_generate",
   "compare_images",
   "select_artifact",
   "build_finalize",
@@ -60,6 +63,16 @@ export interface CreateDreamaticSessionOptions {
   sessionFile?: string;
   inMemory?: boolean;
   projectId?: string;
+  getProjectId?: () => string | undefined;
+}
+
+/** Keep Pi's tools; explicitly expose installed local binaries to its normal resolver. */
+export function configureToolSearchPath(): void {
+  const configured = process.env.DREAMATIC_TOOL_PATH?.split(delimiter).filter(Boolean) ?? [];
+  if (!configured.length) return;
+  if (configured.some((path) => !isAbsolute(path))) throw new Error("DREAMATIC_TOOL_PATH entries must be absolute directories");
+  const current = process.env.PATH?.split(delimiter).filter(Boolean) ?? [];
+  process.env.PATH = [...new Set([...configured, ...current])].join(delimiter);
 }
 
 export async function createDreamaticSession(options: CreateDreamaticSessionOptions) {
@@ -69,6 +82,7 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
+  configureToolSearchPath();
   const persona = safeRunId(options.persona ?? "orchestrator");
   const profile = dreamaticProviderFromEnv();
   const personaPath = join(options.repoRoot, ".pi", "agents", `${persona}.md`);
@@ -85,7 +99,7 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
       ...base,
       dreamaticPersonaPromptBlock(`# Active Dreamatic persona: ${persona}\n\n${personaPrompt}`),
     ],
-    extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, personaPath, ...(options.projectId ? { projectId: options.projectId } : {}) })],
+    extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, personaPath, get projectId() { return options.getProjectId?.() ?? options.projectId; } })],
   });
   await resourceLoader.reload();
   const thinkingLevel = dreamaticThinkingLevel(persona);

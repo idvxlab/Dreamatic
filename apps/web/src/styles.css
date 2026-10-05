@@ -341,7 +341,10 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .canvas-saving { padding: 0 7px; color: #92948d; font-size: 9px; }
 .showcase-view { position: absolute; inset: 0; padding: 16px; background: #deddD7; }
 .showcase-view iframe { width: 100%; height: 100%; border: 1px solid var(--line); border-radius: 10px; background: white; box-shadow: 0 12px 35px rgba(47,48,42,.14); }
-.showcase-view > a { position: absolute; right: 28px; top: 28px; display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: 7px; background: #292a25; color: white; text-decoration: none; font-size: 10px; }
+.preview-actions { position: absolute; z-index: 2; right: 28px; top: 28px; display: flex; gap: 8px; }
+.preview-actions a, .preview-actions button { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border: 0; border-radius: 7px; background: #292a25; color: white; text-decoration: none; font-size: 10px; cursor: pointer; }
+.preview-actions button:disabled { opacity: .6; cursor: wait; }
+.preview-export-error { position: absolute; z-index: 2; top: 64px; right: 28px; max-width: 360px; padding: 10px; background: #fff; color: #a32929; border-radius: 7px; }
 
 /* Reference block in the agent timeline */
 .reference-block { margin-bottom: 12px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fffefb; }
@@ -418,3 +421,9 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+.preview-pages { position: absolute; z-index: 2; top: 28px; left: 28px; padding: 8px 12px; background: var(--surface, #fff); border: 1px solid #deded7; border-radius: 8px; font-size: 12px; }
+.preview-pages select { margin-left: 8px; padding: 4px; border: 1px solid #deded7; border-radius: 4px; }
+.showcase-view .prototype-frame { display: block; margin: 0 auto; max-width: none; }
+.showcase-view:has(.prototype-frame) { overflow: auto; }
+.prototype-loading { padding: 80px 32px; color: #74766d; }
+.canvas-html-page button { border: 0; background: transparent; color: inherit; display: flex; gap: 8px; align-items: center; cursor: pointer; }

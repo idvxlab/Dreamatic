@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createServer } from "node:http";
+import { encodeImageOutput, imageEncoding } from "../dist/image-output.js";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -190,6 +192,7 @@ test("discoverable Skills have matching names and role-specific audiences", asyn
     "exhibition-wayfinding",
     "fashion-textile-design",
     "game-experience-design",
+    "html-interface",
     "image-prompting",
     "industrial-design",
     "information-design",
@@ -264,7 +267,7 @@ test("run initialization preserves actual user wording separately from titles an
     const original = "帮我为人形机器人设计肌肉晶格结构";
     await handlers.get("before_agent_start")({ prompt: `${original}\n\n[DREAMATIC PROJECT OWNERSHIP]\nRuntime instruction` });
     await handlers.get("before_agent_start")({ prompt: "视觉表达；自由探索" });
-    await tools.get("run_init").execute("init", { runIdOverride: "first", brief: "A resolved visual concept", projectTitle: "筋织人形晶格" });
+    await tools.get("run_init").execute("init", { runIdOverride: "first", brief: "A resolved visual concept", projectTitle: "筋织人形晶格", designScopes: [{ id: "lattice", category: "industrial", task: "Muscle lattice concept" }] });
     const brief = JSON.parse(await readFile(join(workspaceDir, "runs/first/brief.json"), "utf8"));
     assert.equal(brief.originalRequest, original);
     assert.equal(brief.originalRequestSource, "pi_user_prompt");
@@ -272,7 +275,7 @@ test("run initialization preserves actual user wording separately from titles an
     assert.equal(brief.brief, "A resolved visual concept");
     const context = JSON.parse((await tools.get("design_context_read").execute("context", { runId: "first", audience: "researcher" })).content[0].text);
     assert.equal(JSON.parse(context.files.find((file) => file.path === "brief.json").content).originalRequest, original);
-    await tools.get("run_init").execute("second", { runIdOverride: "second", brief: "Another task summary", projectTitle: "Another project" });
+    await tools.get("run_init").execute("second", { runIdOverride: "second", brief: "Another task summary", projectTitle: "Another project", designScopes: [{ id: "concept", category: "industrial", task: "Another concept" }] });
     const second = JSON.parse(await readFile(join(workspaceDir, "runs/second/brief.json"), "utf8"));
     assert.equal(second.originalRequest, null);
     assert.equal(second.originalRequestSource, "unavailable");
@@ -290,12 +293,12 @@ test("persisted server input takes precedence over clarification or recovery pro
     await writeFile(join(runDir, "run-state.json"), JSON.stringify({ status: "draft" }));
     const { tools, handlers } = await registeredTools(workspaceDir);
     await handlers.get("before_agent_start")({ prompt: "Resume after transient failure" });
-    await tools.get("run_init").execute("init", { runIdOverride: "draft", brief: "Resolved exhibition brief", projectTitle: "织忆新展" });
+    await tools.get("run_init").execute("init", { runIdOverride: "draft", brief: "Resolved exhibition brief", projectTitle: "织忆新展", designScopes: [{ id: "exhibition", category: "space", task: "Craft exhibition" }] });
     const brief = JSON.parse(await readFile(join(runDir, "brief.json"), "utf8"));
     assert.equal(brief.originalRequest, "为地方传统工艺设计展览");
     assert.equal(brief.originalRequestSource, "server_user_input");
     const { tools: unknownTools } = await registeredTools(workspaceDir);
-    await unknownTools.get("run_init").execute("unknown", { runIdOverride: "unknown", brief: "An agent summary", projectTitle: "艺术标题" });
+    await unknownTools.get("run_init").execute("unknown", { runIdOverride: "unknown", brief: "An agent summary", projectTitle: "艺术标题", designScopes: [{ id: "visual", category: "media_communication", task: "Visual concept" }] });
     assert.equal(JSON.parse(await readFile(join(workspaceDir, "runs/unknown/brief.json"), "utf8")).originalRequest, null);
   } finally {
     await rm(workspaceDir, { recursive: true, force: true });
@@ -638,7 +641,7 @@ test("persona tool policies keep reasoning separate from execution", () => {
   const researcher = dreamaticPersonaTools("researcher", ["read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
   const designer = dreamaticPersonaTools("designer", ["read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
   const reviewer = dreamaticPersonaTools("reviewer", ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"]);
-  const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "showcase_template", "build_finalize"]);
+  const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"]);
   assert.equal(researcher.includes("view_image"), false);
   assert.equal(researcher.includes("research_asset_validate"), false);
   assert.equal(researcher.includes("bash"), false);
@@ -1185,7 +1188,7 @@ test("design completion normalizes common manifest aliases before validation", a
       designSystemRef: "plan/design_system.json",
       outputs: [{
         id: "gallery",
-        path: "artifacts/00-gallery.html",
+        path: "artifacts/00-gallery.png",
         kind: "showcase",
         purpose: "Present the result",
         acceptanceCriteria: "Contains the complete narrative",
@@ -1209,7 +1212,7 @@ test("design completion normalizes common manifest aliases before validation", a
     const manifest = JSON.parse(await readFile(join(runDir, "plan", "deliverable_manifest.json"), "utf8"));
     const [event] = (await readFile(join(runDir, "bus.jsonl"), "utf8")).trim().split(/\r?\n/).map(JSON.parse);
     assert.equal(manifest.runId, "demo");
-    assert.equal(manifest.deliverables[0].file, "artifacts/00-gallery.html");
+    assert.equal(manifest.deliverables[0].file, "artifacts/00-gallery.png");
     assert.equal(manifest.deliverables[0].acceptance_test, "Contains the complete narrative");
     assert.equal(manifest.deliverables[0].size, "768x768");
     assert.equal(typeof event.commitReceipt.files["plan/design_plan.json"], "string");
@@ -1907,7 +1910,7 @@ test("reference acquisition has no legacy Run, batch or page quantity ceiling", 
     assert.equal(assets.succeeded, 11);
     await tools.get("research_asset_fetch").execute("single-after-batch", { runId, id: "last", url: "https://example.test/last.png" });
     assert.equal(JSON.parse(await readFile(join(runDir, "research/assets/manifest.json"), "utf8")).assets.length, 53);
-    const newRun = JSON.parse((await tools.get("run_init").execute("new-run", { brief: "Reference coverage", projectTitle: "Reference test", runIdOverride: "no-reference-budget" })).content[0].text);
+    const newRun = JSON.parse((await tools.get("run_init").execute("new-run", { brief: "Reference coverage", projectTitle: "Reference test", runIdOverride: "no-reference-budget", designScopes: [{ id: "visual", category: "media_communication", task: "Visual concept" }] })).content[0].text);
     assert.equal(JSON.parse(await readFile(join(newRun.runDir, "brief.json"), "utf8")).budgets.referenceAssets, undefined);
   } finally {
     globalThis.fetch = originalFetch;
@@ -2478,4 +2481,107 @@ test('concurrent patches with the same version cannot both overwrite a JSON file
     assert.equal(attempts.filter((result) => result.status === 'fulfilled').length, 1);
     assert.equal(attempts.filter((result) => result.status === 'rejected').length, 1);
   } finally { await rm(workspaceDir, { recursive: true, force: true }); }
+});
+
+
+test('image outputs are validated before any provider request for individual generation/edit and the whole batch', async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-image-before-provider-'));
+  const oldFetch=globalThis.fetch;
+  let requests=0;
+  try {
+    globalThis.fetch=async()=>{requests++;throw new Error('Provider must not be called');};
+    const {tools}=await registeredTools(workspace);
+    const task={id:'hero',intent:'Approved image',prompt:'Exact prompt',acceptanceCriteria:['Exists'],outputPath:'artifacts/hero.webp'};
+    await assert.rejects(tools.get('image_generate').execute('single',{runId:'demo',...task}),/\.png/);
+    await assert.rejects(tools.get('image_edit').execute('edit',{runId:'demo',...task,diagnosis:['Revise'],changes:['Change context'],preserve:['Identity'],referenceImagePaths:['missing.png']}),/\.png/);
+    await assert.rejects(tools.get('image_generate_batch').execute('batch',{runId:'demo',tasks:[{...task,id:'valid',outputPath:'artifacts/valid.png'},task]}),/\.png/);
+    await assert.rejects(tools.get('image_generate_batch').execute('duplicate',{runId:'demo',tasks:[{...task,id:'one',outputPath:'artifacts/shared.png'},{...task,id:'two',outputPath:'artifacts/shared.png'}]}),/unique/);
+    assert.equal(requests,0);
+  } finally {globalThis.fetch=oldFetch;await rm(workspace,{recursive:true,force:true});}
+});
+
+test('a real HTTP body stall is cancelled independently of a 50-minute deadline, retries finitely, and reports bytes and phases', {timeout:10000}, async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-real-body-stall-'));
+  const keys=['DREAMATIC_IMAGE_API_KEY','DREAMATIC_IMAGE_GENERATION_ENDPOINT','DREAMATIC_IMAGE_TIMEOUT_MS','DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS','DREAMATIC_IMAGE_RETRY_ATTEMPTS','DREAMATIC_OPERATION_ATTEMPT_BUDGET'];
+  const old=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+  let requests=0,closed=false;
+  const server=createServer((req,res)=>{
+    requests++;
+    res.setHeader('Content-Type','application/json');
+    if(requests===1) {res.write('{"data":[');res.on('close',()=>{closed=true;});}
+    else res.end(JSON.stringify({data:[{b64_json:PNG_1X1.toString('base64')}]}));
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try {
+    process.env.DREAMATIC_IMAGE_API_KEY='test';
+    process.env.DREAMATIC_IMAGE_GENERATION_ENDPOINT=`http://127.0.0.1:${server.address().port}/images`;
+    process.env.DREAMATIC_IMAGE_TIMEOUT_MS='3000000';
+    process.env.DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS='150';
+    process.env.DREAMATIC_IMAGE_RETRY_ATTEMPTS='2';
+    process.env.DREAMATIC_OPERATION_ATTEMPT_BUDGET='2';
+    await mkdir(join(workspace,'runs/body-stall'),{recursive:true});
+    const {tools}=await registeredTools(workspace);
+    const progress=[];
+    const result=await tools.get('image_generate').execute('generate',{runId:'body-stall',id:'hero',intent:'Image',prompt:'Exact approved prompt',acceptanceCriteria:['Exists']},undefined,u=>progress.push(u));
+    assert.equal(result.details.ok,true);assert.equal(requests,2);assert.equal(closed,true);
+    assert.deepEqual(await readFile(join(workspace,result.details.path)),PNG_1X1);
+    const phases=progress.flatMap(u=>u.details.imageRequest?[u.details.imageRequest.phase]:[]);
+    for(const phase of ['queued','headers','body'])assert.ok(phases.includes(phase));
+    assert.ok(progress.some(u=>/retry 2/.test(u.content[0].text)));
+    const bus=(await readFile(join(workspace,'runs/body-stall/bus.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    const first=bus.find(e=>e.type==='image_request_metrics'&&e.attempt===1);
+    assert.equal(first.bodyIdleTimedOut,true);assert.equal(first.timedOut,false);
+    assert.equal(first.phase,'body');assert.equal(first.responseBytes,9);assert.ok(first.bodyMs>=100);
+    assert.equal(bus.filter(e=>e.type==='operation_retry').length,1);
+    assert.equal(bus.filter(e=>e.type==='operation_finished'&&e.status==='completed').length,1);
+  } finally {
+    for(const [k,v] of Object.entries(old)) {if(v===undefined)delete process.env[k];else process.env[k]=v;}
+    server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
+    await rm(workspace,{recursive:true,force:true});
+  }
+});
+
+test('interrupting a stalled image batch propagates cancellation, releases admission capacity and allows another request', {timeout:5000}, async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-cancel-image-batch-'));
+  const oldFetch=globalThis.fetch,oldKey=process.env.DREAMATIC_IMAGE_API_KEY;
+  try {
+    process.env.DREAMATIC_IMAGE_API_KEY='test';
+    await mkdir(join(workspace,'runs/cancel-batch'),{recursive:true});
+    let started;
+    const receiving=new Promise(resolve=>{started=resolve;});
+    globalThis.fetch=async()=>{started();return new Response(new ReadableStream());};
+    const {tools}=await registeredTools(workspace);
+    const controller=new AbortController();
+    const task={id:'hero',intent:'Image',prompt:'Exact prompt',acceptanceCriteria:['Exists']};
+    const batch=tools.get('image_generate_batch').execute('batch',{runId:'cancel-batch',tasks:[task]},controller.signal);
+    const rejected=assert.rejects(batch,/User cancelled/);
+    await receiving;controller.abort(new Error('User cancelled network request'));await rejected;
+    const bus=(await readFile(join(workspace,'runs/cancel-batch/bus.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(bus.some(e=>e.type==='operation_retry'),false);
+    assert.equal(bus.at(-1).status,'interrupted');
+    globalThis.fetch=async()=>new Response(JSON.stringify({data:[{b64_json:PNG_1X1.toString('base64')}]}));
+    const next=await tools.get('image_generate').execute('next',{runId:'cancel-batch',...task});
+    assert.equal(next.details.ok,true);
+  } finally {globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.DREAMATIC_IMAGE_API_KEY;else process.env.DREAMATIC_IMAGE_API_KEY=oldKey;await rm(workspace,{recursive:true,force:true});}
+});
+
+
+test('JPEG editing and URL-delivered images keep agreed paths and store the actual declared encoding', async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-jpeg-edit-download-'));
+  const oldFetch=globalThis.fetch,oldKey=process.env.DREAMATIC_IMAGE_API_KEY;
+  try {
+    process.env.DREAMATIC_IMAGE_API_KEY='test';await writeFile(join(workspace,'source.png'),PNG_1X1);
+    await mkdir(join(workspace,'runs/demo'),{recursive:true});
+    const {tools}=await registeredTools(workspace);
+    globalThis.fetch=async()=>new Response(JSON.stringify({data:[{b64_json:PNG_1X1.toString('base64')}]}));
+    const result=await tools.get('image_edit').execute('edit',{runId:'demo',id:'edited',intent:'Approved edit',diagnosis:['New context'],changes:['Adapt application'],preserve:['Identity'],prompt:'Exact approved prompt',referenceImagePaths:['source.png'],acceptanceCriteria:['Exists'],outputPath:'artifacts/edited.jpeg'});
+    assert.equal(result.details.path,'runs/demo/artifacts/edited.jpeg');
+    assert.equal(imageEncoding(await readFile(join(workspace,result.details.path))),'jpeg');
+    const jpeg=encodeImageOutput(PNG_1X1,'artifacts/download.jpg').bytes;
+    globalThis.fetch=async(url)=>String(url)==='https://fixture.test/generated.jpg'?new Response(jpeg):new Response(JSON.stringify({data:[{url:'https://fixture.test/generated.jpg'}]}));
+    const generated=await tools.get('image_generate').execute('download',{runId:'demo',id:'download',intent:'Image',prompt:'Exact approved prompt',acceptanceCriteria:['Exists'],outputPath:'artifacts/download.jpg'});
+    assert.deepEqual(await readFile(join(workspace,generated.details.path)),jpeg);
+    const png=await tools.get('image_generate').execute('png',{runId:'demo',id:'as-png',intent:'Image',prompt:'Exact approved prompt',acceptanceCriteria:['Exists'],outputPath:'artifacts/as-png.png'});
+    assert.equal(imageEncoding(await readFile(join(workspace,png.details.path))),'png');
+  } finally {globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.DREAMATIC_IMAGE_API_KEY;else process.env.DREAMATIC_IMAGE_API_KEY=oldKey;await rm(workspace,{recursive:true,force:true});}
 });

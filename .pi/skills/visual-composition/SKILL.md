@@ -5,6 +5,9 @@ license: MIT
 metadata:
   audience: designer
   domain_type: visual_composition
+  design_categories: []
+  module_type: cross_domain
+  supported_outputs: [image, html]
 ---
 
 # Visual Composition

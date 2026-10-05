@@ -4,6 +4,9 @@ description: "Design books, magazines, reports, presentations and publication sy
 metadata:
   audience: designer
   domain_type: editorial_design
+  design_categories: [media_communication]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Editorial and Publication Design

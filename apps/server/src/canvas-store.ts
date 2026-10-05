@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 
 export interface CanvasElementState {
   id: string;
-  kind: "image" | "text" | "group";
+  kind: "image" | "html" | "text" | "group";
   x: number;
   y: number;
   width: number;
@@ -36,7 +36,7 @@ export function normalizeCanvasState(runId: string, value: unknown): CanvasState
   const elements = Array.isArray(source.elements) ? source.elements.flatMap((candidate) => {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
     const item = candidate as Record<string, unknown>;
-    if (typeof item.id !== "string" || !["image", "text", "group"].includes(String(item.kind))) return [];
+    if (typeof item.id !== "string" || !["image", "html", "text", "group"].includes(String(item.kind))) return [];
     return [{
       id: item.id.slice(0, 180),
       kind: item.kind as CanvasElementState["kind"],

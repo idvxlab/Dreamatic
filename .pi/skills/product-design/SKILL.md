@@ -5,6 +5,9 @@ license: MIT
 metadata:
   audience: designer
   domain_type: product_design
+  design_categories: [industrial]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Product Design

@@ -291,3 +291,86 @@ test("a Reviewer fail verdict is a revision milestone rather than a transport er
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+
+test("actual classification appears as a top-level conversation message in live and restored workflows", async () => {
+  const { createDreamaticExtension } = await import('@dreamatic/design-agent');
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-classification-message-'));
+  try {
+    const tools = new Map();
+    createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
+    await tools.get('run_init').execute('init', { runIdOverride: 'classified', projectTitle: 'Connected product', brief: 'Design a device, UI and campaign', designScopes: [
+      { id: 'hardware', category: 'industrial', task: 'Device shape and ergonomics', rationale: 'Physical hardware was requested' },
+      { id: 'control', category: 'ux', task: 'Responsive control page', rationale: 'Interactive UI was requested' },
+      { id: 'campaign', category: 'media_communication', task: 'Campaign poster', rationale: 'An advertising poster was requested' },
+    ] });
+    const runDir = join(workspace, 'runs/classified');
+    const event = JSON.parse((await readFile(join(runDir, 'bus.jsonl'), 'utf8')).trim());
+    assert.equal(event.type, 'design_categories_identified');
+    const persisted = await workflowInventory(workspace, 'classified');
+    const message = persisted.find((node) => node.id === event.id);
+    assert.equal(message.kind, 'message');
+    assert.equal(message.actor, 'Orchestrator');
+    assert.match(message.detail, /工业设计.*UX 设计.*媒体传达设计/s);
+    assert.match(message.detail, /判断依据：Physical hardware was requested/);
+    const source = await readFile(new URL('../../web/src/workflow-live.ts', import.meta.url), 'utf8');
+    const helperUrl = new URL('../../../packages/design-agent/dist/workflow-retries.js', import.meta.url).href;
+    const compiled = ts.transpileModule(source.replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+    let live = applyWorkflowStreamEvent([], { type: 'agent_started', invocationId: 'designer', agent: 'designer', at: event.at });
+    live = applyWorkflowStreamEvent(live, event);
+    live = applyWorkflowStreamEvent(live, event);
+    assert.equal(live.filter((node) => node.id === event.id).length, 1);
+    assert.equal(live.find((node) => node.id === event.id).detail, message.detail);
+    const state = JSON.parse(await readFile(join(runDir, 'run-state.json'), 'utf8'));
+    state.status = 'complete';
+    await writeFile(join(runDir, 'run-state.json'), JSON.stringify(state));
+    await tools.get('run_revision').execute('revision', { runId: 'classified', feedback: 'Only improve the interface', designScopes: [{ id: 'control', category: 'ux', task: 'Improve the control page', rationale: 'User narrowed the requested scope' }] });
+    const revised = await workflowInventory(workspace, 'classified');
+    assert.equal(revised.filter((node) => node.kind === 'message' && node.actor === 'Orchestrator').length, 2);
+    assert.match(revised.find((node) => node.label.startsWith('设计类型已更新')).detail, /UX 设计.*Improve the control page/s);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test("historical classification display is read-only and does not invent unknown design types", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-classification-history-'));
+  try {
+    const runDir = join(workspace, 'runs/old'); await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, 'bus.jsonl'), '');
+    const brief = { runId: 'old', brief: 'Existing page', createdAt: '2026-01-01T00:00:00Z', resolvedScope: { designScopes: [{ id: 'page', category: 'ux', task: 'Academic page' }] } };
+    await writeFile(join(runDir, 'brief.json'), JSON.stringify(brief));
+    assert.ok((await workflowInventory(workspace, 'old')).some((node) => node.actor === 'Orchestrator' && node.detail.includes('UX 设计')));
+    assert.equal(await readFile(join(runDir, 'bus.jsonl'), 'utf8'), '');
+    brief.resolvedScope = {};
+    await writeFile(join(runDir, 'brief.json'), JSON.stringify(brief));
+    assert.equal((await workflowInventory(workspace, 'old')).some((node) => node.actor === 'Orchestrator'), false);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+
+test('running image progress is visible inside its tool in server snapshots and live updates, while finished output is retained', async () => {
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-image-progress-view-'));
+  try {
+    const helperUrl=new URL('../../../packages/design-agent/dist/workflow-retries.js',import.meta.url).href;
+    const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
+    const compiled=ts.transpileModule(source.replace('"../../../packages/design-agent/src/workflow-retries"',JSON.stringify(helperUrl)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+    const live=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
+    const runDir=join(workspace,'runs/image-progress');await mkdir(runDir,{recursive:true});
+    const base={invocationId:'builder-1',agent:'builder'};
+    const records=[
+      {...base,type:'agent_started',at:'2026-10-05T13:00:00Z'},
+      {...base,type:'tool_started',toolCallId:'batch',toolName:'image_generate_batch',at:'2026-10-05T13:00:01Z'},
+      {...base,type:'agent_progress',toolCallId:'batch',output:'Image IMG-02: receiving response · attempt 1 · 30s · 123 KiB',at:'2026-10-05T13:00:30Z'},
+    ];
+    await writeFile(join(runDir,'bus.jsonl'),records.map(JSON.stringify).join('\n')+'\n');
+    const snapshot=await workflowInventory(workspace,'image-progress');
+    const fromBus=snapshot.find(e=>e.id==='builder-1').children.find(e=>e.id==='batch');
+    assert.equal(fromBus.status,'running');assert.match(fromBus.output,/IMG-02.*123 KiB/);
+    let workflow=[];for(const event of records)workflow=live.applyWorkflowStreamEvent(workflow,event);
+    const tool=()=>workflow.find(e=>e.id==='builder-1').children.find(e=>e.id==='batch');
+    assert.equal(tool().output,fromBus.output);
+    workflow=live.applyWorkflowStreamEvent(workflow,{...base,type:'tool_finished',toolCallId:'batch',output:'Batch completed',at:'2026-10-05T13:01:00Z'});
+    workflow=live.applyWorkflowStreamEvent(workflow,{...base,type:'agent_progress',toolCallId:'batch',output:'Late progress',at:'2026-10-05T13:01:01Z'});
+    assert.equal(tool().output,'Batch completed');assert.equal(tool().status,'completed');
+  } finally {await rm(workspace,{recursive:true,force:true});}
+});

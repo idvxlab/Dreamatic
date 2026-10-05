@@ -21,7 +21,7 @@ const LIVE_TOOL_LABELS: Record<string, string> = {
   design_bus_read: "Reading workflow context",
   design_bus_post: "Updating workflow progress",
   artifact_lint: "Checking design deliverables",
-  export_package: "Preparing the final showcase",
+  export_package: "Preparing the final preview",
 };
 
 function liveToolLabel(name: string): string {

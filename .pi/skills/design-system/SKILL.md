@@ -5,6 +5,9 @@ license: MIT
 metadata:
   audience: designer
   domain_type: cross_domain_design_system
+  design_categories: []
+  module_type: cross_domain
+  supported_outputs: [image, html]
 ---
 
 # Design System

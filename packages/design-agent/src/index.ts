@@ -12,3 +12,7 @@ export type { ModelImagePreview } from "./image-preview.js";
 export { clarificationFromToolResult, type DesignClarificationRequest } from "./clarification.js";
 export { stopAfterCommittedTurn } from "./session-status.js";
 export { RUN_FILES, RUN_CONTEXT_SECTIONS, RUN_DOCUMENT_ALIASES, canonicalRunDocument, runDocumentCandidates, findRunDocument } from "./run-files.js";
+export { DESIGN_CAPABILITIES, deliveryContract, imagePlan, htmlTask, physicalRunFile } from "./design-contract.js";
+export type { Presentation, DeliveryContract } from "./design-contract.js";
+export { HTML_PREVIEW_CSP, HTML_CONTENT_TYPES } from "./html-delivery.js";
+export { DESIGN_CATEGORIES, designScopes, briefDesignScopes, designClassificationMessage } from "./design-categories.js";

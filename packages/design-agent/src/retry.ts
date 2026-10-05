@@ -48,6 +48,7 @@ export async function withRetry<T>(operation: (attempt: number) => Promise<T>, o
     options.signal?.throwIfAborted();
     try { return await operation(attempt); }
     catch (error) {
+      options.signal?.throwIfAborted();
       lastError = error;
       if (attempt >= attempts || !isRetryableError(error)) throw error;
       const exponential = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));

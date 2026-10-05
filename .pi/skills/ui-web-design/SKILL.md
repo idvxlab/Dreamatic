@@ -4,6 +4,9 @@ description: "Specify visual interfaces, responsive layouts and component states
 metadata:
   audience: designer
   domain_type: ui_web_design
+  design_categories: [ux]
+  module_type: discipline
+  supported_outputs: [html]
 ---
 
 # UI and Web Design
@@ -47,12 +50,15 @@ stop at a home screen and one detail screen without covering the developed
 design. There is no default output-count ceiling. Include different content
 densities and consequential states. Include device layouts
 when responsive behavior changes the design. Exact copy, numerical values and
-component behavior belong in structured content and specification; generated
-screen images illustrate the direction rather than certify pixel accuracy.
+component behavior belong in authored HTML/CSS/JS and the specification.
+Design a directly inspectable page prototype for UI tasks; image assets can
+support it, but screen images do not replace its behavior.
 
 Carry layout rules, component states, tokens and responsive decisions into the
-canonical Design Spec. Under the current image-based runtime, plan screen
-visuals and behavior specifications without claiming a functioning website.
+canonical Design Spec. Author the page sources in plan/html/<scope-id>/ for Builder to generate
+without redesign. Cover relevant navigation, states and responsive behavior
+with declarative interaction checks; use html-interface for delivery details.
+A local prototype does not establish backend integration or deployed service.
 
 ## Quality judgment
 Evaluate hierarchy, legibility, clear affordances, content resilience and

@@ -55,3 +55,14 @@ User -> Orchestrator -> Researcher -> Designer -> Reviewer
 The first implementation uses the mature coding-agent SDK rather than Pi's
 experimental server/client coordinator. The API boundary allows replacing the
 host later without rewriting the React application.
+
+## Scoped knowledge and typed delivery (v2.0.3)
+
+Orchestrator assigns design categories and task scopes. Designer discovers and
+activates appropriate Pi Skills per scope, then produces image plans or complete
+HTML page sources. Reviewer approves that specification; Builder mechanically
+dispatches approved image/HTML tasks. Existing image execution is retained.
+HTML pages can be the presentation themselves; mixed Galleries link the pages.
+The server serves interactive previews on an isolated committed-file origin.
+See [v2.0.3 contracts and Skill mapping](V2.0.3.md) for ownership, compatibility,
+output contracts and extension points.

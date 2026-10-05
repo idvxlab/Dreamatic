@@ -1,6 +1,6 @@
-import { ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, ZoomIn } from "lucide-react";
+import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCanvasState, saveCanvasState } from "../api";
+import { downloadProject, getCanvasState, getHtmlPreview, saveCanvasState } from "../api";
 import { assetUrl } from "../asset-url";
 import type { Asset, CanvasElementState, CanvasState, RunView } from "../types";
 
@@ -24,7 +24,7 @@ const CARD_GAP = 24;
 const CARD_WIDTH = 350;
 
 function overviewText(run: RunView, visualCount: number) {
-  return `${run.title}\n\n${visualCount} visual assets  ·  ${run.notes.length} design notes  ·  ${run.showcasePath ? "showcase available" : "showcase pending"}`;
+  return `${run.title}\n\n${visualCount} visual assets  ·  ${run.notes.length} design notes  ·  ${run.showcasePath ? "preview available" : "preview pending"}`;
 }
 
 function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
@@ -91,6 +91,14 @@ function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
     });
     y += Math.ceil(group.items.length / 3) * 320 + 54;
   }
+  if (run?.htmlEntries?.length) {
+    const pages = assets.filter((asset) => asset.kind === "html" && run.htmlEntries?.some((entry) => asset.path === `runs/${run.id}/${entry}`));
+    if (pages.length) {
+      elements.push({ id: "group-interfaces", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Interactive pages", role: "interface" });
+      y += 62;
+      pages.forEach((asset, index) => elements.push({ id: `asset-${asset.path}`, kind: "html", assetPath: asset.path, role: "interface", x: BOARD_X + (index % 3) * (CARD_WIDTH + CARD_GAP), y: y + Math.floor(index / 3) * 180, width: CARD_WIDTH, height: 140, text: asset.label }));
+    }
+  }
   return elements;
 }
 
@@ -112,6 +120,24 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
   const [elements, setElements] = useState<CanvasElementState[]>([]);
   const [saving, setSaving] = useState(false);
+  const previewRequest = useRef(0);
+  const [previewUrl, setPreviewUrl] = useState<string>();
+  const [previewError, setPreviewError] = useState<string>();
+  const [previewMode, setPreviewMode] = useState(false);
+  const [previewPages, setPreviewPages] = useState<Array<{ path: string; url: string }>>([]);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string>();
+  useEffect(() => {
+    // Invalidate in-flight requests when switching projects or rebuilding.
+    previewRequest.current++;
+    setPreviewUrl(undefined);
+    setPreviewError(undefined);
+    setPreviewPages([]);
+    setPreviewMode(false);
+    setExportError(undefined);
+    setMode("canvas");
+  }, [run?.id, run?.presentation?.entry, run?.presentation?.mode, run?.stages.build]);
+  useEffect(() => () => { previewRequest.current++; }, []);
   const visualAssets = useMemo(() => assets.filter((asset) => /^(png|jpg|jpeg|webp|gif|svg)$/.test(asset.kind)), [assets]);
 
   useEffect(() => {
@@ -229,18 +255,53 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
     zoomAt(camera.zoom * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY);
   }
 
-  const showcaseUrl = run?.showcasePath ? assetUrl(run.showcasePath) : undefined;
+  async function openHtml(path?: string) {
+    if (!run || run.stages.build !== "completed") return;
+    const entry = path?.startsWith(`runs/${run.id}/`) ? path.slice(`runs/${run.id}/`.length) : path;
+    const request = ++previewRequest.current;
+    setExportError(undefined);
+    setPreviewMode(true); setMode("showcase"); setPreviewUrl(undefined); setPreviewError(undefined); setPreviewPages([]);
+    try {
+      const preview = await getHtmlPreview(run.id, entry);
+      if (request !== previewRequest.current) return;
+      setPreviewUrl(preview.url); setPreviewPages(preview.entries);
+    } catch (error) {
+      if (request === previewRequest.current) setPreviewError(error instanceof Error ? error.message : String(error));
+    }
+  }
+  async function exportProject() {
+    if (!run || exporting) return;
+    setExporting(true); setExportError(undefined);
+    const runId = run.id;
+    const request = previewRequest.current;
+    try { await downloadProject(runId); }
+    catch (error) { if (request === previewRequest.current) setExportError(error instanceof Error ? error.message : String(error)); }
+    finally { setExporting(false); }
+  }
+  function openShowcase() {
+    setExportError(undefined);
+    if (run?.presentation?.mode === "html") { void openHtml(run.presentation.entry); return; }
+    previewRequest.current++;
+    setPreviewMode(false);
+    setMode("showcase");
+  }
+  const showcaseAvailable = run?.presentation?.mode === "html" ? run.stages.build === "completed" : Boolean(run?.showcasePath);
+
+  const interactive = run?.presentation?.mode === "html" || previewMode;
+  const showcaseUrl = interactive ? previewUrl : run?.showcasePath ? assetUrl(run.showcasePath) : undefined;
 
   return (
     <main className="canvas-shell">
       <div className="canvas-view-switch" role="tablist" aria-label="Project view">
         <button className={mode === "canvas" ? "active" : ""} onClick={() => setMode("canvas")}><LayoutDashboard size={14} /> Canvas</button>
-        <button className={mode === "showcase" ? "active" : ""} disabled={!showcaseUrl} onClick={() => setMode("showcase")}><FileImage size={14} /> Showcase</button>
+        <button className={mode === "showcase" ? "active" : ""} disabled={!showcaseAvailable} onClick={openShowcase}><FileImage size={14} /> Preview</button>
       </div>
-      {mode === "showcase" && showcaseUrl ? (
+      {mode === "showcase" && (showcaseUrl || interactive) ? (
         <section className="showcase-view">
-          <iframe title={`${run?.title ?? "Dreamatic"} showcase`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" />
-          <a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open showcase</a>
+          {interactive && previewPages.length > 1 && <div className="preview-pages"><label>Page <select aria-label="Prototype page" value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
+          {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "Dreamatic"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "Dreamatic"} prototype`} src={showcaseUrl} sandbox="allow-scripts" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? "Preparing interactive preview…"}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>Retry preview</button>}</div>}
+          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? "Exporting…" : "Export"}</button></div>}
+          {exportError && <p className="preview-export-error" role="alert">{exportError}</p>}
         </section>
       ) : (
         <div ref={viewportRef} className={`canvas-viewport tool-${tool}`} onPointerDown={beginPan} onPointerMove={move} onPointerUp={endGesture} onPointerCancel={endGesture} onWheel={handleWheel}>
@@ -271,11 +332,13 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
                   <div><img draggable={false} src={assetUrl(item.assetPath)} alt="" /></div>
                   <figcaption><span><strong>{item.assetPath.split("/").at(-1)}</strong><small>{item.role}</small></span><a aria-label="Open asset" href={assetUrl(item.assetPath)} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
                 </figure>
+              ) : item.kind === "html" ? (
+                <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}><strong>{item.text}</strong><p>HTML interface</p><button onPointerDown={(event) => event.stopPropagation()} onClick={() => void openHtml(item.assetPath)}>Open prototype <ExternalLink size={13} /></button></article>
               ) : item.kind === "text" && item.id === LAYOUT_MARKER && run ? (
                 <section key={item.id} className="canvas-project-overview" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
                   <p className="eyebrow">Project workspace</p>
                   <h1>{run.title}</h1>
-                  <footer><span>{visualAssets.length} visual assets</span><span>{run.notes.length} design notes</span><span>{run.showcasePath ? "Showcase available" : "Showcase pending"}</span></footer>
+                  <footer><span>{visualAssets.length} visual assets</span><span>{run.notes.length} design notes</span><span>{run.showcasePath ? "Preview available" : "Preview pending"}</span></footer>
                 </section>
               ) : item.kind === "text" ? (
                 <article key={item.id} className={`canvas-note role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>{item.text}</article>

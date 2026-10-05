@@ -4,6 +4,9 @@ description: "Design exhibitions, visitor interpretation and wayfinding through 
 metadata:
   audience: designer
   domain_type: exhibition_wayfinding
+  design_categories: [space, media_communication]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Exhibition and Wayfinding Design

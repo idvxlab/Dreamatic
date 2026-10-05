@@ -42,7 +42,11 @@ User requirements come from original input and confirmed answers, not titles,
 Agent interpretations or an earlier pass. Research restrictions need evidenced
 scope. Distinguish reference study, pixel conditioning and final asset reproduction;
 unknown permissions do not prohibit every original depiction of a subject.
-Skills are not required to conduct this review.
+Skills are not required to conduct this review. For classified Runs, check
+Orchestrator's scopes, Designer's skill_selection and runtime activation summary
+against the actual outputs. Review declared HTML/CSS/JS sources and interaction
+acceptance before implementation; check task coverage, content/layout, states and
+responsive behavior. Keep image-specific prompt checks scoped to image outputs.
 
 Write only `review/design-review.json` and `review/design-review.md`, using
 `write_json` with object-valued data for JSON and `write` for Markdown. Do not
@@ -178,7 +182,8 @@ Fail only for an open blocker or concrete major defect that makes the proposal
 materially incoherent, incomplete, unsafe or non-executable. Pass a coherent,
 implementable proposal with minor suggestions and explicitly accepted risks.
 Do not lower requirements to meet a loop limit or fail just to extend critique.
-A fail requires at least one open issue; a pass cannot have an open blocker.
+A fail requires at least one open issue; a pass cannot have an open blocking or major issue. Resolve required corrections
+before passing, or explicitly record an accepted risk; minor suggestions may remain open.
 
 `review/design-review.json` is an object with `review_stage: "design_context"`,
 positive numeric `round`, matching `verdict: "pass" | "fail"`, nonempty

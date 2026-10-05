@@ -90,6 +90,7 @@ export class SessionRegistry {
             workspaceDir: this.#workspaceDir,
             sessionDir,
             sessionFile: info.path,
+            getProjectId: () => this.#sessions.get(info.id)?.projectId,
           });
           this.#sessions.set(info.id, {
             id: info.id,
@@ -107,12 +108,15 @@ export class SessionRegistry {
 
   async create(title = "Untitled design", projectId?: string): Promise<SessionView> {
     await mkdir(join(this.#workspaceDir, "sessions"), { recursive: true });
+    let createdSessionId: string | undefined;
     const { session } = await createDreamaticSession({
       repoRoot: this.#repoRoot,
       workspaceDir: this.#workspaceDir,
       sessionDir: join(this.#workspaceDir, "sessions"),
       ...(projectId ? { projectId } : {}),
+      getProjectId: () => createdSessionId ? this.#sessions.get(createdSessionId)?.projectId : projectId,
     });
+    createdSessionId = session.sessionId;
     const managed: ManagedSession = {
       id: session.sessionId,
       title,

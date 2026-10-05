@@ -23,7 +23,7 @@ const toolTitles: Record<string, string> = {
   view_image: "Inspected image",
   compare_images: "Compared design images",
   artifact_lint: "Checked deliverables",
-  design_bus_post: "Published workflow result",
+  design_bus_post: "Publishing workflow result",
   read: "Read project file",
   write: "Wrote project file",
   edit: "Edited project file",
@@ -78,6 +78,11 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
   const type = typeof event.type === "string" ? event.type : "";
   const invocationId = typeof event.invocationId === "string" ? event.invocationId : undefined;
   const at = typeof event.at === "string" ? event.at : new Date().toISOString();
+  if (type === "design_categories_identified" && typeof event.detail === "string") {
+    const id = typeof event.id === "string" ? event.id : `classification-${at}`;
+    const node: WorkflowEvent = { id, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, at };
+    return sorted([...workflow.filter((candidate) => candidate.id !== id), node]);
+  }
   if (type === "orchestrator_tool_started") {
     const id = typeof event.toolCallId === "string" ? event.toolCallId : `primary-tool-${at}`;
     if (workflow.some((candidate) => candidate.id === id)) return workflow;
@@ -92,7 +97,9 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
     return updateAgent(workflow, invocationId, (agent) => ({ ...agent, status: "running", detail: text(event.task) ?? agent.detail, at }), event);
   }
   if (invocationId && type === "agent_progress") {
-    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, output: text(event.output) ?? agent.output }), event);
+    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, output: text(event.output) ?? agent.output,
+      children: (agent.children ?? []).map((child) => child.id === event.toolCallId && child.status === "running" ? { ...child, output: text(event.output) ?? child.output } : child),
+    }), event);
   }
   if (invocationId && type === "tool_started") {
     const toolName = typeof event.toolName === "string" ? event.toolName : "tool";

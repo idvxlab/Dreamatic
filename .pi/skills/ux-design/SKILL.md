@@ -4,6 +4,9 @@ description: "Design user experiences through task analysis, information archite
 metadata:
   audience: designer
   domain_type: ux_design
+  design_categories: [ux]
+  module_type: discipline
+  supported_outputs: [html]
 ---
 
 # User Experience Design
@@ -46,6 +49,12 @@ risk rather than adding confirmation everywhere.
 Specify key journeys, interaction sequences, wireframe logic and edge states
 according to coverage needs. Link each view to a task or decision. An attractive
 screen does not demonstrate that a journey works.
+
+For UI/page tasks, develop these decisions into actual HTML/CSS/JS sources
+under plan/html/<scope-id>/, not only screen-image prompts. Choose UI/Web and
+HTML expression support as the task warrants. Declare observable primary-flow
+checks; Builder generates the approved page design. Preserve the conceptual
+status of hypotheses and future research.
 
 Write behavior and content rules into the existing Design Spec. Include a
 proposed evaluation approach: realistic tasks, participant needs, observable

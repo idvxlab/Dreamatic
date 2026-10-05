@@ -4,6 +4,9 @@ description: "Design services across customer journeys, touchpoints, staff actio
 metadata:
   audience: designer
   domain_type: service_design
+  design_categories: [service, ux]
+  module_type: discipline
+  supported_outputs: [image, html]
 ---
 
 # Service Design

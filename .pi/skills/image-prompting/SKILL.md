@@ -5,6 +5,9 @@ license: MIT
 metadata:
   audience: designer
   domain_type: image_execution_specification
+  design_categories: []
+  module_type: execution
+  supported_outputs: [image]
 ---
 
 # Image Prompting
@@ -144,6 +147,23 @@ For each planned image, provide:
 - consistency anchors and acceptance criteria.
 
 Width and height must not exceed the runtime ceiling supplied by the system from `DREAMATIC_IMAGE_DEFAULT_SIZE`. Treat that ceiling as dynamic; do not hard-code a model-specific maximum. Use the lowest adequate resolution for diagrams, supporting views, contact sheets, or exploratory assets, and reserve larger outputs for hero images or detail-critical views.
+
+For schemaVersion 2, every image is one `execution_plan` task with `id` matching
+its manifest deliverable, plus complete prompt_seed, negative_prompt_seed, size
+and size_rationale. Scheduling groups and `deliverable_id` do not replace these
+fields; prompts in a separate legacy array are not executed by schemaVersion 2.
+Declare one exact Run-relative output filename and matching sizes in the manifest.
+Use PNG by default; JPG/JPEG are supported as lossy opaque delivery formats.
+The extension selects the saved encoding; b64_json/url describe transport only.
+Builder reads that same manifest path by id and must not invent another filename.
+Read runtime outputContract.imageOutputFormats for executable format capabilities.
+For Gallery,
+`presentation` uses `{"mode":"gallery","entry":"artifacts/00-gallery.html"}`;
+Designer saves fill a missing fixed entry deterministically. `entry` is the
+Showcase homepage, not an `artifacts[]` list. For mixed delivery, explicitly choose
+Gallery or HTML presentation. Read Design Context's runtime `outputContract`
+and save-time diagnostics; repair named fields without changing schema merely
+to suppress errors.
 
 ## Prompt Discipline
 

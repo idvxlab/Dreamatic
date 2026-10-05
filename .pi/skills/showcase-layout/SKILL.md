@@ -4,6 +4,9 @@ description: "Builder guidance for responsive HTML showcases of approved design 
 metadata:
   audience: builder
   domain_type: showcase_presentation
+  design_categories: []
+  module_type: presentation
+  supported_outputs: [gallery]
 ---
 
 # Showcase Layout

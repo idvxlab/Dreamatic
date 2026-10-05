@@ -1,3 +1,4 @@
+import { briefDesignScopes, designClassificationMessage } from "@dreamatic/design-agent";
 import { indexedJsonl } from "./jsonl-index.js";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -372,7 +373,11 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
       continue;
     }
     if (type === "agent_progress") {
-      if (typeof event.output === "string") invocation.output = compact(event.output, 1_200);
+      if (typeof event.output === "string") {
+        invocation.output = compact(event.output, 1_200);
+        const tool = typeof event.toolCallId === "string" ? tools.get(`${invocationId}:${event.toolCallId}`) : undefined;
+        if (tool?.status === "running") tool.output = invocation.output;
+      }
       continue;
     }
     if (type === "tool_started") {
@@ -493,6 +498,7 @@ function busEvents(records: Record<string, unknown>[], runId: string): WorkflowE
     try {
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       if (LIFECYCLE_TYPES.has(type) || type === "operation_finished") return [];
+      if (type === "design_categories_identified" && typeof event.detail === "string") return [{ id: typeof event.id === "string" ? event.id : `classification-${index}`, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, ...(typeof event.at === "string" ? { at: event.at } : {}) }];
       const failed = type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";
       const refs = [...collectPaths(event.artifactRefs, runId)];
@@ -561,7 +567,15 @@ async function runBriefEvent(runDir: string, runId: string): Promise<WorkflowEve
 export async function workflowInventory(workspaceDir: string, runId: string): Promise<WorkflowEventView[]> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(runId)) throw new Error("Invalid run id");
   const runDir = join(workspaceDir, "runs", runId);
-  const busRecords = await readBusRecords(runDir);
+  const busRecords = [...await readBusRecords(runDir)];
+  // Read-only presentation for existing classified Runs created before this event existed.
+  if (!busRecords.some((event) => event.type === "design_categories_identified")) {
+    try {
+      const brief = record(JSON.parse(await readFile(join(runDir, "brief.json"), "utf8")));
+      const scopes = briefDesignScopes(brief);
+      if (scopes.length) busRecords.push({ id: `${runId}-classification`, type: "design_categories_identified", from_agent: "orchestrator", ...designClassificationMessage(scopes), at: brief.createdAt });
+    } catch { /* Unclassified or incomplete old Briefs have no invented classification. */ }
+  }
   const liveInvocations = lifecycleInvocations(busRecords, runId);
   const hasLifecycleHistory = liveInvocations.length > 0;
   const invocations: SessionInvocation[] = [];
@@ -640,6 +654,7 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
   allInvocations.push(...invocations.filter((invocation) => unused.has(invocation.id)));
   const unplacedMilestones: WorkflowEventView[] = [];
   for (const milestone of milestones) {
+    if (milestone.kind === "message") { unplacedMilestones.push(milestone); continue; }
     const time = eventTime(milestone);
     const owner = allInvocations.find((invocation) => {
       const start = eventTime(invocation);

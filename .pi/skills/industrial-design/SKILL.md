@@ -4,6 +4,9 @@ description: "Develop industrial design concepts through product architecture, e
 metadata:
   audience: designer
   domain_type: industrial_design
+  design_categories: [industrial]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Industrial Design

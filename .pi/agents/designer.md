@@ -60,10 +60,34 @@ is `research/research-findings.md`. Project titles, Agent proposals and review p
 not user confirmations. Check that the research frame addresses the actual
 subject rather than a familiar parent category or surface resemblance.
 
+Use Orchestrator's `brief.json::resolvedScope.designScopes` as the authoritative
+category/task assignment. For classified Runs, discover candidates per scope
+with `list_skills(scopeId)` and load professional knowledge with
+`use_skill(name, scopeId, role)`.
+`scopeId` is the assigned task's `id`, category is its domain, and `name` is a
+discovered Skill name; never substitute one for another. Use scopeProtocol and
+the catalog's applicableScopes/load arguments. If discovery resolves a unique
+name/category hint, use the returned canonical scopeId thereafter; if unresolved,
+choose the intended assigned task before loading. No discovery activates a Skill.
+Each scope has its own primary; supporting modules may be shared or cross-category
+with a clear contribution. Discovery
+is not loading. Record a `skill_selection` array of `{scope_id, name, role,
+rationale}` that matches actual activation; link deliverables with `scope_id`,
+`category` and `skill_refs` (loaded names). Historical unclassified Runs retain
+the existing selection contract.
+Every revision invocation starts fresh. Use skillLoading.selectionChecklist to
+load all retained primary and supporting Skills before correction/publication;
+prior activation receipts are not loaded bodies. If changing Skills, update the
+selection and deliverable references consistently instead of claiming old loads.
+When multiple assigned scopes contribute to one output, declare one execution
+task and use `contributing_scopes: [{scope_id, category, skill_refs, purpose}]`
+on its deliverable. Do not duplicate the page or invent a CSS-only HTML task
+to satisfy coverage; retain a loaded professional primary for every scope.
+
 Before concept development, discover Skills once with `list_skills` and load
 suitable knowledge through `use_skill`. Select by the actual discipline and
 deliverables using catalog descriptions/`domainType`, not a keyword or object
-name alone. Use one `role: "primary"` for the leading responsibility and scoped
+name alone. Use one `role: "primary"` per assigned scope for its leading responsibility and scoped
 `supporting` modules with distinct contributions. Activate primary before support;
 do not issue competing primary switches in one batch. Resolve conflicting methods
 through user intent and this Agent contract, not by blending incompatible styles.
@@ -73,6 +97,9 @@ retain still-relevant modules. Record rationale in `skill_selection`. Unchanged
 loads reuse content; `reload: true` restores needed compacted content. A fresh
 invocation must load its needed bodies again; persisted selections are not loaded
 knowledge. If modules are absent/inapplicable, proceed from professional judgment.
+For classified scopes with no professional module in the discovered catalog,
+record `skill_gaps: [{scope_id, reason}]`. Empty `skill_refs` are permitted only
+for this verified absence; do not claim unavailable knowledge was loaded.
 Detailed discipline methods belong in Skills, not repeated case-specific mandates
 here. Skill availability must not determine whether the workflow can run.
 
@@ -214,8 +241,10 @@ Otherwise add necessary views/comparisons and remove only real redundancy; not
 all discarded ideas need rendering. Candidate count, view count and resolution
 are separate decisions. Mark approved essential outputs `required: true`.
 Resolve genuine budget conflicts through Orchestrator, not silent under-delivery.
-Current runtime delivers static PNGs/local presentations: do not promise working
-interfaces, video, 3D models or manufactured objects from visual concepts.
+Image tasks deliver design imagery; HTML tasks deliver interactive local page
+prototypes. Do not promise deployed services, video, 3D models or manufactured
+objects from these concepts. The image-specific requirements below apply to
+image outputs; UX/UI page design follows loaded Skills and the HTML contract.
 
 For each generated/edited output, specify a self-contained positive
 `prompt_seed`, nonempty scoped `negative_prompt_seed`, exact method/path, preservation,
@@ -278,14 +307,23 @@ Do not write runtime-owned Brief, context, state or artifact records.
 Pass `{runId, path, data}` at the tool argument root, not inside `data`.
 Use Run-relative paths such as `plan/design_system.json`. A `.json` file must
 contain an object, never Markdown; put explanatory prose in `.md` companions.
-In the plan, `image_generation_plan` is a root array beside `concept_evaluation`.
+For image-only plans, `image_generation_plan` remains a root array beside
+`concept_evaluation`. For HTML or mixed delivery, use `schemaVersion: 2` in
+both plan and manifest, with root `execution_plan` instead. Image tasks retain
+the same complete prompts/sizes; HTML tasks use `method: "html_generate"`,
+approved sources in `plan/html/<scope-id>/`, output mappings under artifacts/,
+resource mappings, dependencies, interaction_checks and viewports. Load
+`html-interface` when useful for this source contract. Do not generate UI
+images as a substitute for requested UX pages. The manifest has `presentation`
+with mode html and its artifacts/... entry, or gallery and artifacts/00-gallery.html.
 Every manifest deliverable requires an explicit `file`, even when it has a prompt,
 size and purpose. Address save-time contract warnings before publishing.
 
 - `plan/design_system.json`: `runId`, nonempty `system_thesis`, object-valued
   `palette`/`typography`, relevant consistency, asset-use and exclusion rules.
 - `plan/design_plan.json`: `runId`, `design_system_ref: "plan/design_system.json"`,
-  nonempty `design_intent`, root `image_generation_plan`, applicable design
+  nonempty `design_intent`, root `image_generation_plan` (or schema-v2
+  `execution_plan`), applicable design
   structure/flows/components/states, decisions, assumptions/risks and the concise
   understanding, references, exploration, evaluation, coverage and collaboration
   records above. Descriptive additions are not new runtime-required schema gates;
@@ -296,7 +334,8 @@ size and purpose. Address save-time contract warnings before publishing.
 - `plan/deliverable_manifest.json`: `runId`, the same `design_system_ref`,
   nonempty `deliverables` with unique `id`, `kind`, `purpose`,
   `acceptance_test`, boolean `required`, `method` and exact `file: "artifacts/..."`.
-  Method is manual/image_generate/image_edit. Non-manual images have string
+  Method is manual/image_generate/image_edit, or html_generate in schema v2.
+  HTML has no image prompt/size requirements. Non-manual images have string
   `size` matching their plan. Use exactly the same ids in both arrays.
 - `plan/acceptance_criteria.md` and `plan/task_breakdown.md` contain observable
   criteria and execution order/dependencies. Runtime derives them at completion
@@ -314,8 +353,10 @@ Describe works and intended use, not internal reasoning, prompts or review score
 
 Post exactly one `design_spec_ready` initially or `design_revision_ready` after
 resolving review issues, with assigned `runId`, `from_agent: "designer"`,
-`to: "orchestrator"`, nonempty summary, all five plan paths in `artifactRefs`
-and the next action in `requestedAction`. Route material factual/intent gaps to
+`to: "orchestrator"` and nonempty summary. Runtime attaches the validated canonical
+plan files and declared source files; `artifactRefs` is optional for additional
+existing Run files. The next action is Reviewer (`requestedAction: "review"`),
+including revisions after a failed build; do not request direct build. Route material factual/intent gaps to
 Orchestrator. Only Builder executes the approved design.
 Call `design_bus_post` with explicit root fields, for example
 `{runId, type: "design_spec_ready", from_agent: "designer", to: "orchestrator",

@@ -82,7 +82,8 @@ function attribute(tag: string, name: string): string {
 export async function annotateShowcasePrompts(runDir: string, html: string): Promise<string> {
   const manifest = await json(join(runDir, "plan/deliverable_manifest.json"));
   const plan = await json(join(runDir, "plan/design_plan.json"));
-  const entries = Array.isArray(plan.image_generation_plan) ? plan.image_generation_plan.map(record) : [];
+  const tasks = plan.schemaVersion === 2 ? plan.execution_plan : plan.image_generation_plan;
+  const entries = Array.isArray(tasks) ? tasks.map(record).filter((task) => task.method !== "html_generate") : [];
   const prompts = new Map<string, string>();
   const physicalRoot = await realpath(runDir);
   for (const value of Array.isArray(manifest.deliverables) ? manifest.deliverables : []) {

@@ -123,3 +123,33 @@ Do not add parallelism across dependent approval stages or weaken professional
 review to improve a timing number. Select persona models/thinking levels using
 existing Pi/provider configuration only after quality comparisons. Real provider
 speedups and P95 improvements are not claimed from mocked regression tests.
+
+## v2.0.3 scoped Skills and HTML
+
+Category assignment uses the existing Orchestrator call; Skill discovery uses Pi
+and cached descriptors, with bodies loaded only on selection. Unchanged activation
+records avoid redundant writes. HTML generation copies approved source bytes and
+reuses matching outputs without another model call. Browser dependencies load
+only for HTML validation. The existing image adapter, queue, retry budgets and
+provider contract remain in use. Preview initialization is lazy, and UI preview
+requests follow build/entry changes rather than each polling timestamp.
+
+These choices bound new work by the actual assigned scopes and HTML outputs.
+They do not establish a provider latency or creative-quality improvement. See
+[v2.0.3](V2.0.3.md) for configuration and evidence limits.
+
+
+### Image response body stalls
+
+Image generation/edit/download retains its configured per-request deadline.
+`DREAMATIC_IMAGE_TIMEOUT_MS=300000` is five minutes; `3000000` is fifty minutes.
+Once response headers arrive, `DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS` independently
+bounds time without real body bytes (default 60000 ms). Active slow streams may
+continue up to the overall deadline; empty chunks do not reset the idle timer.
+Cancellation does not wait for transport cleanup or schedule another retry.
+Timeouts reuse the existing bounded retry budget and idempotency keys, and release
+image admission capacity. Failed reads preserve partial-byte and body-duration
+metrics rather than reporting zero. Pi tool updates expose the image, phase and
+attempt while work is pending; snapshots and live tool cards retain those updates.
+PNG/output/size validation precedes generation or editing requests. A failed
+structured image batch is shown as an error without discarding saved siblings.

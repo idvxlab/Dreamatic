@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ImageRequestScheduler, projectContext } from '../dist/performance.js';
+import { ImageRequestScheduler, projectContext, boundedResponseBytes, ResponseBodyTimeoutError } from '../dist/performance.js';
 import { RetryableHttpError, withRetry } from '../dist/retry.js';
 
 test('image admission bounds total and per-project concurrency, cancellation removes queued work', async () => {
@@ -51,4 +51,39 @@ test('image responses are bounded even without a Content-Length', async () => {
   const { boundedResponseBytes } = await import('../dist/performance.js');
   await assert.rejects(boundedResponseBytes(new Response('123456'), 5), /byte limit/);
   assert.equal((await boundedResponseBytes(new Response('123'), 5)).byteLength, 3);
+});
+
+
+test('stalled image bodies time out even when their transport ignores abort or cancellation never settles', {timeout:2000}, async () => {
+  let cancelled = false;
+  const response = new Response(new ReadableStream({start(c) {c.enqueue(new Uint8Array([1,2,3]));},cancel() {cancelled=true;return new Promise(()=>{});}}));
+  const progress = [];
+  await assert.rejects(boundedResponseBytes(response,1024,{idleTimeoutMs:30,onProgress:bytes=>progress.push(bytes)}),error=>error instanceof ResponseBodyTimeoutError);
+  assert.equal(cancelled,true);assert.deepEqual(progress,[3]);
+});
+
+test('body inactivity resets only when bytes arrive and slow active streams preserve exact content', {timeout:2000}, async () => {
+  let interval;
+  const response = new Response(new ReadableStream({start(c) {
+    let count=0;
+    interval=setInterval(()=>{c.enqueue(new Uint8Array([++count]));if(count===8){clearInterval(interval);c.close();}},20);
+  },cancel(){clearInterval(interval);}}));
+  try {assert.deepEqual([...new Uint8Array(await boundedResponseBytes(response,1024,{idleTimeoutMs:120}))],[1,2,3,4,5,6,7,8]);}
+  finally {clearInterval(interval);}
+});
+
+test('user cancellation ends a pending body read immediately without waiting for a long timeout', {timeout:2000}, async () => {
+  const controller=new AbortController();
+  const response=new Response(new ReadableStream({cancel(){return new Promise(()=>{});}}));
+  const reading=boundedResponseBytes(response,1024,{signal:controller.signal,idleTimeoutMs:3_000_000});
+  const rejected=assert.rejects(reading,/User stopped/);
+  controller.abort(new Error('User stopped'));
+  await rejected;
+});
+
+test('empty body chunks do not postpone an inactivity deadline', {timeout:2000}, async () => {
+  let interval;
+  const response=new Response(new ReadableStream({start(c){interval=setInterval(()=>c.enqueue(new Uint8Array(0)),5);},cancel(){clearInterval(interval);}}));
+  try {await assert.rejects(boundedResponseBytes(response,1024,{idleTimeoutMs:40}),ResponseBodyTimeoutError);}
+  finally {clearInterval(interval);}
 });

@@ -4,6 +4,9 @@ description: "Design data visualization, infographics and explanatory diagrams t
 metadata:
   audience: designer
   domain_type: information_design
+  design_categories: [media_communication, ux]
+  module_type: discipline
+  supported_outputs: [image, html]
 ---
 
 # Information and Data Visualization Design

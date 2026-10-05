@@ -4,6 +4,9 @@ description: "Design audiovisual, motion-graphic and social-media concepts throu
 metadata:
   audience: designer
   domain_type: media_motion_design
+  design_categories: [media_communication]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Media and Motion Design

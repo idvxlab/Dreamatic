@@ -54,6 +54,8 @@ export interface RunView {
   activity: TimelineItem[];
   agentSessions: AgentSession[];
   showcasePath?: string;
+  presentation?: { mode: "gallery" | "html"; entry: string };
+  htmlEntries?: string[];
   sessionId?: string;
 }
 
@@ -118,7 +120,7 @@ export interface WorkflowEvent {
 
 export interface CanvasElementState {
   id: string;
-  kind: "image" | "text" | "group";
+  kind: "image" | "html" | "text" | "group";
   x: number;
   y: number;
   width: number;

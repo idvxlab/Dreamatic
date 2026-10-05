@@ -4,6 +4,9 @@ description: "Design packaging concepts through protection, opening, shelf commu
 metadata:
   audience: designer
   domain_type: packaging_design
+  design_categories: [industrial, media_communication]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Packaging Design

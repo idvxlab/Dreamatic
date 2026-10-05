@@ -4,6 +4,9 @@ description: "Develop fashion, accessories and textile concepts through silhouet
 metadata:
   audience: designer
   domain_type: fashion_textile_design
+  design_categories: [fashion]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Fashion and Textile Design

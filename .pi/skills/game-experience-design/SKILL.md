@@ -4,6 +4,9 @@ description: "Design game experiences, interactive worlds and playable-system co
 metadata:
   audience: designer
   domain_type: game_experience_design
+  design_categories: [game, ux]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Game Experience Design

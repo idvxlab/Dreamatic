@@ -5,6 +5,9 @@ license: MIT
 metadata:
   audience: designer
   domain_type: architecture_space_design
+  design_categories: [space]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Architecture and Space

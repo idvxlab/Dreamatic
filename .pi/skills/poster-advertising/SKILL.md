@@ -5,6 +5,9 @@ license: MIT
 metadata:
   audience: designer
   domain_type: graphic_campaign_design
+  design_categories: [media_communication]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Poster and Advertising

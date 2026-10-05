@@ -12,6 +12,9 @@ import { workflowInventory } from "./workflow-store.js";
 import { recordRequest, serverPerformance } from "./performance-store.js";
 import { compactPromptEvent, streamWriter } from "./stream-writer.js";
 import { SessionRegistry } from "./session-registry.js";
+import { PreviewService } from "./preview-service.js";
+import { prepareProjectExport } from "./project-export.js";
+import { pipeline } from "node:stream/promises";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 try { loadEnvFile(join(repoRoot, ".env")); } catch { /* The diagnostics endpoint reports missing configuration. */ }
@@ -27,6 +30,7 @@ await validateDreamaticPersonaContracts(repoRoot);
 await mkdir(workspaceDir, { recursive: true });
 
 const registry = new SessionRegistry(repoRoot, workspaceDir);
+const previews = new PreviewService(workspaceDir);
 await registry.initialize();
 
 const CONTENT_TYPES = new Map([
@@ -317,6 +321,22 @@ const server = createServer(async (request, response) => {
       return;
     }
     const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+    const exportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
+    if (request.method === "GET" && exportMatch?.[1]) {
+      const archive = await prepareProjectExport(workspaceDir, decodeURIComponent(exportMatch[1]));
+      try {
+        const info = await stat(archive.path);
+        response.writeHead(200, { "Content-Type": "application/zip", "Content-Length": info.size, "Content-Disposition": `attachment; filename="${archive.filename}"`, "Cache-Control": "no-store" });
+        await pipeline(createReadStream(archive.path), response);
+      } finally { await archive.cleanup(); }
+      return;
+    }
+    const previewMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/preview$/);
+    if (request.method === "POST" && previewMatch?.[1]) {
+      const input = await body(request);
+      json(response, 200, await previews.open(decodeURIComponent(previewMatch[1]), input && typeof input === "object" && "entry" in input && typeof input.entry === "string" ? input.entry : undefined));
+      return;
+    }
     if (request.method === "PATCH" && runMatch?.[1]) {
       const input = await body(request) as { title?: unknown };
       if (typeof input.title !== "string") throw new Error("Project title is required");
@@ -365,16 +385,28 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && url.pathname.startsWith("/assets/")) {
-      const path = resolveAsset(decodeURIComponent(url.pathname.slice("/assets/".length)));
+      const assetPath = decodeURIComponent(url.pathname.slice("/assets/".length));
+      const path = resolveAsset(assetPath);
+      const page = assetPath.match(/^runs\/([^/]+)\/(?:final\/)?(artifacts\/.+\.html)$/u);
+      if (page) {
+        const preview = await previews.open(page[1]!, page[2]!).catch(() => undefined);
+        if (preview) { response.writeHead(302, { Location: preview.url }); response.end(); return; }
+      }
       const info = await stat(path);
       response.writeHead(200, {
         "Content-Type": CONTENT_TYPES.get(extname(path).toLowerCase()) ?? "application/octet-stream",
         "Content-Length": info.size,
+        ...([".html", ".svg"].includes(extname(path).toLowerCase()) ? { "Content-Security-Policy": "script-src 'none'; object-src 'none'; form-action 'none'" } : {}),
       });
       createReadStream(path).pipe(response);
       return;
     }
 
+    // An unavailable API must never become a successful HTML download via SPA fallback.
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+      json(response, 404, { error: "Unknown API endpoint. Restart the Dreamatic server if it was recently updated." });
+      return;
+    }
     const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
     let staticPath = resolve(webDist, requested);
     if (!staticPath.startsWith(`${webDist}${sep}`) && staticPath !== join(webDist, "index.html")) throw new Error("Invalid path");
@@ -384,6 +416,7 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, { "Content-Type": CONTENT_TYPES.get(extname(staticPath)) ?? "application/octet-stream" });
     response.end(content);
   } catch (error) {
+    if (response.headersSent) { response.destroy(); return; }
     json(response, 400, { error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -405,6 +438,7 @@ async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   await registry.dispose().catch(() => undefined);
+  await previews.close();
   server.close();
   server.closeAllConnections();
 }

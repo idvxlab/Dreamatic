@@ -89,17 +89,47 @@ export function projectContext(value: unknown, maxChars = 12_000): { content: un
   return { content: visit(value, '', 0), omittedPointers };
 }
 
-export async function boundedResponseBytes(response: Response, maxBytes = 64 * 1024 * 1024): Promise<ArrayBuffer> {
-  if (Number(response.headers.get('content-length') ?? 0) > maxBytes) { await response.body?.cancel(); throw new Error('Image response exceeds configured byte limit'); }
+export class ResponseBodyTimeoutError extends Error {
+  constructor(readonly idleTimeoutMs: number) {
+    super(`Image response body stalled: no data received for ${idleTimeoutMs} ms`);
+    this.name = "TimeoutError";
+  }
+}
+
+/** Bound buffered bytes and inactivity independently of a provider's long generation deadline. */
+export async function boundedResponseBytes(response: Response, maxBytes = 64 * 1024 * 1024, options: { signal?: AbortSignal; idleTimeoutMs?: number; onProgress?: (bytes: number) => void } = {}): Promise<ArrayBuffer> {
+  options.signal?.throwIfAborted();
+  if (Number(response.headers.get('content-length') ?? 0) > maxBytes) { void response.body?.cancel().catch(() => undefined); throw new Error('Image response exceeds configured byte limit'); }
   if (!response.body) return new ArrayBuffer(0);
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = []; let size = 0;
+  const chunks: Uint8Array[] = []; let size = 0, lastByteAt = performance.now();
+  const idleTimeoutMs = options.idleTimeoutMs ?? 0;
+  const read = () => new Promise<ReadableStreamReadResult<Uint8Array>>((resolve, reject) => {
+    let settled = false, timer: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => { if (timer) clearTimeout(timer); options.signal?.removeEventListener('abort', abort); };
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true; cleanup(); reject(error);
+      // Do not await cancellation: an unresponsive transport must not hold the scheduler slot.
+      void reader.cancel(error).catch(() => undefined);
+    };
+    const abort = () => fail(options.signal?.reason ?? new Error('Aborted'));
+    if (options.signal?.aborted) { abort(); return; }
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (idleTimeoutMs > 0) {
+      const remaining = idleTimeoutMs - (performance.now() - lastByteAt);
+      if (remaining <= 0) { fail(new ResponseBodyTimeoutError(idleTimeoutMs)); return; }
+      timer = setTimeout(() => fail(new ResponseBodyTimeoutError(idleTimeoutMs)), remaining);
+    }
+    reader.read().then((value) => { if (!settled) { settled = true; cleanup(); resolve(value); } }, (error) => { if (!settled) { settled = true; cleanup(); reject(error); } });
+  });
   try {
     while (true) {
-      const { done, value } = await reader.read(); if (done) break;
+      const { done, value } = await read(); if (done) break;
       size += value.byteLength;
-      if (size > maxBytes) { await reader.cancel(); throw new Error('Image response exceeds configured byte limit'); }
-      chunks.push(value);
+      if (size > maxBytes) { void reader.cancel().catch(() => undefined); throw new Error('Image response exceeds configured byte limit'); }
+      if (value.byteLength) { lastByteAt = performance.now(); options.onProgress?.(size); }
+      if (value.byteLength) chunks.push(value);
     }
   } finally { reader.releaseLock(); }
   const bytes = new Uint8Array(size); let offset = 0;

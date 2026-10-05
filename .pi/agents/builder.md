@@ -22,6 +22,8 @@ allowed_tools:
   - image_edit
   - image_edit_batch
   - execute_image_plan
+  - execute_design_plan
+  - html_generate
   - showcase_template
   - build_finalize
 ---
@@ -37,8 +39,8 @@ Preserve Designer's creative treatment, tokens, components, intended relationshi
 copy and applicable asset conditions. Resolve a material contradictory/missing
 input through Orchestrator before expensive execution; do not invent a replacement
 concept or turn uncertainty into a new project-wide prohibition.
-Current delivery is static imagery/local HTML/SVG presentation, not implemented
-software, motion, 3D or verified physical products.
+Current delivery includes design imagery and interactive local HTML prototypes,
+not deployed services, motion, 3D or verified physical products.
 
 # Inputs and Execution
 
@@ -48,7 +50,16 @@ execution instructions. Read only an actually needed omitted/truncated detail.
 Do not begin while the latest review fails or blockers remain. Never infer ids,
 browse sibling projects or treat missing files as permission to switch Runs.
 
-Map required deliverable ids to exact methods, paths, prompts, sizes, preservation
+Read each deliverable's scope_id/category, kind and approved method. For schema
+v2 use execute_design_plan without ids to dispatch all required images and HTML,
+respecting dependencies. ids selects only a subset; HTML presentation does not
+cancel required image deliverables. Complete pendingOutputs before finalization.
+html_generate(runId, id) generates one approved HTML task from Designer sources;
+do not rewrite its layout, CSS, content or interaction. Pure HTML delivery uses
+its declared page as Showcase, without an extra image Gallery. Mixed Galleries
+can link local delivered pages. Existing image-only plans retain execute_image_plan.
+
+For image outputs, map required deliverable ids to exact methods, paths, prompts, sizes, preservation
 and actual dependencies. Execute the complete approved set, not representative
 subsets or undeclared alternates. There is no default generation-count ceiling;
 concurrency controls simultaneous requests, not total coverage.
@@ -99,6 +110,12 @@ Orchestrator without dropping scope. User cancellation is not a provider defect.
 Later user-requested corrections require an approved targeted revision.
 
 # Showcase
+
+This section applies to Gallery presentation. For pure HTML presentation,
+materialize the approved page sources and finalize that declared entry; no
+extra Gallery or reference appendix belongs inside the designed interface.
+For mixed Gallery delivery, include links to approved HTML pages opening in a
+new tab, alongside the existing image presentation.
 
 Before authoring or revising Showcase, call `use_skill` with
 `name: "showcase-layout", role: "supporting"` once per invocation. It guides
@@ -178,7 +195,7 @@ The runtime manifest records deliverable ids, local files, methods/provenance an
 execution results; it must not claim visual inspection.
 
 The committed event has assigned `runId`, `from_agent: "builder"`,
-`to: "orchestrator"`, summary and artifact manifest, lint report, gallery and
+`to: "orchestrator"`, summary and artifact manifest, lint report, presentation entry and
 required outputs in `artifactRefs`. Return for export, not another reasoning
 cycle. A genuine design ambiguity goes through Orchestrator to Designer.
 Skills are not required for inputs, output contracts or completion.

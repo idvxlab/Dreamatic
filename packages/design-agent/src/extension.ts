@@ -23,13 +23,26 @@ import { showcaseTemplate } from "./showcase-template.js";
 import { annotateShowcasePrompts, appendShowcaseReferences } from "./showcase.js";
 import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
 import { discoverResearchAssets, fetchResearchAsset, hasResearchPageCache, researchFetch, validateResearchAssets, webSearch } from "./research.js";
-import { boundedResponseBytes, imageRequestScheduler, projectContext, serializeJsonWrite } from "./performance.js";
+import { ResponseBodyTimeoutError, boundedResponseBytes, imageRequestScheduler, projectContext, serializeJsonWrite } from "./performance.js";
 import { dreamaticSessionFailure, stopAfterCommittedTurn } from "./session-status.js";
 import { isRetryableStatus, retryAfterMs, RetryableHttpError, withRetry, type RetryNotice } from "./retry.js";
+import { DESIGN_CAPABILITIES, approvedImageAcceptance, designSpecificationProtocol, normalizeDraftPresentation, deliveryContract, designSourceFiles, fileHash, htmlTask, imagePlan, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
+import { lintHtmlSourceResources, materializeHtml } from "./html-delivery.js";
+import { encodeImageOutput, imageBytesMatchPath, imageOutputFormat, type ImageOutputMime } from "./image-output.js";
+import { imageSizeCeiling, assertImageSizeWithinCeiling } from "./image-size.js";
+import { assertHtmlSourcePreflight } from "./html-preflight.js";
+import { finalizeDelivery, pendingRequiredOutputs } from "./finalize-delivery.js";
+import { skillMetadata, skillMatchesCategory, type SkillMetadata } from "./skill-metadata.js";
+import { DESIGN_CATEGORIES, briefDesignScopes, designScopes, designScopeSkillProtocol, designClassificationMessage, isDesignCategory } from "./design-categories.js";
+import { SkillActivation, skillReloadChecklist } from "./skill-activation.js";
+import { validateDesignScopes } from "./design-scope-validation.js";
+import { designerDraftReadiness, designerDraftFingerprint, designerFailureAttempts, designerHandoffError } from "./designer-recovery.js";
+import { ExecutionRegistry } from "./execution-registry.js";
+import { BuildIncomplete, DeliveryBlocked, deliveryRuntimeStamp } from "./delivery-block.js";
 
 export interface DreamaticExtensionOptions {
   workspaceDir: string;
-  projectId?: string;
+  projectId?: string | undefined;
   personaPath?: string;
   parentInvocation?: { id: string; agent: string; runId?: string };
 }
@@ -72,7 +85,7 @@ export const DREAMATIC_PERSONA_TOOL_POLICY = {
   researcher: ["read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
   designer: ["read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
   reviewer: ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"],
-  builder: ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "showcase_template", "build_finalize"],
+  builder: ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"],
 } as const;
 
 const DREAMATIC_SPECIALISTS = new Set(Object.keys(DREAMATIC_PERSONA_TOOL_POLICY).filter((persona) => persona !== "orchestrator"));
@@ -160,19 +173,6 @@ function requiredArray(record: Record<string, unknown>, key: string, label: stri
   return value;
 }
 
-function parseImageSize(value: string, label: string): [number, number] {
-  const match = value.trim().match(/^(\d+)x(\d+)$/u);
-  if (!match) throw new Error(`${label} must use WIDTHxHEIGHT pixels`);
-  const width = Number(match[1]);
-  const height = Number(match[2]);
-  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || width < 1 || height < 1) throw new Error(`${label} must contain positive integer dimensions`);
-  return [width, height];
-}
-
-function imageSizeCeiling(): string {
-  return process.env.DREAMATIC_IMAGE_DEFAULT_SIZE?.trim() || "1536x1024";
-}
-
 interface WorkflowBudget {
   searchQueries: number;
   sourceFetches: number;
@@ -197,6 +197,13 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
   const local = relative(runDir, path).replaceAll("\\", "/");
   const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json"]);
   const roots: Record<string, string> = { researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" };
+  if (agent === "builder") {
+    const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+    const tasks = Array.isArray(plan?.execution_plan) ? plan.execution_plan as Record<string, unknown>[] : [];
+    if (plan?.schemaVersion === 2 && tasks.filter((task) => task.method === "html_generate").some((task) => [...htmlTask(task).files, ...htmlTask(task).resources].some((file) => file.output === local))) {
+      throw new Error(`Approved HTML output ${local} is generated mechanically. Use html_generate or execute_design_plan; restore changed outputs from approved sources. Design defects require Designer correction and a new Reviewer approval, not edits to artifacts or plan sources.`);
+    }
+  }
   const isAllowed = (candidate: string) => !runtimeOwned.has(candidate) && (agent === "orchestrator"
     ? candidate === "plan/progress.json" || candidate.startsWith("plan/handoff/")
     : !!roots[agent] && candidate.startsWith(roots[agent]!) && candidate !== "plan/progress.json");
@@ -285,14 +292,6 @@ function batchSummary(results: Array<Record<string, unknown>>) {
   return { ok: failed === 0, partial: succeeded > 0 && failed > 0, succeeded, failed, results };
 }
 
-function assertImageSizeWithinCeiling(value: string, label: string): void {
-  const requested = parseImageSize(value, label).sort((left, right) => right - left);
-  const ceiling = parseImageSize(imageSizeCeiling(), "DREAMATIC_IMAGE_DEFAULT_SIZE").sort((left, right) => right - left);
-  if (requested[0] > ceiling[0] || requested[1] > ceiling[1]) {
-    throw new Error(`${label} ${value} exceeds DREAMATIC_IMAGE_DEFAULT_SIZE ceiling ${imageSizeCeiling()}`);
-  }
-}
-
 async function readJsonRecord(runDir: string, path: string): Promise<Record<string, unknown>> {
   return requiredRecord(parseRunJson(await readFile(resolveInside(runDir, path), "utf8"), path), path);
 }
@@ -376,6 +375,8 @@ async function normalizeStageOutputs(runDir: string, agent: string): Promise<voi
     return;
   }
   if (agent === "designer") {
+    // Typed drafts are authoritative. Failed publication must not rewrite them or invalidate SHA-256.
+    if ((await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined))?.schemaVersion === 2) return;
     await normalizeJsonFile(runDir, "plan/design_system.json", (record) => {
       let changed = copyAlias(record, "runId", ["run_id"]);
       changed = copyAlias(record, "system_thesis", ["systemThesis", "thesis"]) || changed;
@@ -518,7 +519,7 @@ async function materializeDesignExecutionDocs(runDir: string): Promise<void> {
   }
 }
 
-async function validateStageOutputs(runDir: string, runId: string, agent: string, eventType: string): Promise<void> {
+async function validateStageOutputs(runDir: string, runId: string, agent: string, eventType: string, signal?: AbortSignal): Promise<void> {
   if (agent === "researcher") {
     const evidence = await readJsonRecord(runDir, "research/evidence.json");
     if (requiredString(evidence, "runId", "research/evidence.json") !== runId) throw new Error("research/evidence.json.runId does not match the Run");
@@ -530,6 +531,8 @@ async function validateStageOutputs(runDir: string, runId: string, agent: string
     return;
   }
   if (agent === "designer") {
+    const readiness = await designerDraftReadiness(runDir);
+    if (!readiness.ok) throw new Error(readiness.issues.join("\n"));
     const system = await readJsonRecord(runDir, "plan/design_system.json");
     const plan = await readJsonRecord(runDir, "plan/design_plan.json");
     const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
@@ -540,7 +543,14 @@ async function validateStageOutputs(runDir: string, runId: string, agent: string
     if (requiredString(plan, "runId", "plan/design_plan.json") !== runId) throw new Error("plan/design_plan.json.runId does not match the Run");
     if (requiredString(plan, "design_system_ref", "plan/design_plan.json") !== "plan/design_system.json") throw new Error("plan/design_plan.json.design_system_ref must point to plan/design_system.json");
     requiredString(plan, "design_intent", "plan/design_plan.json");
-    const generationPlan = requiredArray(plan, "image_generation_plan", "plan/design_plan.json").map((item, index) => requiredRecord(item, `plan/design_plan.json.image_generation_plan[${index}]`));
+    const generationPlan = imagePlan(plan);
+    const contract = deliveryContract(plan, manifest);
+    await validateDeliveryContract(runDir, contract);
+    for (const task of contract.tasks.filter((task) => task.method === "html_generate")) {
+      const issues = await lintHtmlSourceResources(runDir, htmlTask(task));
+      if (issues.length) throw new Error(issues.join("; "));
+    }
+    await validateDesignScopes(runDir, plan, manifest);
     if (requiredString(manifest, "runId", "plan/deliverable_manifest.json") !== runId) throw new Error("plan/deliverable_manifest.json.runId does not match the Run");
     if (requiredString(manifest, "design_system_ref", "plan/deliverable_manifest.json") !== "plan/design_system.json") throw new Error("plan/deliverable_manifest.json.design_system_ref must point to plan/design_system.json");
     const deliverables = requiredArray(manifest, "deliverables", "plan/deliverable_manifest.json").map((item, index) => requiredRecord(item, `plan/deliverable_manifest.json.deliverables[${index}]`));
@@ -558,8 +568,8 @@ async function validateStageOutputs(runDir: string, runId: string, agent: string
       requiredString(deliverable, "kind", label);
       if (typeof deliverable.required !== "boolean") throw new Error(`${label}.required must be boolean`);
       const method = requiredString(deliverable, "method", label);
-      if (!["manual", "image_generate", "image_edit"].includes(method)) throw new Error(`${label}.method is invalid`);
-      if (method !== "manual") {
+      if (!["manual", "image_generate", "image_edit", ...(contract.schemaVersion === 2 ? ["html_generate"] : [])].includes(method)) throw new Error(`${label}.method is invalid`);
+      if (method !== "manual" && method !== "html_generate") {
         const prompt = generationPlan.find((entry) => entry.id === id);
         if (!prompt) throw new Error(`Visual deliverable ${id} has no image_generation_plan entry with the same id. Available image ids: ${generationPlan.map((entry) => entry.id).join(", ") || "none"}. Use one identical id in both files; do not start a new generation or change only the completion event.`);
         if (prompt.method !== method) throw new Error(`Visual deliverable ${id} method does not match its image_generation_plan entry`);
@@ -572,9 +582,12 @@ async function validateStageOutputs(runDir: string, runId: string, agent: string
         requiredString(prompt, "size_rationale", `image_generation_plan.${id}`);
       }
     }
+    await assertHtmlSourcePreflight(runDir, contract, signal);
     return;
   }
   if (agent === "reviewer") {
+    const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+    if (plan?.schemaVersion === 2 || briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length) await assertStageCommitted(dirname(dirname(runDir)), runId, "designer", 0, eventType === "design_review_pass");
     const review = await readJsonRecord(runDir, "review/design-review.json");
     if (review.review_stage !== "design_context") throw new Error("review/design-review.json.review_stage must be design_context");
     const verdict = requiredString(review, "verdict", "review/design-review.json");
@@ -585,7 +598,7 @@ async function validateStageOutputs(runDir: string, runId: string, agent: string
     requiredRecord(review.scores, "review/design-review.json.scores");
     const issues = requiredArray(review, "issues", "review/design-review.json").map((item, index) => requiredRecord(item, `review/design-review.json.issues[${index}]`));
     if (verdict === "fail" && !issues.some((issue) => issue.status === "open")) throw new Error("A failed review must contain at least one open issue");
-    if (verdict === "pass" && issues.some((issue) => issue.severity === "blocking" && issue.status === "open")) throw new Error("A passed review cannot contain an open blocking issue");
+    if (verdict === "pass") assertReviewBuildReady(review);
     return;
   }
   if (agent === "builder") {
@@ -597,7 +610,47 @@ async function validateStageOutputs(runDir: string, runId: string, agent: string
   }
 }
 
-async function assertStageCommitted(workspaceDir: string, runId: string, agent: string, startingEventCount: number): Promise<string> {
+function assertReviewBuildReady(review: Record<string, unknown>): void {
+  const issues = Array.isArray(review.issues) ? review.issues as Record<string, unknown>[] : [];
+  const unresolved = issues.filter((issue) => issue.status === "open" && ["blocking", "major"].includes(String(issue.severity)));
+  if (unresolved.length) throw new DeliveryBlocked("designer", unresolved.map((issue) =>
+    `A passed review cannot contain an open ${issue.severity} issue: ${issue.id ?? "unnamed"}. Resolve it through Designer and a new Reviewer approval, or explicitly accept the risk in review.`));
+}
+
+async function stageRequiredFiles(runDir: string, agent: string): Promise<string[]> {
+  const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+  if (agent === "designer" || agent === "reviewer") {
+    const scopes = briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({})));
+    if (plan?.schemaVersion !== 2 && !scopes.length) return STAGE_REQUIRED_FILES[agent] ?? [];
+    return [...new Set([...(STAGE_REQUIRED_FILES[agent] ?? []), ...(agent === "reviewer" ? STAGE_REQUIRED_FILES.designer! : []), ...(scopes.length ? ["brief.json", ".performance/skills-designer.json"] : []), ...await designSourceFiles(runDir)])];
+  }
+  if (plan?.schemaVersion !== 2) return STAGE_REQUIRED_FILES[agent] ?? [];
+  if (agent === "builder") {
+    const contract = deliveryContract(plan, await readJsonRecord(runDir, "plan/deliverable_manifest.json"));
+    return [...new Set(["artifacts/artifact-manifest.json", "artifacts/lint-report.json", contract.presentation.entry, ...contract.deliverables.filter((item) => item.required === true).map((item) => String(item.file)), ...((await readJsonRecord(runDir, "artifacts/artifact-manifest.json")).previewFiles as string[] ?? [])])];
+  }
+  return STAGE_REQUIRED_FILES[agent] ?? [];
+}
+
+/** Supporting evidence may be attached read-only; canonical stage outputs are always required. */
+async function publicationReferences(runDir: string, runId: string, agent: string, requiredFiles: string[], suppliedRefs: string[]): Promise<string[]> {
+  const roleRoot = ({ researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" } as Record<string, string>)[agent];
+  const canonicalRefs = requiredFiles.filter((path) => roleRoot && path.startsWith(roleRoot));
+  const explicitRefs: string[] = [];
+  for (const supplied of suppliedRefs) {
+    const prefix = `runs/${runId}/`;
+    const candidate = supplied.startsWith(prefix) ? supplied.slice(prefix.length) : supplied;
+    const local = canonicalRunDocument(relative(runDir, resolveInside(runDir, candidate)).replaceAll("\\", "/"));
+    const researchInput = agent === "designer" && RUN_CONTEXT_SECTIONS.research.includes(local);
+    if (!requiredFiles.includes(local) && !researchInput && (!roleRoot || !local.startsWith(roleRoot))) throw new Error(`artifactRefs must reference ${agent}-owned or declared inputs in this Run: ${supplied}`);
+    const existing = await findRunDocument(runDir, local);
+    if (!existing || !(await stat(existing.absolutePath)).size) throw new Error(`artifactRefs file is missing or empty: ${local}. Correct or omit this extra reference; no event was published.`);
+    explicitRefs.push(supplied.startsWith(prefix) ? `${prefix}${existing.path}` : existing.path);
+  }
+  return [...new Set([...canonicalRefs, ...explicitRefs])];
+}
+
+async function assertStageCommitted(workspaceDir: string, runId: string, agent: string, startingEventCount: number, requireExecutableDesign = false): Promise<string> {
   const allowed = STAGE_COMPLETION_EVENTS[agent];
   if (!allowed) return "not-required";
   const busPath = resolveInside(workspaceDir, join("runs", runId, "bus.jsonl"));
@@ -620,13 +673,16 @@ async function assertStageCommitted(workspaceDir: string, runId: string, agent: 
     ? receipt.files as Record<string, unknown>
     : undefined;
   let receiptValid = Boolean(receiptFiles);
-  for (const required of STAGE_REQUIRED_FILES[agent] ?? []) {
+  const requiredFiles = await stageRequiredFiles(runDir, agent);
+  const strictReceipt = requiredFiles.includes(".performance/skills-designer.json") || (await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined))?.schemaVersion === 2;
+  for (const required of requiredFiles) {
     const existing = await findRunDocument(runDir, required);
     const path = existing?.absolutePath ?? resolveInside(runDir, required);
     const info = await stat(path).catch(() => null);
     if (!info?.isFile() || info.size === 0) throw new Error(`${agent} committed ${String(committed.type)} but required output is missing or empty: ${required}`);
     const expectedHash = runDocumentCandidates(required).map((candidate) => receiptFiles?.[candidate]).find((hash) => typeof hash === "string");
     if (typeof expectedHash !== "string") {
+      if (strictReceipt) throw new Error(`${agent} approval receipt is missing ${required}; commit the current specification again`);
       receiptValid = false;
     } else {
       const actualHash = createHash("sha256").update(await readFile(path)).digest("hex");
@@ -637,12 +693,24 @@ async function assertStageCommitted(workspaceDir: string, runId: string, agent: 
     const artifactFiles = await listFiles(join(runDir, "artifacts"));
     if (!artifactFiles.some((file) => file !== "00-gallery.html" && /\.(png|jpe?g|webp|svg|html)$/i.test(file))) throw new Error("builder committed build_done without a visual artifact");
   }
+  if (agent === "designer" && requireExecutableDesign && strictReceipt) {
+    const readiness = await designerDraftReadiness(runDir);
+    if (!readiness.ok) throw new DeliveryBlocked("designer", readiness.issues);
+  }
+  // Hash receipts prove integrity, not semantic approval readiness (including older Runs).
+  if (agent === "reviewer" && committed.type === "design_review_pass") assertReviewBuildReady(await readJsonRecord(runDir, "review/design-review.json"));
   if (!receiptValid) await validateStageOutputs(runDir, runId, agent, String(committed.type));
   const references = Array.isArray(committed.artifactRefs) ? committed.artifactRefs.filter((item): item is string => typeof item === "string") : [];
   for (const reference of references) {
     const workspacePath = resolveInside(workspaceDir, reference);
     const runPath = resolveInside(runDir, reference);
     if (!await stat(workspacePath).then(() => true).catch(() => false)) await stat(runPath);
+    const prefix = `runs/${runId}/`;
+    const local = canonicalRunDocument(reference.startsWith(prefix) ? reference.slice(prefix.length) : reference);
+    if (!requiredFiles.includes(local)) {
+      const expected = runDocumentCandidates(local).map((candidate) => receiptFiles?.[candidate]).find((hash) => typeof hash === "string");
+      if (expected && expected !== await fileHash(runDir, (await findRunDocument(runDir, local))?.path ?? local)) throw new Error(`${agent} referenced input changed after ${String(committed.type)} was committed: ${local}`);
+    }
   }
   return String(committed.type);
 }
@@ -662,7 +730,7 @@ interface ImageGenerateTask {
 
 interface SavedImage {
   bytes: Buffer;
-  mimeType: "image/png";
+  mimeType: ImageOutputMime;
   path: string;
   sidecarPath: string;
 }
@@ -811,10 +879,19 @@ export function modelResponseTimeoutReason(durationMs: number, idleMs: number, h
   return undefined;
 }
 
+interface ImageRequestProgress {
+  operation: string; imageId?: string; attempt: number;
+  phase: "queued" | "headers" | "body"; elapsedMs: number; responseBytes: number; idleMs: number;
+}
+function imageRequestUpdate(progress: ImageRequestProgress) {
+  const phase = { queued: "queued", headers: "waiting for provider response", body: "receiving response" }[progress.phase];
+  return { content: [{ type: "text" as const, text: `Image ${progress.imageId ?? "request"}: ${progress.operation === "image_download" ? "download · " : ""}${phase} · attempt ${progress.attempt} · ${Math.round(progress.elapsedMs / 1000)}s${progress.phase === "body" ? ` · ${Math.round(progress.responseBytes / 1024)} KiB · ${Math.round(progress.idleMs / 1000)}s since last data` : ""}` }], details: { imageRequest: progress } };
+}
+
 async function resilientFetch(
   endpoint: string,
   init: RequestInit,
-  options: { workspaceDir: string; runId: string; operation: string; budgetScope?: string; signal?: AbortSignal; timeoutMs?: number; attempts?: number; onRetry?: (notice: RetryNotice) => void | Promise<void> },
+  options: { workspaceDir: string; runId: string; operation: string; budgetScope?: string; signal?: AbortSignal; timeoutMs?: number; attempts?: number; onRetry?: (notice: RetryNotice) => void | Promise<void>; onProgress?: (progress: ImageRequestProgress) => void },
 ): Promise<Response> {
   const timeoutMs = Math.max(10_000, options.timeoutMs ?? Number(process.env.DREAMATIC_IMAGE_TIMEOUT_MS ?? 300_000));
   const attempts = Math.max(1, options.attempts ?? Number(process.env.DREAMATIC_IMAGE_RETRY_ATTEMPTS ?? 3));
@@ -834,30 +911,47 @@ async function resilientFetch(
     let requestMs = 0;
     let headersMs = 0;
     let bodyMs = 0;
-    let responseBytes = 0;
+    let responseBytes = 0, bodyIdleTimedOut = false;
+    let phase: ImageRequestProgress["phase"] = "queued", lastByteAt = performance.now();
+    const bodyIdleTimeoutMs = Math.min(2_147_483_647, Math.max(1, Number(process.env.DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS ?? 60_000) || 60_000));
     const startedAt = performance.now();
+    const report = () => options.onProgress?.({ operation: options.operation, ...(options.budgetScope ? { imageId: options.budgetScope } : {}), attempt: used + 1, phase, elapsedMs: Math.round(performance.now() - startedAt), responseBytes, idleMs: phase === "body" ? Math.round(performance.now() - lastByteAt) : 0 });
+    report();
+    const progressTimer = options.onProgress ? setInterval(report, 15_000) : undefined;
     try {
       const response = await imageRequestScheduler().run(`${options.workspaceDir}:${options.runId}`, async () => {
       const timeout = AbortSignal.timeout(timeoutMs);
-      const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+      const requestAbort = new AbortController();
+      const signal = AbortSignal.any([requestAbort.signal, timeout, ...(options.signal ? [options.signal] : [])]);
       const requestAt = performance.now();
+      phase = "headers"; report();
       try {
       const response = await fetch(endpoint, { ...init, signal });
       headersMs = performance.now() - requestAt;
+      const bodyAt = performance.now();
+      phase = "body"; lastByteAt = bodyAt; report();
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await boundedResponseBytes(response, Math.max(1024, Number(process.env.DREAMATIC_IMAGE_RESPONSE_MAX_BYTES ?? 67_108_864) || 67_108_864), {
+          signal, idleTimeoutMs: bodyIdleTimeoutMs,
+          onProgress: (bytes) => { responseBytes = bytes; lastByteAt = performance.now(); },
+        });
+      } catch (error) {
+        bodyIdleTimedOut = error instanceof ResponseBodyTimeoutError;
+        throw error;
+      } finally { bodyMs = performance.now() - bodyAt; }
       if (isRetryableStatus(response.status)) {
-        const detail = (await response.text()).slice(0, 600);
+        const detail = new TextDecoder().decode(bytes).slice(0, 600);
         throw new RetryableHttpError(response.status, `${options.operation} failed (${response.status}): ${detail}`, retryAfterMs(response));
       }
-      const bodyAt = performance.now();
-      const bytes = await boundedResponseBytes(response, Math.max(1024, Number(process.env.DREAMATIC_IMAGE_RESPONSE_MAX_BYTES ?? 67_108_864) || 67_108_864));
-      bodyMs = performance.now() - bodyAt; responseBytes = bytes.byteLength;
       const completeResponse = new Response(bytes, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
       });
       return completeResponse;
-      } finally { timedOut = timeout.aborted; requestMs = performance.now() - requestAt; }
+      } catch (error) { requestAbort.abort(error); throw error; }
+      finally { timedOut = timeout.aborted; requestMs = performance.now() - requestAt; }
       }, options.signal, (waitMs) => { queueMs = waitMs; });
       operationAttempts.delete(budgetKey);
       operationLastErrors.delete(budgetKey);
@@ -872,7 +966,8 @@ async function resilientFetch(
       operationLastErrors.set(budgetKey, failure.message.slice(0, 800));
       throw failure;
     } finally {
-      await appendWorkflowLifecycleEvent(options.workspaceDir, options.runId, { type: "image_request_metrics", operation: options.operation, imageId: options.budgetScope, attempt: used + 1, queueMs: Math.round(queueMs), headersMs: Math.round(headersMs), bodyMs: Math.round(bodyMs), responseBytes, requestMs: Math.round(requestMs), durationMs: Math.round(performance.now() - startedAt), timedOut });
+      if (progressTimer) clearInterval(progressTimer);
+      await appendWorkflowLifecycleEvent(options.workspaceDir, options.runId, { type: "image_request_metrics", operation: options.operation, imageId: options.budgetScope, attempt: used + 1, queueMs: Math.round(queueMs), headersMs: Math.round(headersMs), bodyMs: Math.round(bodyMs), responseBytes, requestMs: Math.round(requestMs), durationMs: Math.round(performance.now() - startedAt), timedOut, bodyIdleTimedOut, phase, timeoutMs, bodyIdleTimeoutMs });
     }
   };
   try {
@@ -953,7 +1048,7 @@ function artifactOutputPath(
   if (fromArtifacts === ".." || fromArtifacts.startsWith(`..\\`) || fromArtifacts.startsWith("../")) {
     throw new Error("outputPath must stay inside the run's artifacts directory");
   }
-  if (extname(path).toLowerCase() !== ".png") throw new Error("Image outputs must use a .png path");
+  imageOutputFormat(path);
   return path;
 }
 
@@ -1137,8 +1232,9 @@ async function lintArtifactDirectory(runDir: string, artifactsDir: string, minIm
   };
 }
 
-export function specialistCompletionEvent(agent: string, toolName: string, isError: boolean, args: unknown): string | undefined {
+export function specialistCompletionEvent(agent: string, toolName: string, isError: boolean, args: unknown, result?: unknown): string | undefined {
   if (isError || !args || typeof args !== "object" || Array.isArray(args)) return undefined;
+  if (result && typeof result === "object" && (result as { details?: { ok?: boolean } }).details?.ok === false) return undefined;
   if (agent === "builder" && toolName === "build_finalize") return "build_done";
   if (toolName !== "design_bus_post") return undefined;
   const type = String((args as Record<string, unknown>).type ?? "");
@@ -1206,7 +1302,8 @@ async function saveImageResponse(
   references: string[] = [],
   outputPath?: string,
   metadata: Record<string, unknown> = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onProgress?: (progress: ImageRequestProgress) => void,
 ): Promise<SavedImage> {
   signal?.throwIfAborted();
   const item = payload.data?.[0];
@@ -1220,6 +1317,7 @@ async function saveImageResponse(
       runId,
       operation: "image_download",
       budgetScope: imageId,
+      ...(onProgress ? { onProgress } : {}),
       ...(signal ? { signal } : {}),
     });
     if (!response.ok) throw new Error(`Failed to download generated image: ${response.status}`);
@@ -1235,6 +1333,8 @@ async function saveImageResponse(
     tool === "image_edit" ? "edits" : "generated-images",
     outputPath,
   );
+  const encoded = encodeImageOutput(bytes, imagePath);
+  bytes = encoded.bytes;
   await mkdir(dirname(imagePath), { recursive: true });
   signal?.throwIfAborted();
   await writeFile(imagePath, bytes);
@@ -1251,12 +1351,14 @@ async function saveImageResponse(
       references,
       createdAt: new Date().toISOString(),
       ...metadata,
+      mimeType: encoded.mimeType,
+      encoding: { format: encoded.format, sourceFormat: encoded.sourceFormat, converted: encoded.converted, ...("quality" in encoded ? { quality: encoded.quality } : {}) },
     }, null, 2),
     "utf8",
   );
   return {
     bytes,
-    mimeType: "image/png",
+    mimeType: encoded.mimeType,
     path: workspacePath,
     sidecarPath: relative(workspaceDir, sidecarPath).replaceAll("\\", "/"),
   };
@@ -1267,6 +1369,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
   const assignedRunId = options.parentInvocation?.runId ? safeRunId(options.parentInvocation.runId) : undefined;
   const assignment = assignedRunId ? specialistRunAssignment(workspaceDir, assignedRunId, options.parentInvocation!.agent) : "";
   const assertAssignedRun = (runId: string, operation: string) => {
+    const projectRunId = options.projectId ? safeRunId(options.projectId) : undefined;
+    if (projectRunId && safeRunId(runId) !== projectRunId) throw new Error(`${operation} must target this conversation's project. Requested runId: ${runId}; canonical runId: ${projectRunId}; runDir: ${resolveInside(workspaceDir, join("runs", projectRunId))}. Orchestrator must use run_init's returned runId for every handoff; do not invent ids or start a specialist in another Run. No cross-project operation was performed.`);
+    if (assignedRunId && projectRunId && assignedRunId !== projectRunId) throw new Error(`Runtime assignment conflicts with project ownership: assigned runId ${assignedRunId}, canonical runId ${projectRunId}. Return this configuration conflict to Orchestrator and restart the specialist with the canonical id; do not retarget its writes.`);
     if (assignedRunId && safeRunId(runId) !== assignedRunId) throw new Error(`${operation} must target the assigned Run. Assigned runId: ${assignedRunId}; runDir: ${resolveInside(workspaceDir, join("runs", assignedRunId))}. Use design_context_read with this id; do not search other projects or retry through a different write tool.`);
   };
   const assertAssignedRead = async (path: string, cwd: string) => {
@@ -1285,8 +1390,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
   const researchPages = new Map<string, { html: string; url: string }>();
   const todos: Array<{ id: string; text: string; status: string }> = [];
   const skillCatalogs = new Map<string, Promise<ReturnType<DefaultResourceLoader["getSkills"]>["skills"]>>();
-  const activeSkillSets = new Map<string, Map<string, "primary" | "supporting">>();
-  const loadedSkillHashes = new Map<string, string>();
+  const skillActivation = new SkillActivation();
+  let skillDescriptors: Promise<Array<{ name: string; description: string; path: string } & SkillMetadata>> | undefined;
+  let skillDescriptorCwd: string | undefined;
   const discoverSkills = (cwd: string, refresh = false) => {
     if (refresh) skillCatalogs.delete(cwd);
     let catalog = skillCatalogs.get(cwd);
@@ -1309,9 +1415,49 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     signal?.throwIfAborted();
     return operation(); // HTTP attempts use the shared scheduler; backoff releases its slot.
   };
-  const generateImage = (params: ImageGenerateTask, signal?: AbortSignal, onRetry?: (notice: RetryNotice) => void): Promise<Record<string, unknown>> => enqueueImageOperation(async () => {
+  const preflightBeforeImageTool = async (runId: string, signal?: AbortSignal) => {
+    if (options.parentInvocation?.agent !== "builder") return;
+    assertAssignedRun(runId, "image execution");
+    const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
+    const source = await readFile(join(runDir, "plan/design_plan.json"), "utf8").catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    if (!source) return; // Preserve standalone/legacy image tooling without a typed plan.
+    const plan = JSON.parse(source) as Record<string, unknown>;
+    const manifest = await readFile(join(runDir, "plan/deliverable_manifest.json"), "utf8").catch((error) => {
+      if (error.code === "ENOENT") return undefined;
+      throw error;
+    });
+    const strict = plan.schemaVersion === 2 || briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length > 0;
+    if (manifest && strict) {
+      const readiness = await designerDraftReadiness(runDir);
+      if (!readiness.ok) throw new DeliveryBlocked("designer", readiness.issues);
+      await assertStageCommitted(workspaceDir, runId, "designer", 0, true);
+      await assertStageCommitted(workspaceDir, runId, "reviewer", 0);
+      const bus = (await readFile(join(runDir, "bus.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+      if (currentWorkflowCycle(bus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1)?.type !== "design_review_pass") throw new Error("Image execution requires a current approved specification");
+    }
+    if (plan.schemaVersion === 2) await assertHtmlSourcePreflight(runDir, deliveryContract(plan, await readJsonRecord(runDir, "plan/deliverable_manifest.json")), signal);
+    const parsed = manifest ? JSON.parse(manifest) as Record<string, unknown> : undefined;
+    return parsed && Array.isArray(parsed.deliverables) ? { strict, deliverables: parsed.deliverables as Record<string, unknown>[] } : undefined;
+  };
+  const bindImageOutput = <T extends { id: string; outputPath?: string }>(task: T, method: ImageToolName, plan: Awaited<ReturnType<typeof preflightBeforeImageTool>>): T => {
+    if (!plan) return task;
+    const deliverable = plan.deliverables.find((item) => item.id === task.id);
+    if (!deliverable) {
+      if (plan.strict) throw new Error(`Unknown approved image deliverable: ${task.id}. Use the assigned manifest id; Builder cannot invent another output.`);
+      return task;
+    }
+    if (deliverable.method !== method) throw new Error(`Image ${task.id} method must match its declared ${String(deliverable.method)} executor`);
+    const file = requiredString(deliverable, "file", `Deliverable ${task.id}`);
+    if (task.outputPath !== undefined && task.outputPath !== file) throw new Error(`Image ${task.id} outputPath conflicts with the declared file ${file}; omit outputPath to use the manifest path. Do not generate another filename.`);
+    return { ...task, outputPath: file };
+  };
+  const generateImage = (params: ImageGenerateTask, signal?: AbortSignal, onRetry?: (notice: RetryNotice) => void, onProgress?: (progress: ImageRequestProgress) => void): Promise<Record<string, unknown>> => enqueueImageOperation(async () => {
     const size = params.size ?? imageSizeCeiling();
     assertImageSizeWithinCeiling(size, "image_generate.size");
+    artifactOutputPath(workspaceDir, safeRunId(params.runId), safeRunId(params.id), "generated-images", params.outputPath);
     const apiKey = process.env.DREAMATIC_IMAGE_API_KEY?.trim() || process.env.DREAMATIC_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
     if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
     const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
@@ -1334,6 +1480,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       budgetScope: params.id,
       ...(signal ? { signal } : {}),
       ...(onRetry ? { onRetry } : {}),
+      ...(onProgress ? { onProgress } : {}),
     });
     if (!response.ok) throw new Error(`Image generation failed (${response.status}): ${await response.text()}`);
     const payload = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
@@ -1341,7 +1488,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       intent: params.intent,
       acceptanceCriteria: params.acceptanceCriteria,
       preserve: params.preserve ?? [],
-    }, signal);
+    }, signal, onProgress);
     return {
       ok: true,
       action: "image_generate",
@@ -1398,6 +1545,23 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           }
         }
         const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
+        if (options.projectId && typeof input.runId === "string") {
+          try { assertAssignedRun(input.runId, event.toolName); }
+          catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
+        }
+        if (assignedRunId && ["read", "write", "edit", "ls", "grep", "find"].includes(event.toolName) && typeof input.path === "string" && /^runs\//u.test(input.path)) {
+          try {
+            const [, explicitRunId, ...parts] = input.path.split("/");
+            if (explicitRunId !== assignedRunId) throw new Error(`Native Run path must target assigned Run ${assignedRunId}, not ${explicitRunId}`);
+            input.path = resolveInside(resolveInside(workspaceDir, join("runs", assignedRunId)), parts.join("/"));
+          }
+          catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
+        }
+        if (assignedRunId && ["read", "write", "edit", "ls", "grep", "find"].includes(event.toolName) && typeof input.path === "string" && !isAbsolute(input.path)
+          && /^(?:(?:research|plan|review|artifacts|\.performance)(?:\/|$)|(?:brief|run-state|design-context)\.json$|bus\.jsonl$)/u.test(input.path)) {
+          try { input.path = resolveInside(resolveInside(workspaceDir, join("runs", assignedRunId)), input.path); }
+          catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
+        }
         if (["read", "write", "edit"].includes(event.toolName) && typeof input.path === "string") {
           const absolute = resolve(context?.cwd ?? workspaceDir, input.path);
           const local = relative(resolveInside(workspaceDir, "runs"), absolute).replaceAll("\\", "/");
@@ -1449,7 +1613,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const path = input.path.replaceAll("\\", "/");
           if (/(?:^|\/)runs\/[a-zA-Z0-9._-]+\/.+\.json$/u.test(path)) {
             try {
-              parseRunJson(input.content, path);
+              const data = parseRunJson(input.content, path);
+              if (options.parentInvocation?.agent === "designer" && path.endsWith("/plan/deliverable_manifest.json")) {
+                const normalized = normalizeDraftPresentation(requiredRecord(data, path));
+                if (normalized.issues.length) return { block: true, reason: normalized.issues.join("\n") + " Use write_json for a partial draft, or declare its presentation choice before writing." };
+                if (Object.keys(normalized.normalizedFields).length) input.content = `${JSON.stringify(data, null, 2)}\n`;
+              }
             } catch (error) {
               return { block: true, reason: error instanceof Error ? error.message : String(error) };
             }
@@ -1939,6 +2108,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         runId: Type.Optional(Type.String({ description: "Existing Dreamatic Run id. Required for durable stage sessions and completion validation." })),
       }),
       async execute(invocationId, params, signal, onUpdate, context) {
+        if (params.runId) assertAssignedRun(params.runId, "spawn_agent");
         if (!context.model) throw new Error("The parent session has no active model to pass to the design agent");
         if (!DREAMATIC_SPECIALISTS.has(params.agent)) {
           throw new Error(`Unknown Dreamatic specialist: ${params.agent}. Expected researcher, designer, reviewer, or builder.`);
@@ -1962,19 +2132,47 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             instruction: "Rebuild and restart Server/CLI, then resume this Run's pending stage. Do not retry this configuration error, change the task wording, remove required permissions, or repeat completed stages.",
           });
         }
-        const inferredRunId = params.runId ? safeRunId(params.runId) : runIdFromTask(params.task);
+        const taskRunId = runIdFromTask(params.task);
+        const inferredRunId = params.runId ? safeRunId(params.runId) : taskRunId ?? (options.projectId ? safeRunId(options.projectId) : undefined);
+        if (inferredRunId) assertAssignedRun(inferredRunId, "spawn_agent");
+        if (inferredRunId && taskRunId && taskRunId !== inferredRunId) throw new Error(`spawn_agent handoff disagrees with its Run assignment. Task refers to ${taskRunId}, canonical runId: ${inferredRunId}; runDir: ${resolveInside(workspaceDir, join("runs", inferredRunId))}. Correct the handoff paths before starting the specialist.`);
         const runAssignment = inferredRunId ? specialistRunAssignment(workspaceDir, inferredRunId, params.agent) : "";
+        const sourceBrief = inferredRunId ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "brief.json").catch((error) => { throw new Error(`spawn_agent requires an initialized Run with brief.json: ${inferredRunId}. Use run_init's returned canonical runId; no specialist was started. ${error instanceof Error ? error.message : String(error)}`); }) : {};
+        if (inferredRunId && typeof sourceBrief.runId === "string" && safeRunId(sourceBrief.runId) !== inferredRunId) throw new Error(`Run brief identity disagrees with ${inferredRunId}; repair the assignment before starting a specialist.`);
+        if (params.agent === "designer") {
+          const conflict = designerHandoffError(params.task, sourceBrief);
+          if (conflict) return textResult({ ok: false, retryable: false, repairOwner: "orchestrator", error: conflict, instruction: "Correct this handoff before starting Designer. No specialist was started." });
+        }
         if (inferredRunId) activeRunId = inferredRunId;
-        const sourceBrief = inferredRunId ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "brief.json").catch(() => ({} as Record<string, unknown>)) : {};
+        const revisionPlan = params.agent === "designer" && inferredRunId ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "plan/design_plan.json").catch(() => undefined) : undefined;
+        const draftReadiness = revisionPlan && inferredRunId ? await designerDraftReadiness(resolveInside(workspaceDir, join("runs", inferredRunId))) : undefined;
+        if (params.agent === "designer" && draftReadiness && !draftReadiness.ok && /only need to commit|DO NOT read any files|文件已经全部写入|只(?:需|需要).*提交/i.test(params.task)) {
+          return textResult({ ok: false, retryable: false, repairOwner: "orchestrator", draftReadiness,
+            instruction: "The current draft is invalid. Replace this publish-only handoff with a repair task allowing source/plan reads and corrections, then reload retained Skills. Existing files do not establish readiness. No specialist was started." });
+        }
+        const recoveryHandoff = params.agent === "designer" ? `\n\n# Authoritative Designer Delivery and Recovery Contract\nFor UX, Designer authors the full HTML/CSS/JS sources; Builder only executes the approved files and image tasks. A recovery task is never publish-only until current drafts pass validation. Read/correct existing files and reload retained Skills even if a delegated task says do not read/write or claims completion. Do not invent source paths: read design_context_read. ${draftReadiness ? JSON.stringify(draftReadiness) : "Create typed execution_plan tasks matching individual deliverable ids; image prompts remain unchanged."}` : "";
+        const reloadChecklist = skillReloadChecklist(revisionPlan, briefDesignScopes(sourceBrief).map((scope) => scope.id));
+        const scopeHandoff = `# Authoritative Design Scope and Skill Protocol\n\n${JSON.stringify(designScopeSkillProtocol(briefDesignScopes(sourceBrief)))}${reloadChecklist.length ? `\n\n# Revision Skill Reload Checklist\n${JSON.stringify(reloadChecklist)}\nThis is a fresh invocation: earlier Skill receipts are not loaded knowledge. Before correcting the design, load every retained primary AND supporting Skill using these exact calls. You may autonomously change selections for this task, but update skill_selection and skill_refs to match actual loading. Do not publish until the full retained selection is loaded.` : ""}`;
         const requestProvenance = `# User Request Provenance\n\n${JSON.stringify({ originalRequest: sourceBrief.originalRequest ?? null, originalRequestSource: sourceBrief.originalRequestSource ?? "unavailable", projectTitle: sourceBrief.title ?? null })}\noriginalRequest is the user's source text, not the project title or the Orchestrator's rewritten brief/task. Extract search terms from that text and confirmed user clarifications. Project titles are display labels, never original wording. When originalRequest is unavailable in a legacy Run, report the provenance gap and recover the actual user message through Orchestrator; do not invent or relabel a title as user input. Later confirmed revisions supplement the original request; they do not rewrite it.`;
         const limits = inferredRunId
           ? await workflowBudget(resolveInside(workspaceDir, join("runs", inferredRunId)))
           : { profile: "compact" as const, budget: WORKFLOW_BUDGETS.compact };
-        const runtimeLimits = `# Dreamatic Runtime Limits\n\nWorkflow profile: ${limits.profile}. Initial research acquisition budgets: ${JSON.stringify(limits.budget)}. A specific material evidence/figure gap can enable one bounded reserve per resource via refinementReason, up to twice its initial budget. Change keywords/sources rather than repeating attempted requests. Cached-page rediscovery and selected-image downloads need no new source fetch. These budgets limit searches and source fetches only. Reference images have no per-page or per-Run count ceiling; ignore obsolete referenceAssets budgets in older Briefs or tasks. Choose useful reference coverage based on user intent and retain lightweight screening, provenance and file-safety checks; uncertain article-context candidates are for Designer to evaluate, not automatically reject. These budgets do not limit design deliverables. DREAMATIC_IMAGE_DEFAULT_SIZE is ${imageSizeCeiling()} and is the hard per-image size ceiling. Unless the user explicitly sets a quantity or requests fewer images, there is no total or per-stage generation-count ceiling. Designer must map significant design conclusions, developed alternatives, scenarios, states, details and applications to adequate visual deliverables. Do not treat compact profiles, Skill examples, retry budgets or concurrency limits as output quotas. Builder executes the complete approved image set. No planned or executed image may exceed the image-size envelope, including when orientation is swapped.`;
+        const runtimeLimits = `# Dreamatic Runtime Limits\n\nWorkflow profile: ${limits.profile}. Initial research acquisition budgets: ${JSON.stringify(limits.budget)}. A specific material evidence/figure gap can enable one bounded reserve per resource via refinementReason, up to twice its initial budget. Change keywords/sources rather than repeating attempted requests. Cached-page rediscovery and selected-image downloads need no new source fetch. These budgets limit searches and source fetches only. Reference images have no per-page or per-Run count ceiling; ignore obsolete referenceAssets budgets in older Briefs or tasks. Choose useful reference coverage based on user intent and retain lightweight screening, provenance and file-safety checks; uncertain article-context candidates are for Designer to evaluate, not automatically reject. These budgets do not limit design deliverables. DREAMATIC_IMAGE_DEFAULT_SIZE is ${imageSizeCeiling()} and is the hard per-image size ceiling. Unless the user explicitly sets a quantity or requests fewer images, there is no total or per-stage generation-count ceiling. Designer must map significant design conclusions, developed alternatives, scenarios, states, details and applications to adequate visual deliverables. Do not treat compact profiles, Skill examples, retry budgets or concurrency limits as output quotas. Builder executes the complete approved deliverable set. Image-specific limits apply only to imagery; HTML pages use their approved viewport/interaction requirements. No planned or executed image may exceed the image-size envelope, including when orientation is swapped.`;
+        const executionProfile = params.agent === "builder" && inferredRunId
+          ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "plan/design_plan.json").then((plan) => plan.schemaVersion === 2 ? "\n\n# Approved Typed Execution\nUse execute_design_plan without ids first to execute all required tasks. ids selects a subset only; HTML presentation does not cancel required image tasks. HTML sources already contain the full design: do not reconstruct, copy by hand, write or edit their artifact files, even if the handoff says implement a page. HTML validation defects return to Designer through Orchestrator for correction and Reviewer approval. Only mechanical generation/reuse and declared Gallery/manual output authoring belong to Builder." : "").catch(() => "") : "";
+        if (executionProfile && inferredRunId) {
+          const runDir = resolveInside(workspaceDir, join("runs", inferredRunId));
+          const plan = await readJsonRecord(runDir, "plan/design_plan.json");
+          const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
+          const generated = new Set(deliveryContract(plan, manifest).tasks.filter((task) => task.method === "html_generate").flatMap((task) => [...htmlTask(task).files, ...htmlTask(task).resources].map((file) => file.output)));
+          if (requiredRecord(manifest.presentation, "presentation").mode === "html" && requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable")).every((item) => item.method !== "manual" || generated.has(String(item.file)))) {
+            tools = tools.filter((name) => !["write", "edit", "write_json", "patch_json"].includes(name));
+          }
+        }
         const childLoader = new DefaultResourceLoader({
           cwd: context.cwd,
           agentDir: getAgentDir(),
-          systemPromptOverride: () => `${dreamaticPersonaPromptBlock(body)}\n\n${runtimeLimits}\n\n${requestProvenance}\n\n${runAssignment}`,
+          systemPromptOverride: () => `${dreamaticPersonaPromptBlock(body)}\n\n${runtimeLimits}\n\n${requestProvenance}\n\n${scopeHandoff}${recoveryHandoff}\n\n${runAssignment}${executionProfile}`,
           appendSystemPromptOverride: (base) => base,
           extensionFactories: [createDreamaticExtension({
             ...options,
@@ -2011,6 +2209,22 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           if (params.agent === "builder" && latestDesignGate?.type !== "design_review_pass") {
             throw new Error(`Builder cannot start for Run ${inferredRunId} until the latest Design Context event is design_review_pass`);
           }
+          if (params.agent === "builder") {
+            try {
+              await assertStageCommitted(workspaceDir, inferredRunId, "reviewer", 0);
+              await assertStageCommitted(workspaceDir, inferredRunId, "designer", 0, true);
+              const approvedRun = resolveInside(workspaceDir, join("runs", inferredRunId));
+              await assertHtmlSourcePreflight(approvedRun, deliveryContract(await readJsonRecord(approvedRun, "plan/design_plan.json"), await readJsonRecord(approvedRun, "plan/deliverable_manifest.json")), signal);
+            }
+            catch (error) {
+              if (!(error instanceof DeliveryBlocked)) throw error;
+              return textResult({ ok: false, blocked: true, retryable: false, runId: inferredRunId, repairOwner: error.repairOwner, issues: error.issues,
+                instruction: "Return unresolved approval issues to Designer, then obtain a new Reviewer approval before starting Builder." });
+            }
+            const block = await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), ".performance/build-block.json").catch(() => undefined);
+            if (block && block.reviewEventId === latestDesignGate?.id && block.runtimeStamp === await deliveryRuntimeStamp()) return textResult({ ...block, ok: false, blocked: true, retryable: false,
+              instruction: "Do not start another Builder with the same failed approved specification. Route these issues to the repair owner; Designer changes require a new specification and Reviewer approval. A runtime correction can retry unchanged approved sources." });
+          }
         }
         const childSessionDir = inferredRunId
           ? resolveInside(workspaceDir, join("runs", inferredRunId, "sessions", safeRunId(params.agent)))
@@ -2024,6 +2238,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const agentStartedAt = Date.now();
         const toolStartedAt = new Map<string, number>();
         const toolProgressTimers = new Map<string, ReturnType<typeof setInterval>>();
+        const toolProgressDetails = new Map<string, string>();
         const toolArguments = new Map<string, unknown>();
         const toolMetrics = new Map<string, { calls: number; durationMs: number; errors: number }>();
         const modelTurns: Array<Record<string, unknown>> = [];
@@ -2033,6 +2248,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         let firstTextAt: number | undefined;
         let responseFinishedAt: number | undefined;
         let committedDuringPrompt: string | undefined;
+        let blockedDuringPrompt: Record<string, unknown> | undefined;
         let modelLastActivityAt = Date.now();
         let modelResponseChars = 0;
         let modelTimer: ReturnType<typeof setInterval> | undefined;
@@ -2072,7 +2288,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         };
         await emitLifecycle({ type: "agent_started", task: params.task, status: "running", from: "orchestrator" });
         if (inferredRunId) await updateRunState(workspaceDir, inferredRunId, `${params.agent}_started`);
-        const restoreTurnStop = stopAfterCommittedTurn(session.agent, () => Boolean(committedDuringPrompt));
+        const restoreTurnStop = stopAfterCommittedTurn(session.agent, () => Boolean(committedDuringPrompt || blockedDuringPrompt));
         const unsubscribe = session.subscribe((event) => {
           if (event.type === "turn_start") {
             stopModelTimer();
@@ -2148,7 +2364,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             toolStartedAt.set(event.toolCallId, Date.now());
             toolProgressTimers.set(event.toolCallId, setInterval(() => {
               const durationMs = Date.now() - (toolStartedAt.get(event.toolCallId) ?? Date.now());
-              const progress = `${params.agent}: executing ${event.toolName} · ${Math.round(durationMs / 1000)}s`;
+              const progress = `${toolProgressDetails.get(event.toolCallId) ?? `${params.agent}: executing ${event.toolName}`} · ${Math.round(durationMs / 1000)}s elapsed`;
               void emitLifecycle({ type: "agent_progress", output: progress, toolCallId: event.toolCallId, toolName: event.toolName, durationMs, status: "running" });
               onUpdate?.({ content: [{ type: "text", text: progress }], details: { agent: params.agent, running: true } });
             }, 15_000));
@@ -2162,18 +2378,31 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             });
             return;
           }
+          if (event.type === "tool_execution_update") {
+            const result = event.partialResult;
+            const output = Array.isArray(result?.content) ? result.content.filter((item: { type?: string; text?: unknown }) => item.type === "text" && typeof item.text === "string").map((item: { text: string }) => item.text).join("\n").slice(0, 1_200) : "";
+            if (output) {
+              toolProgressDetails.set(event.toolCallId, output);
+              void emitLifecycle({ type: "agent_progress", output, toolCallId: event.toolCallId, toolName: event.toolName, status: "running" });
+              onUpdate?.({ content: [{ type: "text", text: output }], details: { agent: params.agent, running: true } });
+            }
+            return;
+          }
           if (event.type === "tool_execution_end") {
             const progressTimer = toolProgressTimers.get(event.toolCallId);
             if (progressTimer) clearInterval(progressTimer);
             toolProgressTimers.delete(event.toolCallId);
+            toolProgressDetails.delete(event.toolCallId);
             const args = toolArguments.get(event.toolCallId);
             toolArguments.delete(event.toolCallId);
             const durationMs = Math.max(0, Date.now() - (toolStartedAt.get(event.toolCallId) ?? Date.now()));
             toolStartedAt.delete(event.toolCallId);
             const metric = toolMetrics.get(event.toolName) ?? { calls: 0, durationMs: 0, errors: 0 };
+            const validationBlocked = ["build_finalize", "design_bus_post"].includes(event.toolName) && !event.isError && event.result.details && typeof event.result.details === "object" && (event.result.details as Record<string, unknown>).blocked === true;
+            const executionFailed = ["image_generate_batch", "image_edit_batch", "execute_image_plan"].includes(event.toolName) && event.result.details?.ok === false;
             metric.calls += 1;
             metric.durationMs += durationMs;
-            if (event.isError) metric.errors += 1;
+            if (event.isError || validationBlocked || executionFailed) metric.errors += 1;
             toolMetrics.set(event.toolName, metric);
             const output = workflowObservation(event.result, 1_200);
             void emitLifecycle({
@@ -2181,15 +2410,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               toolCallId: event.toolCallId,
               toolName: event.toolName,
               output,
-              isError: event.isError,
-              status: event.isError ? "error" : "completed",
+              isError: event.isError || Boolean(validationBlocked) || executionFailed,
+              status: validationBlocked ? "blocked" : event.isError || executionFailed ? "error" : "completed",
             });
             if (!event.isError && ["research_asset_fetch", "research_asset_fetch_batch", "research_fetch_batch"].includes(event.toolName) && inferredRunId) {
               for (const path of workflowReferencePaths(event.result, inferredRunId)) {
                 void emitLifecycle({ type: "reference_added", toolCallId: event.toolCallId, path, status: "completed" });
               }
             }
-            const completionEvent = specialistCompletionEvent(params.agent, event.toolName, event.isError, args);
+            if (validationBlocked) blockedDuringPrompt = event.result.details as Record<string, unknown>;
+            const completionEvent = specialistCompletionEvent(params.agent, event.toolName, event.isError, args, event.result);
             if (completionEvent && process.env.DREAMATIC_STOP_AFTER_COMMIT?.trim().toLowerCase() !== "false") {
               committedDuringPrompt = completionEvent;
             }
@@ -2211,7 +2441,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               }
               signal?.throwIfAborted();
               if (modelTimeoutError) throw modelTimeoutError;
-              if (committedDuringPrompt) return;
+              if (committedDuringPrompt || blockedDuringPrompt) return;
               const failure = dreamaticSessionFailure(session.messages);
               if (failure) throw new Error(`Sub-agent ${params.agent} failed: ${failure}`);
             }, {
@@ -2226,7 +2456,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               },
             });
           } catch (error) {
-            if (!committedDuringPrompt || signal?.aborted || modelTimeoutError) throw error;
+            if ((!committedDuringPrompt && !blockedDuringPrompt) || signal?.aborted || modelTimeoutError) throw error;
+          }
+          if (blockedDuringPrompt) {
+            if (inferredRunId) await updateRunState(workspaceDir, inferredRunId, `${params.agent}_interrupted`);
+            await emitLifecycle({ type: "agent_interrupted", status: "blocked", error: `${params.agent} validation requires correction before completion`, ...blockedDuringPrompt, metrics: { durationMs: Date.now() - agentStartedAt, tools: Object.fromEntries(toolMetrics), modelTurns } });
+            return textResult({ ...blockedDuringPrompt, agent: params.agent, runId: inferredRunId, committedEvent: null });
           }
           const output = committedDuringPrompt
             ? `${params.agent} committed ${committedDuringPrompt}; runtime ended the completed specialist session without an additional summary round.`
@@ -2263,6 +2498,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           restoreTurnStop();
           for (const timer of toolProgressTimers.values()) clearInterval(timer);
           toolProgressTimers.clear();
+          toolProgressDetails.clear();
           if (activeSpecialistInvocation?.id === invocationId) activeSpecialistInvocation = undefined;
           signal?.removeEventListener("abort", abort);
           unsubscribe();
@@ -2284,76 +2520,103 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     // Compatibility bridge for the existing Dreamatic Skill contracts. Pi
     // already discovers Skills natively; these tools remain until each Skill
     // has been reviewed and migrated without losing its executable contract.
+    const availableProfessionals: Record<string, string[]> = {};
+    let lastSkillReceipt: string | undefined;
+    const persistSkillReceipt = async () => {
+      if (!assignedRunId || !options.parentInvocation) return;
+      const source = JSON.stringify({ runId: assignedRunId, agent: options.parentInvocation.agent, invocationId: options.parentInvocation.id, availableProfessionals, activeSkills: skillActivation.all() });
+      if (source === lastSkillReceipt) return;
+      const path = resolveInside(workspaceDir, join("runs", assignedRunId, ".performance", `skills-${options.parentInvocation.agent}.json`));
+      await mkdir(dirname(path), { recursive: true });
+      const temporary = `${path}.${randomUUID()}.tmp`;
+      await writeFile(temporary, source); await rename(temporary, path);
+      lastSkillReceipt = source;
+    };
+    const classifiedScopes = async () => assignedRunId
+      ? briefDesignScopes(await readJsonRecord(resolveInside(workspaceDir, join("runs", assignedRunId)), "brief.json").catch(() => ({})))
+      : [];
+    const scopeForSkill = async (scope: string | undefined) => {
+      const scopes = await classifiedScopes();
+      return { scopes, scope: scope?.trim() || "project" };
+    };
     pi.registerTool({
       name: "list_skills",
       label: "List design skills",
-      description: "Discover Pi Skills with role/discipline metadata and the current invocation's active selection. Designer selects design knowledge; Builder selects implementation/presentation guidance. Refresh only after catalog changes.",
-      parameters: Type.Object({ query: Type.Optional(Type.String()), refresh: Type.Optional(Type.Boolean()) }),
+      description: "Discover Pi Skills by assigned design scope/category. Designer chooses and loads professional knowledge; discovery never activates it. Refresh only after catalog changes.",
+      parameters: Type.Object({ query: Type.Optional(Type.String({ description: "Search Skill names, descriptions and domain types" })), refresh: Type.Optional(Type.Boolean()), scopeId: Type.Optional(Type.String({ description: "Exact Orchestrator-assigned designScopes[].id, not a Skill name or category. Omit to discover all assigned scopes." })), category: Type.Optional(Type.String({ description: "Filter by category registry id, e.g. ux, industrial or media_communication; never a Skill name." })) }),
       async execute(_id, params, _signal, _update, context) {
-        const catalog = await discoverSkills(context.cwd, params.refresh);
-        const skills = await Promise.all(catalog.map(async (skill) => {
-          const frontmatter = await readFile(skill.filePath, "utf8").then((content) => parseFrontmatter<{ metadata?: { audience?: string; domain_type?: string } }>(content).frontmatter).catch(() => undefined);
-          return { name: skill.name, description: skill.description, path: skill.filePath, audience: frontmatter?.metadata?.audience ?? "unspecified", domainType: frontmatter?.metadata?.domain_type ?? "unspecified" };
-        }));
+        if (params.category && !isDesignCategory(params.category)) throw new Error(`Unknown design category: ${params.category}`);
+        const assignment = await scopeForSkill(params.scopeId);
+        const scopes = assignment.scopes;
+        let scope = assignment.scope;
+        if (params.refresh || skillDescriptorCwd !== context.cwd) skillDescriptors = undefined;
+        skillDescriptorCwd = context.cwd;
+        skillDescriptors ??= discoverSkills(context.cwd, params.refresh).then((catalog) => Promise.all(catalog.map(async (skill) => {
+          const frontmatter = await readFile(skill.filePath, "utf8").then((content) => parseFrontmatter<{ metadata?: unknown }>(content).frontmatter).catch(() => undefined);
+          return { name: skill.name, description: skill.description, path: skill.filePath, ...skillMetadata(frontmatter?.metadata) };
+        }))).catch((error) => { skillDescriptors = undefined; throw error; });
+        const skills = await skillDescriptors;
         const audience = options.parentInvocation?.agent;
+        let scopeResolution: Record<string, unknown> | undefined;
+        if (params.scopeId && audience === "designer" && scopes.length && !scopes.some((item) => item.id === scope)) {
+          const hint = skills.find((skill) => skill.name === scope && (skill.audience === "designer" || skill.audience === "unspecified"));
+          const candidates = scopes.filter((item) => hint ? hint.designCategories.includes(item.category) : item.category === scope);
+          const canonical = candidates.length === 1 ? candidates[0] : undefined;
+          scopeResolution = { requestedScopeId: scope, status: canonical ? "resolved_unique_hint" : "unresolved", scopeId: canonical?.id ?? null, suggestedScopes: candidates.length ? candidates : scopes,
+            instruction: canonical ? `Use scopeId=${canonical.id} for subsequent discovery/loading and scope_id=${canonical.id} in the plan. ${params.scopeId} is a Skill name or category, not the assigned id. Discovery resolved only this unique assignment; no Skill was activated.` : "No unique assignment can be inferred. Choose the exact designScopes[].id for the intended task. Do not invent a scope or bind a Skill to every same-category task." };
+          scope = canonical?.id ?? "project";
+        }
+        const requestedCategory = (params.scopeId && (!scopeResolution || scopeResolution.status === "resolved_unique_hint") ? scopes.find((item) => item.id === scope)?.category : undefined) ?? params.category;
+        const category = isDesignCategory(requestedCategory) ? requestedCategory : undefined;
+        if (params.category && category !== params.category) throw new Error("Skill discovery category must match the assigned scope");
+        if (audience === "designer" && scopes.length) {
+          for (const assignment of scopes) availableProfessionals[assignment.id] = skills.filter((skill) => (skill.audience === "designer" || skill.audience === "unspecified") && skill.moduleType === "discipline" && skill.designCategories.includes(assignment.category)).map((skill) => skill.name);
+          await persistSkillReceipt();
+        }
         const selected = skills.filter((skill) => (!audience || skill.audience === "unspecified" || skill.audience === audience)
+          && (!category || skillMatchesCategory(skill, category))
           && (!params.query || `${skill.name} ${skill.description} ${skill.domainType}`.toLowerCase().includes(params.query.toLowerCase())));
-        return textResult({ count: selected.length, skills: selected, activeSkills: [...(activeSkillSets.get(context.cwd) ?? [])].map(([name, role]) => ({ name, role })), source: "pi-resource-loader", instruction: "Select from task intent and deliverables, not a keyword alone. Load the primary discipline with use_skill(role=primary); supporting modules need distinct scopes. New specialist invocations start without prior loaded Skill bodies." });
+        const bindings = skillActivation.all();
+        return textResult({ ok: true, scopeId: params.scopeId && (!scopeResolution || scopeResolution.status === "resolved_unique_hint") ? scope : null, category: category ?? null, ...(scopeResolution ? { scopeResolution } : {}), scopeProtocol: designScopeSkillProtocol(scopes), count: selected.length, skills: selected.map((skill) => ({ ...skill, primaryEligible: skill.moduleType === "discipline" && (!category || skill.designCategories.includes(category)), applicableScopes: scopes.filter((item) => skillMatchesCategory(skill, item.category)).map((item) => ({ scopeId: item.id, category: item.category, task: item.task, primaryEligible: skill.moduleType === "discipline" && skill.designCategories.includes(item.category), load: { tool: "use_skill", arguments: { name: skill.name, scopeId: item.id, role: skill.moduleType === "discipline" && skill.designCategories.includes(item.category) ? "primary" : "supporting" } } })) })), designScopes: scopes, categories: DESIGN_CATEGORIES, capabilities: DESIGN_CAPABILITIES,
+          activeSkills: bindings.filter((binding) => binding.scope === scope).map(({ name, role }) => ({ name, role })), skillBindings: bindings,
+          source: "pi-resource-loader", instruction: "Orchestrator owns categories. Designer selects appropriate discipline Skills for each scope and supporting modules with clear contributions; candidate discovery is not loading. New invocations must load required bodies. Cross-category supporting knowledge may be found through an unfiltered query." });
       },
     });
 
     pi.registerTool({
       name: "use_skill",
       label: "Load design skill",
-      description: "Load and activate a Pi Skill for the current invocation. Selecting a primary replaces the old primary; deactivate obsolete supporting modules explicitly. Repeated unchanged loads reuse prior content unless reload is requested.",
+      description: "Load a Pi Skill for a design scope. A primary replaces only that scope's primary. Deactivate obsolete support explicitly. Unchanged bodies are reused within this invocation; reload restores compacted knowledge.",
       parameters: Type.Object({
-        name: Type.String(),
-        arguments: Type.Optional(Type.String()),
+        name: Type.String(), arguments: Type.Optional(Type.String()),
         role: Type.Optional(Type.Union([Type.Literal("primary"), Type.Literal("supporting")])),
-        deactivate: Type.Optional(Type.Array(Type.String())),
-        reload: Type.Optional(Type.Boolean()),
+        deactivate: Type.Optional(Type.Array(Type.String())), reload: Type.Optional(Type.Boolean()),
+        scopeId: Type.Optional(Type.String({ description: "Orchestrator-assigned design scope id" })),
+        scope: Type.Optional(Type.String({ description: "Compatibility alias of scopeId" })),
       }),
       async execute(_id, params, _signal, _update, context) {
+        if (params.scopeId && params.scope && params.scopeId !== params.scope) throw new Error("scopeId and scope must agree");
+        const { scopes, scope } = await scopeForSkill(params.scopeId ?? params.scope);
+        if (scopes.length && options.parentInvocation?.agent === "designer" && !(params.scopeId ?? params.scope)?.trim()) throw new Error(`Provide an assigned scopeId when loading Designer Skills for a classified Run. Valid task ids: ${scopes.map((item) => item.id).join(", ")}; name is the Skill name.`);
+        if (scopes.length && options.parentInvocation?.agent === "designer" && !scopes.some((item) => item.id === scope)) return textResult({ ok: false, error: "unknown_design_scope", requestedScopeId: scope, designScopes: scopes, scopeProtocol: designScopeSkillProtocol(scopes), instruction: "No Skill was loaded or switched. scopeId must be an exact Orchestrator-assigned task id; name is the Skill name. Call list_skills without scopeId to obtain valid per-scope load arguments, then choose the intended task." });
         let catalog = await discoverSkills(context.cwd);
         let skill = catalog.find((candidate) => candidate.name === params.name);
-        if (!skill) {
-          catalog = await discoverSkills(context.cwd, true);
-          skill = catalog.find((candidate) => candidate.name === params.name);
-        }
-        if (!skill) return textResult({ ok: false, name: params.name, availableSkills: catalog.map((candidate) => candidate.name), instruction: "This Skill is unavailable. Select another discovered module or continue from professional judgment; do not retry the unchanged name or block the design workflow." });
+        if (!skill) { skillDescriptors = undefined; catalog = await discoverSkills(context.cwd, true); skill = catalog.find((candidate) => candidate.name === params.name); }
+        if (!skill) return textResult({ ok: false, name: params.name, availableSkills: catalog.map((candidate) => candidate.name), instruction: "This Skill is unavailable. Select another discovered module or continue from professional judgment and record a knowledge gap; do not retry the unchanged name or block an unclassified design/presentation workflow." });
         let content: string;
         try { content = await readFile(skill.filePath, "utf8"); }
-        catch (error) {
-          skillCatalogs.delete(context.cwd);
-          return textResult({ ok: false, name: params.name, error: error instanceof Error ? error.message : String(error), instruction: "The Skill file is unavailable. Retain the current selection and use another module or professional judgment." });
-        }
-        const declaredAudience = parseFrontmatter<{ metadata?: { audience?: string } }>(content).frontmatter.metadata?.audience;
-        if (options.parentInvocation && declaredAudience && declaredAudience !== options.parentInvocation.agent) {
-          return textResult({ ok: false, name: params.name, instruction: `This Skill is for ${declaredAudience}, not ${options.parentInvocation.agent}. Select role-appropriate guidance; do not change the assigned design or retry this name.` });
-        }
-        const active = activeSkillSets.get(context.cwd) ?? new Map<string, "primary" | "supporting">();
-        const role = params.role ?? active.get(skill.name) ?? "supporting";
-        const deactivated: string[] = [];
-        for (const [name, activeRole] of active) {
-          if (name !== skill.name && (params.deactivate?.includes(name) || (role === "primary" && activeRole === "primary"))) {
-            active.delete(name);
-            deactivated.push(name);
-          }
-        }
-        active.set(skill.name, role);
-        activeSkillSets.set(context.cwd, active);
+        catch (error) { skillCatalogs.delete(context.cwd); skillDescriptors = undefined; return textResult({ ok: false, name: params.name, error: error instanceof Error ? error.message : String(error), instruction: "Skill unavailable; retain the current selection and select another applicable module." }); }
+        const metadata = skillMetadata(parseFrontmatter<{ metadata?: unknown }>(content).frontmatter.metadata);
+        if (options.parentInvocation && metadata.audience !== "unspecified" && metadata.audience !== options.parentInvocation.agent) return textResult({ ok: false, name: params.name, instruction: `This Skill is for ${metadata.audience}, not ${options.parentInvocation.agent}. Select role-appropriate guidance; do not change the assigned design or retry this name.` });
+        const category = scopes.find((item) => item.id === scope)?.category;
+        if (params.role === "primary" && category && (metadata.moduleType !== "discipline" || !metadata.designCategories.includes(category))) throw new Error(`Primary Skill ${skill.name} does not cover ${category}; select matching professional knowledge. Auxiliary Skills belong in supporting.`);
         const hash = createHash("sha256").update(content).digest("hex");
-        const loadedKey = `${context.cwd}\0${skill.filePath}`;
-        const reused = !params.reload && loadedSkillHashes.get(loadedKey) === hash;
-        loadedSkillHashes.set(loadedKey, hash);
-        const selection = { activeSkills: [...active].map(([name, activeRole]) => ({ name, role: activeRole })), deactivated, reused, instruction: `Only the active selection applies to this task. Deactivation changes applicability, not historical context. User intent and the Agent contract override Skills. ${options.parentInvocation?.agent === "builder" ? "Apply this guidance to implementation and Showcase only; do not modify Designer-owned specifications or task_breakdown.md." : "Record selection, scope and switching in task_breakdown.md."} If prior content was compacted and needed again, use reload=true or read a targeted section.` };
-        return {
-          content: [{
-            type: "text",
-            text: `${JSON.stringify(selection)}\nLoaded Skill: ${skill.name}\nBase directory: ${skill.baseDir}\n${params.arguments ? `Arguments: ${params.arguments}\n` : ""}\n${reused ? "Unchanged Skill body already loaded in this invocation; reuse its earlier content." : content}`,
-          }],
-          details: { name: skill.name, path: skill.filePath, role, ...selection, source: "pi-resource-loader" },
-        };
+        const selection = skillActivation.activate(skill.name, skill.filePath, hash, metadata, scope, params.role, params.deactivate, params.reload);
+        await persistSkillReceipt();
+        const retainedPlan = assignedRunId && options.parentInvocation?.agent === "designer" ? await readJsonRecord(resolveInside(workspaceDir, join("runs", assignedRunId)), "plan/design_plan.json").catch(() => undefined) : undefined;
+        const pendingSkillLoads = skillReloadChecklist(retainedPlan, scopes.map((scope) => scope.id), skillActivation.all()).filter((item) => !item.loaded);
+        const instruction = `Only the active selection applies to this task. Deactivation changes applicability, not historical context. User intent and the Agent contract override Skills. ${options.parentInvocation?.agent === "builder" ? "Apply this guidance to implementation and Showcase only; do not modify Designer-owned specifications or task_breakdown.md." : "Record scope_id, name, role and rationale in skill_selection."} Persisted choices are not loaded knowledge; reload after compaction when needed.`;
+        return { content: [{ type: "text", text: `${JSON.stringify({ ...selection, scopeId: scope, category, pendingSkillLoads, instruction })}\nLoaded Skill: ${skill.name}\nBase directory: ${skill.baseDir}\n${params.arguments ? `Arguments: ${params.arguments}\n` : ""}${selection.reused ? "Unchanged Skill body already loaded in this invocation; reuse its earlier content." : content}` }], details: { name: skill.name, path: skill.filePath, sha256: hash, ...metadata, ...selection, scopeId: scope, pendingSkillLoads, instruction, source: "pi-resource-loader" } };
       },
     });
 
@@ -2386,7 +2649,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "run_init",
       label: "Initialize design run",
-      description: "Initialize a persistent Dreamatic workflow run, brief, directories, and coordination bus.",
+      description: "Initialize a persistent Dreamatic workflow run, brief, directories, and coordination bus. Orchestrator must first classify the requested design work and supply designScopes (or resolvedScope.designScopes). Designer selects Skills later; task ids are not Skill names.",
       parameters: Type.Object({
         brief: Type.String({ description: "Resolved design brief, which may summarize confirmed requirements. This is not the verbatim original user request; the runtime preserves that separately from user input." }),
         projectTitle: Type.String({
@@ -2398,6 +2661,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         workflowProfile: Type.Optional(Type.Union([Type.Literal("compact"), Type.Literal("full")])),
         context: Type.Optional(Type.String()),
         resolvedScope: Type.Optional(Type.String()),
+        designScopes: Type.Optional(Type.Array(Type.Object({ id: Type.String(), category: Type.String({ description: "media_communication, industrial, ux, space, fashion, game or service; classify by user intent, not Skill availability" }), task: Type.String(), rationale: Type.Optional(Type.String()) }), { minItems: 1 })),
         domainContext: Type.Optional(Type.String()),
         runIdOverride: Type.Optional(Type.String()),
       }),
@@ -2426,6 +2690,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const namedScope = resolvedScope && typeof resolvedScope === "object" && !Array.isArray(resolvedScope)
           ? { ...(resolvedScope as Record<string, unknown>), human_title: projectTitle }
           : { human_title: projectTitle };
+        const scopedBrief = namedScope as Record<string, unknown>;
+        const scopes = designScopes(params.designScopes ?? scopedBrief.designScopes);
+        if (!scopes.length) throw new Error(`New design Runs require Orchestrator-assigned designScopes before initialization. Classify the user's requested work and provide [{id, category, task, rationale}]. Categories: ${DESIGN_CATEGORIES.map((item) => item.id).join(", ")}. Task ids are not Skill names; Designer selects Skills later. Resume existing unclassified historical Runs without reinitializing them.`);
+        if (params.designScopes && scopedBrief.designScopes && JSON.stringify(scopes) !== JSON.stringify(designScopes(scopedBrief.designScopes))) throw new Error("designScopes and resolvedScope.designScopes must agree");
+        if (scopes.length) scopedBrief.designScopes = scopes;
         for (const directory of [
           "research/assets",
           "plan",
@@ -2466,11 +2735,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         await writeFile(join(runDir, "bus.jsonl"), "", { encoding: "utf8", flag: "a" });
         await updateRunState(workspaceDir, runId, "initialized");
         await updateDesignContextIndex(workspaceDir, runId, "initialized");
+        await appendWorkflowLifecycleEvent(workspaceDir, runId, { id: randomUUID(), type: "design_categories_identified", from_agent: "orchestrator", designScopes: scopes, ...designClassificationMessage(scopes) });
         return textResult({
           ok: true,
           runId,
           projectTitle,
           runDir,
+          designScopes: scopes,
+          scopeProtocol: designScopeSkillProtocol(scopes),
           designContext: join(runDir, "design-context.json"),
           researchDir: join(runDir, "research"),
           researchAssetsDir: join(runDir, "research", "assets"),
@@ -2488,7 +2760,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "design_bus_post",
       label: "Post workflow event",
-      description: "Append a structured workflow event. Pass {runId, type, from_agent, to, summary, artifactRefs, requestedAction} at the argument root. type is the explicit event name, not phase. payload is optional supporting data; it does not replace the root envelope. Correct missing fields before retrying.",
+      description: "Validate and publish a workflow result. Pass explicit runId, type, summary and role identity at the root. Runtime attaches existing canonical stage outputs after validation; artifactRefs is optional for additional existing Run files. Designer completion always routes to Reviewer, never directly to Builder. No event is published on validation failure.",
       parameters: Type.Object({
         runId: Type.String(),
         type: Type.String(),
@@ -2499,14 +2771,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         summary: Type.Optional(Type.String()),
         severity: Type.Optional(Type.String()),
         round: Type.Optional(Type.Number()),
-        artifactRefs: Type.Optional(Type.Array(Type.String())),
+        artifactRefs: Type.Optional(Type.Array(Type.String({ description: "Additional existing assigned-Run files. Runtime automatically attaches validated canonical stage outputs; omit rather than invent paths." }))),
         requestedAction: Type.Optional(Type.String()),
         payload: Type.Optional(Type.Union([Type.String(), Type.Record(Type.String(), Type.Unknown())])),
         replyTo: Type.Optional(Type.String()),
         runDir: Type.Optional(Type.String()),
       }),
       prepareArguments: (args) => normalizeDesignBusArguments(args, options.parentInvocation?.runId ?? options.projectId, options.parentInvocation?.agent),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         const runId = safeRunId(params.runId);
         if (options.parentInvocation) {
           if (!assignedRunId) throw new Error("Specialist completion requires a runtime-assigned Run. Ask Orchestrator to provide runId; do not invent or discover one.");
@@ -2516,7 +2788,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           if (params.from_agent !== options.parentInvocation.agent) throw new Error(`from_agent must be ${options.parentInvocation.agent}`);
           if (params.to !== "orchestrator") throw new Error("Specialist completion events must be addressed to orchestrator");
           if (!params.summary?.trim()) throw new Error("Specialist completion events require a summary");
-          if (!params.artifactRefs?.length) throw new Error("Specialist completion events require artifactRefs");
+          if (params.artifactRefs && params.artifactRefs.some((path) => typeof path !== "string" || !path.trim())) throw new Error("artifactRefs entries must be nonempty existing Run-relative file paths; omit artifactRefs to attach validated canonical outputs automatically.");
         }
         const runDir = resolveInside(workspaceDir, join("runs", runId));
         const state = await readJsonRecord(runDir, "run-state.json").catch(() => undefined);
@@ -2528,19 +2800,52 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const prefix = `runs/${runId}/`;
           return path.startsWith(prefix) ? `${prefix}${canonicalRunDocument(path.slice(prefix.length))}` : canonicalRunDocument(path);
         });
-        if (options.parentInvocation?.agent === "designer") await materializeDesignExecutionDocs(runDir);
+        if (options.parentInvocation?.agent === "designer") {
+          // Historical receipts cannot stand in for knowledge loaded in this invocation.
+          if ((await classifiedScopes()).length) await persistSkillReceipt();
+          await materializeDesignExecutionDocs(runDir);
+        }
         if (options.parentInvocation?.agent === "researcher") await writeResearchAcquisitionStatus(runDir, runId);
-        if (options.parentInvocation) await validateStageOutputs(runDir, runId, options.parentInvocation.agent, params.type);
+        let requiredFiles: string[] = [];
+        if (options.parentInvocation) {
+          try {
+            await validateStageOutputs(runDir, runId, options.parentInvocation.agent, params.type, signal);
+            requiredFiles = await stageRequiredFiles(runDir, options.parentInvocation.agent);
+            params.artifactRefs = await publicationReferences(runDir, runId, options.parentInvocation.agent, requiredFiles, params.artifactRefs ?? []);
+          }
+          catch (error) {
+            signal?.throwIfAborted();
+            if (options.parentInvocation.agent !== "designer") throw error;
+            const issue = error instanceof Error ? error.message : String(error);
+            const fingerprint = await designerDraftFingerprint(runDir, skillActivation.all());
+            const recoveryPath = join(runDir, ".performance/designer-recovery.json");
+            const previous = await readFile(recoveryPath, "utf8").then(JSON.parse).catch(() => undefined);
+            const readiness = await designerDraftReadiness(runDir);
+            const issues = [...new Set([...(error instanceof DeliveryBlocked ? error.issues : [issue]), ...readiness.issues].flatMap((message) => message.split("\n")).filter(Boolean))];
+            const { attempts, failureAttempts } = designerFailureAttempts(previous, issues);
+            const repairOwner = error instanceof DeliveryBlocked ? error.repairOwner : "designer";
+            const recovery = { ok: false, blocked: repairOwner === "runtime" || attempts >= 3, retryable: false, repairOwner, fingerprint, attempts, issue: issues[0] ?? issue, issues, okDraft: readiness.ok,
+              instruction: repairOwner === "runtime" ? "Restore the HTML validation browser runtime before retrying. Do not redesign sources or generate images to repair a browser runtime failure." : "Correct the specific draft fields/sources and load retained Skills before publishing. Changing summary, artifactRefs, path or runDir cannot repair specification validation. Three failures of an unresolved issue return control to Orchestrator; unrelated draft/envelope changes do not reset the count; re-dispatch only with an actual repair task, never a publish-only task." };
+            await mkdir(dirname(recoveryPath), { recursive: true });
+            await writeFile(recoveryPath, JSON.stringify({ ...recovery, failureAttempts }, null, 2));
+            if (recovery.blocked) return { ...finishWorkflow(recovery), details: recovery };
+            throw new Error(`${recovery.issue}\nDesigner recovery: ${JSON.stringify(recovery)}`);
+          }
+        }
         const commitReceipt = options.parentInvocation
           ? {
               schemaVersion: 1,
-              files: Object.fromEntries(await Promise.all((STAGE_REQUIRED_FILES[options.parentInvocation.agent] ?? []).map(async (path) => [
-                path,
-                createHash("sha256").update(await readFile(resolveInside(runDir, path))).digest("hex"),
-              ]))),
+              files: Object.fromEntries(await Promise.all([...new Set([...requiredFiles, ...(params.artifactRefs ?? []).map((path) => canonicalRunDocument(path.startsWith(`runs/${runId}/`) ? path.slice(`runs/${runId}/`.length) : path))])].map(async (path) => {
+                const existing = await findRunDocument(runDir, path);
+                if (!existing || !(await stat(existing.absolutePath)).size) throw new Error(`Cannot publish completion: required output is missing or empty: ${path}`);
+                return [path, createHash("sha256").update(await readFile(existing.absolutePath)).digest("hex")];
+              }))),
             }
           : undefined;
-        const event = { id: randomUUID(), ...params, runId, ...(commitReceipt ? { commitReceipt } : {}), at: new Date().toISOString() };
+        const submittedRequestedAction = params.requestedAction;
+        const nextAgent = options.parentInvocation?.agent === "designer" ? "reviewer" : undefined;
+        if (nextAgent) params.requestedAction = "review";
+        const event = { id: randomUUID(), ...params, runId, ...(nextAgent ? { nextAgent, ...(submittedRequestedAction && submittedRequestedAction !== "review" ? { submittedRequestedAction } : {}) } : {}), ...(commitReceipt ? { commitReceipt } : {}), at: new Date().toISOString() };
         await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
         await updateRunState(workspaceDir, runId, params.type);
         await updateDesignContextIndex(workspaceDir, runId, params.type);
@@ -2557,6 +2862,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         feedback: Type.String({ minLength: 1 }),
         preserve: Type.Optional(Type.Array(Type.String())),
         needsResearch: Type.Optional(Type.Boolean()),
+        designScopes: Type.Optional(Type.Array(Type.Object({ id: Type.String(), category: Type.String(), task: Type.String(), rationale: Type.Optional(Type.String()) }), { minItems: 1 })),
       }),
       async execute(_id, params) {
         if (options.parentInvocation) throw new Error("Only Orchestrator can open a revision");
@@ -2565,6 +2871,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const runId = safeRunId(params.runId);
         if (options.projectId && runId !== safeRunId(options.projectId)) throw new Error("Revision must belong to this conversation's project");
         if (!params.feedback.trim()) throw new Error("Explicit user feedback is required");
+        const revisedScopes = params.designScopes ? designScopes(params.designScopes) : undefined;
         revisionOpening = true;
         try {
           const runDir = resolveInside(workspaceDir, join("runs", runId));
@@ -2582,7 +2889,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const now = new Date().toISOString();
           const revisionRequest = { id: revisionId, feedback: params.feedback, preserve: params.preserve ?? [], needsResearch: params.needsResearch === true, baseSnapshot: relative(runDir, archive), requestedAt: now };
           const brief = await readJsonRecord(runDir, "brief.json");
-          await writeFile(join(runDir, "brief.json"), JSON.stringify({ ...brief, revisionRequest }, null, 2));
+          await writeFile(join(runDir, "brief.json"), JSON.stringify({ ...brief, ...(revisedScopes ? { resolvedScope: { ...(brief.resolvedScope && typeof brief.resolvedScope === "object" ? brief.resolvedScope : {}), designScopes: revisedScopes } } : {}), revisionRequest }, null, 2));
           const index = await readJsonRecord(runDir, "design-context.json");
           await writeFile(join(runDir, "design-context.json"), JSON.stringify({ ...index, status: "designing", latestVerdict: null, revisionRequest, updatedAt: now, lastEvent: "run_revision_started" }, null, 2));
           await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify({ id: revisionId, runId, type: "run_revision_started", from_agent: "orchestrator", to: "designer", summary: params.feedback, revisionRequest, at: now })}\n`);
@@ -2591,6 +2898,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           for (const key of operationAttempts.keys()) if (key.startsWith(`${runId}:`)) operationAttempts.delete(key);
           for (const key of operationLastErrors.keys()) if (key.startsWith(`${runId}:`)) operationLastErrors.delete(key);
           activeRunId = runId;
+          if (revisedScopes) await appendWorkflowLifecycleEvent(workspaceDir, runId, { id: randomUUID(), type: "design_categories_identified", from_agent: "orchestrator", designScopes: revisedScopes, ...designClassificationMessage(revisedScopes, true) });
           return textResult({ ok: true, runId, revisionRequest, instruction: "Preserve confirmed content and existing unchanged deliverables. Route the feedback delta to Designer (Researcher first only if needed), then obtain a new review before Builder. Previous approval and build events no longer authorize this revision." });
         } finally {
           revisionOpening = false;
@@ -2601,7 +2909,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     const writeJsonToolUnlocked = defineTool({
       name: "write_json",
       label: "Write structured project data",
-      description: "Atomically serialize Run JSON. The argument envelope is {runId, path, data}: runId and path belong at the root; data is only the file content. Pass data as an object, not a serialized string. Never write design-context.json or run-state.json: completion events update those runtime-owned files.",
+      description: "Atomically serialize Run JSON. The argument envelope is {runId, path, data}: runId and path belong at the root; data is only the file content. Pass data as an object, not a serialized string. Designer manifests automatically fill a missing fixed Gallery entry or the sole declared HTML page entry before saving/hashing; mixed outputs need explicit mode and multiple HTML deliverables need explicit entry. Never write design-context.json or run-state.json: completion events update those runtime-owned files.",
       parameters: Type.Object({
         runId: Type.String(),
         path: Type.String({ description: "Run-relative JSON path, such as plan/design_plan.json" }),
@@ -2611,7 +2919,6 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       async execute(_id, params, signal) {
         const runId = safeRunId(params.runId);
         assertAssignedRun(runId, "write_json");
-        if (options.projectId && runId !== safeRunId(options.projectId)) throw new Error("write_json must target this conversation's project");
         if (["design-context.json", "run-state.json"].includes(params.path)) {
           return textResult({ ok: false, writePerformed: false, runtimeManaged: true, instruction: "This file belongs to the runtime. Do not retry with write or edit. Persist only your role's canonical outputs and publish the completion event; the runtime updates the context index and Run state automatically." });
         }
@@ -2622,11 +2929,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const path = resolveInside(runDir, params.path);
         await assertRoleWrite(workspaceDir, runId, options.parentInvocation?.agent ?? "orchestrator", path);
         const data = requiredRecord(params.data, params.path);
+        const warnings: string[] = [], normalizedFields: Record<string, string> = {};
         if (options.parentInvocation?.agent === "designer") {
           data.runId ??= runId;
           if (["plan/design_plan.json", "plan/deliverable_manifest.json"].includes(params.path)) data.design_system_ref ??= "plan/design_system.json";
           if (params.path === "plan/design_plan.json") hoistDesignPlanSections(data);
-          const entries = data.image_generation_plan ?? data.deliverables;
+          const entries = data.execution_plan ?? data.image_generation_plan ?? data.deliverables;
           if (Array.isArray(entries)) {
             for (const item of entries) {
               if (item && typeof item === "object" && !Array.isArray(item)) {
@@ -2637,6 +2945,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               }
             }
           }
+        }
+        if (options.parentInvocation?.agent === "designer" && params.path === "plan/deliverable_manifest.json") {
+          const normalized = normalizeDraftPresentation(data);
+          Object.assign(normalizedFields, normalized.normalizedFields);
+          warnings.push(...normalized.issues);
         }
         const source = `${JSON.stringify(data, null, 2)}\n`;
         const temporaryPath = `${path}.${randomUUID()}.tmp`;
@@ -2649,9 +2962,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         } finally {
           await unlink(temporaryPath).catch(() => undefined);
         }
-        const warnings: string[] = [];
         if (params.path === "plan/design_plan.json") {
-          if (!Array.isArray(data.image_generation_plan)) warnings.push("image_generation_plan must be an array at the file root, beside concept_evaluation, not inside it. Complete this checkpoint before publishing.");
+          if (data.schemaVersion !== 2 && !Array.isArray(data.image_generation_plan)) warnings.push("image_generation_plan must be an array at the file root, beside concept_evaluation, not inside it. Complete this checkpoint before publishing.");
           const references = await readJsonRecord(runDir, "research/assets/manifest.json").catch(() => undefined);
           warnings.push(...referenceReviewCoverage(references, data).warnings);
         }
@@ -2665,6 +2977,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           }
           const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
           const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json").catch(() => undefined);
+          if (plan && manifest && (plan.schemaVersion === 2 || briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length)) {
+            warnings.push(...(await designerDraftReadiness(runDir)).issues.map((issue) => `Delivery checkpoint: ${issue}`));
+            try { await validateDesignScopes(runDir, plan, manifest); } catch (error) { warnings.push(`Skill/scope checkpoint: ${error instanceof Error ? error.message : String(error)}`); }
+          }
           if (Array.isArray(plan?.image_generation_plan) && Array.isArray(manifest?.deliverables)) {
             const promptIds = new Set(plan.image_generation_plan.map((entry) => entry && typeof entry === "object" ? (entry as Record<string, unknown>).id : undefined));
             for (const entry of manifest.deliverables) {
@@ -2676,7 +2992,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             }
           }
         }
-        return textResult({ ok: true, path: relative(workspaceDir, path), bytes: Buffer.byteLength(source), sha256: createHash("sha256").update(source).digest("hex"), ...(warnings.length ? { warnings, instruction: "The file was saved. Correct the cross-file warnings before publishing completion; do not rewrite unrelated successful outputs." } : {}) });
+        return textResult({ ok: true, path: relative(workspaceDir, path), bytes: Buffer.byteLength(source), sha256: createHash("sha256").update(source).digest("hex"), ...(Object.keys(normalizedFields).length ? { normalizedFields } : {}), ...(warnings.length ? { warnings, instruction: "The file was saved. Correct the cross-file warnings before publishing completion; do not rewrite unrelated successful outputs." } : {}) });
       },
     });
 
@@ -2692,7 +3008,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "patch_json",
       label: "Patch structured project data",
-      description: "Update only changed JSON fields using JSON pointers. Pass the file sha256 from a prior read/save to prevent stale overwrites. All normal role and schema validation applies; never rewrite unrelated completed content.",
+      description: "Update changed JSON fields using JSON pointers; /array/- appends one item. Pass the exact 64-character sha256 from a prior context read/save. All normal role and schema validation applies; never rewrite unrelated completed content.",
       parameters: Type.Object({ runId: Type.String(), path: Type.String(), sha256: Type.String(), updates: Type.Array(Type.Object({ pointer: Type.String(), value: Type.Unknown() }), { minItems: 1 }) }),
       async execute(id, params, signal, onUpdate, context) {
         assertAssignedRun(params.runId, "patch_json");
@@ -2702,7 +3018,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           signal?.throwIfAborted();
           await assertRoleWrite(workspaceDir, params.runId, options.parentInvocation?.agent ?? "orchestrator", path);
           const source = await readFile(path, "utf8");
-          if (createHash("sha256").update(source).digest("hex") !== params.sha256) throw new Error("JSON changed since it was read; reload this file before patching");
+          const currentHash = createHash("sha256").update(source).digest("hex");
+          if (currentHash !== params.sha256) throw new Error(`JSON changed since it was read; reload this file before patching. Use design_context_read with paths [\"${params.path}\"] and full:true to obtain the current content and sha256; never guess a hash. Current sha256: ${currentHash}`);
           const data = parseRunJson(source, params.path);
           for (const update of params.updates) {
             if (!update.pointer.startsWith("/") || /~(?![01])/u.test(update.pointer)) throw new Error("Use a non-root valid JSON pointer");
@@ -2715,6 +3032,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               target = child as Record<string, unknown>;
             }
             const key = keys.at(-1)!;
+            if (Array.isArray(target) && key === "-") { target.push(update.value); continue; }
             if (Array.isArray(target) && (!/^(0|[1-9][0-9]*)$/u.test(key) || Number(key) >= target.length)) throw new Error("Array patches must address an existing item");
             Reflect.set(target, key, update.value);
           }
@@ -2743,10 +3061,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           reviewer: [...RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")), "plan/design_system.json", "plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md", "plan/task_breakdown.md", "review/design-review.json"],
           builder: ["research/brand_lock.md", "plan/design_system.json", "plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md", "plan/task_breakdown.md", "review/design-review.json"],
         } as const;
+        const designScopeList = briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({})));
+        const skillRecords = params.audience === "researcher" || !designScopeList.length ? [] : [".performance/skills-designer.json"];
+        const sourcePaths = params.audience === "researcher" ? [] : await designSourceFiles(runDir).catch(() => []);
         const files = [];
         const missingFiles: string[] = [];
-        for (const path of params.paths ?? [...common, ...byAudience[params.audience]]) {
-          if (![...common, ...byAudience[params.audience]].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
+        for (const path of params.paths ?? [...common, ...byAudience[params.audience], ...skillRecords]) {
+          if (![...common, ...byAudience[params.audience], ...skillRecords, ...sourcePaths].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
           const existing = await findRunDocument(runDir, path);
           const source = await readFile(existing?.absolutePath ?? resolveInside(runDir, path), "utf8").catch((error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") return undefined;
@@ -2761,6 +3082,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             path: existing?.path ?? path,
             ...(existing && existing.path !== path ? { canonicalPath: path } : {}),
             sha256: createHash("sha256").update(source).digest("hex"),
+            lines: source.split(/\r?\n/u).length,
             truncated: projected ? projected.omittedPointers.length > 0 : !params.full && !isJson && compactSource.length > limit,
             ...(projected ? { omittedPointers: projected.omittedPointers } : {}),
             content: !params.full && !isJson && compactSource.length > limit ? `${compactSource.slice(0, limit)}\n[truncated; use read for a targeted detail]` : compactSource,
@@ -2790,7 +3112,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         }) : [];
         const planRecord = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
         const referenceReview = referenceReviewCoverage(referenceManifest, planRecord);
-        return textResult({ ok: true, runId: params.runId, audience: params.audience, files, missingFiles, recentEvents: cycleEvents, referenceInventory, referenceReview,
+        const skillLoading = params.audience === "designer" ? { selectionChecklist: skillReloadChecklist(planRecord, designScopeList.map((scope) => scope.id), skillActivation.all()),
+          instruction: "A new Designer invocation has no loaded Skills. Load all retained primary and supporting selections before correcting/publishing; or explicitly update the plan to match your new selection. This checklist does not activate knowledge." } : undefined;
+        return textResult({ ok: true, runId: params.runId, audience: params.audience, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: await designerDraftReadiness(runDir), outputContract: designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, referenceInventory, referenceReview,
           instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. For omitted JSON details, call design_context_read with paths containing only the needed file and full=true. Preserve all deliverable and reference identities; an overview is not the complete specification." });
       },
     });
@@ -2830,6 +3154,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       label: "View image",
       description: "Load or reload local images for reference screening. Use path for one image or paths for a labelled batch; there is no stage-wide image-count quota. Inspect useful content rather than infer it from filenames.",
       parameters: Type.Object({ path: Type.Optional(Type.String()), paths: Type.Optional(Type.Array(Type.String(), { minItems: 1 })) }),
+      prepareArguments: (args) => {
+        if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("view_image arguments must be an object");
+        const input = args as Record<string, unknown>;
+        return { ...input, ...(Array.isArray(input.paths) ? { paths: input.paths.map((item) => item && typeof item === "object" && typeof item.path === "string" ? item.path : item) } : {}) } as { path?: string; paths?: string[] };
+      },
       async execute(_id, params) {
         for (const path of [params.path, ...(params.paths ?? [])]) if (path) await assertAssignedRead(path, workspaceDir);
         if (params.paths) {
@@ -2870,14 +3199,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         prompt: Type.String(),
         acceptanceCriteria: Type.Array(Type.String(), { minItems: 1 }),
         preserve: Type.Optional(Type.Array(Type.String())),
-        outputPath: Type.Optional(Type.String({ description: "PNG path relative to the run directory; must stay under artifacts/" })),
+        outputPath: Type.Optional(Type.String({ description: "PNG/JPG/JPEG Run-relative path under artifacts/. For planned Builder images, omit this field: the runtime uses the manifest file by id. An explicit path must match that file." })),
         size: Type.Optional(Type.String()),
       }),
       async execute(_id, params, signal, onUpdate) {
+        const contract = await preflightBeforeImageTool(params.runId, signal);
+        params = bindImageOutput(params, "image_generate", contract);
         const summary = await generateImage(params, signal, (notice) => onUpdate?.({
             content: [{ type: "text", text: `Image generation retry ${notice.nextAttempt}: ${notice.error}` }],
             details: { retry: notice },
-          }));
+          }), (progress) => onUpdate?.(imageRequestUpdate(progress)));
         return { content: [jsonText(summary)], details: summary };
       },
     });
@@ -2895,13 +3226,19 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           prompt: Type.String(),
           acceptanceCriteria: Type.Array(Type.String(), { minItems: 1 }),
           preserve: Type.Optional(Type.Array(Type.String())),
-          outputPath: Type.Optional(Type.String()),
+          outputPath: Type.Optional(Type.String({ description: "For planned Builder images omit this field; the runtime uses the manifest file by id. Otherwise choose an artifacts/...png, jpg or jpeg path." })),
           size: Type.Optional(Type.String()),
         }), { minItems: 1 }),
       }),
       async execute(_id, params, signal, onUpdate) {
-        const tasks = params.tasks.map((task) => ({ runId: params.runId, ...task }));
-        if (new Set(tasks.map((task) => task.id)).size !== tasks.length) throw new Error("Image task ids must be unique");
+        const contract = await preflightBeforeImageTool(params.runId, signal);
+        const tasks = params.tasks.map((task) => bindImageOutput({ runId: params.runId, ...task }, "image_generate", contract));
+        if (new Set(tasks.map((task) => safeRunId(task.id))).size !== tasks.length) throw new Error("Image task ids must be unique");
+        const outputs = tasks.map((task) => {
+          assertImageSizeWithinCeiling(task.size ?? imageSizeCeiling(), `image_generate_batch.${task.id}.size`);
+          return artifactOutputPath(workspaceDir, safeRunId(params.runId), safeRunId(task.id), "generated-images", task.outputPath);
+        });
+        if (new Set(outputs).size !== outputs.length) throw new Error("Image output paths must be unique");
         const anchorIndex = params.anchorId ? tasks.findIndex((task) => task.id === params.anchorId) : 0;
         if (anchorIndex < 0) throw new Error(`Unknown anchorId: ${params.anchorId}`);
         const anchor = tasks[anchorIndex]!;
@@ -2912,8 +3249,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const itemStartedAt = performance.now();
           let result: Record<string, unknown>;
           try {
-            result = await generateImage(task, signal, notify);
+            result = await generateImage(task, signal, notify, (progress) => onUpdate?.(imageRequestUpdate(progress)));
           } catch (error) {
+            signal?.throwIfAborted();
             result = { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) };
           }
           completed += 1;
@@ -2928,14 +3266,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         };
         if (!params.anchorId) {
           const results = await mapWithConcurrency(tasks, imageConcurrency, generate, signal);
-          return textResult({ action: "image_generate_batch", count: results.length, ...batchSummary(results) });
+          const summary = { action: "image_generate_batch", count: results.length, ...batchSummary(results) };
+          return { content: [jsonText(summary)], details: summary };
         }
         const anchorResult = await generate(anchor);
         const remaining = tasks.filter((_, index) => index !== anchorIndex);
         const results = anchorResult.ok === true
           ? [anchorResult, ...await mapWithConcurrency(remaining, imageConcurrency, generate, signal)]
           : [anchorResult, ...remaining.map((task) => ({ ok: false, id: task.id, skipped: true, error: `Skipped because consistency anchor ${anchor.id} failed` }))];
-        return textResult({ action: "image_generate_batch", anchorId: anchor.id, count: results.length, ...batchSummary(results) });
+        const summary = { action: "image_generate_batch", anchorId: anchor.id, count: results.length, ...batchSummary(results) };
+          return { content: [jsonText(summary)], details: summary };
       },
     });
 
@@ -2948,7 +3288,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       prompt: Type.String(),
       referenceImagePaths: Type.Array(Type.String(), { minItems: 1 }),
       acceptanceCriteria: Type.Array(Type.String(), { minItems: 1 }),
-      outputPath: Type.Optional(Type.String({ description: "PNG path relative to the run directory; must stay under artifacts/" })),
+      outputPath: Type.Optional(Type.String({ description: "PNG/JPG/JPEG Run-relative path under artifacts/. For planned Builder images, omit this field: the runtime uses the manifest file by id. An explicit path must match that file." })),
       size: Type.Optional(Type.String()),
     });
     const imageEditTool = defineTool({
@@ -2957,9 +3297,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       description: "Edit one or more reference images and save the result inside a Dreamatic run. Can integrate or revise approved copy, typography, labels and other visual content. Include exact wording and preservation rules in the prompt; generative editing does not guarantee character-perfect or pixel-exact results.",
       parameters: Type.Object({ runId: Type.String(), ...imageEditTaskParameters.properties }),
       async execute(_id, params, signal, onUpdate) {
+        const contract = await preflightBeforeImageTool(params.runId, signal);
+        params = bindImageOutput(params, "image_edit", contract);
         return enqueueImageOperation(async () => {
         const size = params.size ?? imageSizeCeiling();
         assertImageSizeWithinCeiling(size, "image_edit.size");
+        artifactOutputPath(workspaceDir, safeRunId(params.runId), safeRunId(params.id), "edits", params.outputPath);
         const apiKey = process.env.DREAMATIC_IMAGE_API_KEY?.trim() || process.env.DREAMATIC_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
         if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
         const form = new FormData();
@@ -2987,6 +3330,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           runId: params.runId,
           operation: "image_edit",
           budgetScope: params.id,
+          onProgress: (progress) => onUpdate?.(imageRequestUpdate(progress)),
           timeoutMs: Number(process.env.DREAMATIC_IMAGE_EDIT_TIMEOUT_MS ?? 180_000),
           attempts: Number(process.env.DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS ?? 2),
           ...(signal ? { signal } : {}),
@@ -3012,7 +3356,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             changes: params.changes,
             preserve: params.preserve,
             acceptanceCriteria: params.acceptanceCriteria,
-          }, signal,
+          }, signal, (progress) => onUpdate?.(imageRequestUpdate(progress)),
         );
         const summary = {
           ok: true,
@@ -3045,6 +3389,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         tasks: Type.Array(imageEditTaskParameters, { minItems: 1 }),
       }),
       async execute(_id, params, signal, onUpdate, context) {
+        const contract = await preflightBeforeImageTool(params.runId, signal);
+        params = { ...params, tasks: params.tasks.map((task) => bindImageOutput(task, "image_edit", contract)) };
         if (new Set(params.tasks.map((task) => safeRunId(task.id))).size !== params.tasks.length) throw new Error("Image task ids must be unique");
         const outputPaths = new Set<string>();
         for (const task of params.tasks) {
@@ -3066,6 +3412,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             const edited = await imageEditTool.execute(`${_id}:${task.id}`, { runId: params.runId, ...task }, signal, onUpdate, context);
             result = { ...(edited.details as Record<string, unknown>), id: task.id };
           } catch (error) {
+            signal?.throwIfAborted();
             result = { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) };
           }
           completed += 1;
@@ -3078,11 +3425,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           });
           return result;
         });
-        return textResult({ action: "image_edit_batch", count: results.length, ...batchSummary(results) });
+        const summary = { action: "image_edit_batch", count: results.length, ...batchSummary(results) };
+          return { content: [jsonText(summary)], details: summary };
       },
     });
 
-    pi.registerTool({
+    const imagePlanTool = defineTool({
       name: "execute_image_plan",
       label: "Execute approved image plan",
       description: "Execute approved stored image tasks by id without restating prompts. Reuses outputs only when prompt, size and image hash match. Pass independent ids together; edit dependencies within this request are scheduled after their sources. No design decisions are invented.",
@@ -3095,10 +3443,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const gate = currentWorkflowCycle(bus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1);
         if (gate?.type !== "design_review_pass") throw new Error("A current approved specification is required");
         await assertStageCommitted(workspaceDir, params.runId, "reviewer", 0);
-        await assertStageCommitted(workspaceDir, params.runId, "designer", 0);
+        await assertStageCommitted(workspaceDir, params.runId, "designer", 0, true);
         const plan = await readJsonRecord(runDir, "plan/design_plan.json");
         const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
-        const entries = requiredArray(plan, "image_generation_plan", "plan").map((item) => requiredRecord(item, "image plan entry"));
+        await assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest), signal);
+        const entries = imagePlan(plan);
         const deliverables = requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable"));
         if (new Set(params.ids).size !== params.ids.length) throw new Error("Plan ids must be unique");
         const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : typeof value === "string" && value.trim() ? [value] : [];
@@ -3113,8 +3462,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const outputPath = requiredString(deliverable, "file", `Deliverable ${taskId}`);
           const path = artifactOutputPath(workspaceDir, params.runId, taskId, method === "image_edit" ? "edits" : "generated-images", outputPath);
           const referenceImagePaths = (method === "image_edit" ? strings(entry.referenceImagePaths ?? entry.reference_image_paths) : []).map((path) => isAbsolute(path) ? path : path.startsWith("runs/") ? resolveInside(workspaceDir, path) : resolveInside(runDir, path));
-          const acceptanceCriteria = strings(entry.acceptanceCriteria ?? entry.acceptance_criteria ?? entry.acceptance_test);
-          if (!acceptanceCriteria.length) throw new Error(`Plan ${taskId} needs acceptance criteria`);
+          const acceptanceCriteria = approvedImageAcceptance(entry, deliverable);
           return { id: taskId, method, path, outputPath, prompt: negative ? `${prompt}\n\nAvoid: ${negative}` : prompt, size: typeof entry.size === "string" ? entry.size : imageSizeCeiling(), intent: typeof entry.intent === "string" ? entry.intent : typeof deliverable.purpose === "string" ? deliverable.purpose : taskId, acceptanceCriteria, preserve: strings(entry.preserve ?? entry.preservation_rules ?? entry.preservation), referenceImagePaths, diagnosis: strings(entry.diagnosis ?? entry.edit_diagnosis), changes: strings(entry.changes ?? entry.edit_changes) };
         });
         const pending = [...tasks];
@@ -3133,10 +3481,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               const fingerprint = createHash("sha256").update(JSON.stringify({ task, referenceHashes })).digest("hex");
               const sidecar = params.reuse !== false ? await readFile(`${task.path}.json`, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>).catch(() => undefined) : undefined;
               const bytes = sidecar?.planFingerprint === fingerprint ? await readFile(task.path).catch(() => undefined) : undefined;
-              if (bytes?.length && createHash("sha256").update(bytes).digest("hex") === sidecar?.imageSha256) {
+              if (bytes?.length && imageBytesMatchPath(bytes, task.outputPath) && createHash("sha256").update(bytes).digest("hex") === sidecar?.imageSha256) {
                 result = { ok: true, id: task.id, path: relative(workspaceDir, task.path), reused: true };
               } else {
-                if (task.method === "image_generate") result = await generateImage({ runId: params.runId, ...task }, signal);
+                if (task.method === "image_generate") result = await generateImage({ runId: params.runId, ...task }, signal, (notice) => onUpdate?.(textResult({ retry: notice, id: task.id })), (progress) => onUpdate?.(imageRequestUpdate(progress)));
                 else {
                   if (!task.referenceImagePaths.length || !task.diagnosis.length || !task.changes.length || !task.preserve.length) throw new Error(`Plan ${task.id} needs explicit referenceImagePaths, diagnosis, changes and preserve; request specification correction`);
                   const edited = await imageEditTool.execute(`${id}:${task.id}`, { runId: params.runId, ...task }, signal, onUpdate, context);
@@ -3157,13 +3505,105 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           results.push(...batch);
           for (const task of ready) pending.splice(pending.indexOf(task), 1);
         }
-        return textResult({ action: "execute_image_plan", ...batchSummary(results) });
+        const summary = { action: "execute_image_plan", ...batchSummary(results) };
+          return { content: [jsonText(summary)], details: summary };
       },
     });
+    pi.registerTool(imagePlanTool);
+
+    pi.registerTool({
+      name: "html_generate", label: "Generate approved HTML page",
+      description: "Generate one approved HTML/CSS/JS page task from Designer sources. No redesign. Use execute_design_plan for dependency-aware mixed batches.",
+      parameters: Type.Object({ runId: Type.String(), id: Type.String(), reuse: Type.Optional(Type.Boolean()) }),
+      async execute(_id, params, signal) {
+        if (options.parentInvocation?.agent !== "builder") throw new Error("html_generate is available only to Builder");
+        assertAssignedRun(params.runId, "html_generate");
+        const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
+        const bus = (await readFile(join(runDir, "bus.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+        if (currentWorkflowCycle(bus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1)?.type !== "design_review_pass") throw new Error("html_generate requires a current approved specification");
+        await assertStageCommitted(workspaceDir, params.runId, "designer", 0, true);
+        await assertStageCommitted(workspaceDir, params.runId, "reviewer", 0);
+        const contract = deliveryContract(await readJsonRecord(runDir, "plan/design_plan.json"), await readJsonRecord(runDir, "plan/deliverable_manifest.json"));
+        await validateDeliveryContract(runDir, contract);
+        await assertHtmlSourcePreflight(runDir, contract, signal);
+        const task = contract.tasks.find((task) => task.id === params.id && task.method === "html_generate");
+        if (!task) throw new Error(`Unknown approved HTML task: ${params.id}`);
+        return textResult(await materializeHtml(runDir, htmlTask(task), params.reuse !== false, signal));
+      },
+    });
+
+    pi.registerTool({
+      name: "execute_design_plan",
+      label: "Execute approved design plan",
+      description: "Execute approved typed image/HTML tasks by id. Images use the existing image executor; HTML copies approved source files without redesign. Resolves actual dependencies and preserves independent successes.",
+      parameters: Type.Object({ runId: Type.String(), ids: Type.Optional(Type.Array(Type.String(), { minItems: 1 })), reuse: Type.Optional(Type.Boolean()) }),
+      async execute(id, params, signal, onUpdate, context) {
+        if (options.parentInvocation?.agent !== "builder") throw new Error("Only Builder may execute an approved plan");
+        assertAssignedRun(params.runId, "execute_design_plan");
+        const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
+        const bus = (await readFile(join(runDir, "bus.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
+        if (currentWorkflowCycle(bus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1)?.type !== "design_review_pass") throw new Error("A current approved specification is required");
+        await assertStageCommitted(workspaceDir, params.runId, "designer", 0, true);
+        await assertStageCommitted(workspaceDir, params.runId, "reviewer", 0);
+        const plan = await readJsonRecord(runDir, "plan/design_plan.json");
+        const contract = deliveryContract(plan, await readJsonRecord(runDir, "plan/deliverable_manifest.json"));
+        await validateDeliveryContract(runDir, contract);
+        await assertHtmlSourcePreflight(runDir, contract, signal);
+        const dependencies = (task: Record<string, unknown>): string[] => [...new Set([
+          ...(Array.isArray(task.dependencies) ? task.dependencies.filter((value): value is string => typeof value === "string") : []),
+          ...(Array.isArray(task.referenceImagePaths ?? task.reference_image_paths) ? (task.referenceImagePaths ?? task.reference_image_paths) as string[] : []).flatMap((path) => {
+            const producer = contract.deliverables.find((item) => item.file === path || resolveInside(runDir, String(item.file)) === path);
+            return producer ? [String(producer.id)] : [];
+          }),
+        ])];
+        const selected = new Set<string>();
+        const visiting = new Set<string>();
+        const include = (taskId: string) => {
+          if (visiting.has(taskId)) throw new Error("Execution plan has cyclic dependencies");
+          if (selected.has(taskId)) return;
+          const task = contract.tasks.find((item) => item.id === taskId);
+          if (!task) throw new Error(`Unknown approved task: ${taskId}`);
+          visiting.add(taskId); for (const dependency of dependencies(task)) include(dependency); visiting.delete(taskId); selected.add(taskId);
+        };
+        for (const taskId of params.ids ?? contract.deliverables.filter((item) => item.required === true && item.method !== "manual").map((item) => String(item.id))) include(taskId);
+        if (!params.ids) {
+          const presentationTask = contract.tasks.find((task) => task.method === "html_generate" && htmlTask(task).files.some((file) => file.output === contract.presentation.entry));
+          if (presentationTask) include(String(presentationTask.id));
+        }
+        const pending = contract.tasks.filter((task) => selected.has(String(task.id)));
+        const completed = new Set<string>();
+        const failed = new Set<string>();
+        const results: Record<string, unknown>[] = [];
+        while (pending.length) {
+          signal?.throwIfAborted();
+          const ready = pending.filter((task) => dependencies(task).every((dependency) => completed.has(dependency) || failed.has(dependency)));
+          if (!ready.length) throw new Error("Execution plan has unresolved dependencies");
+          const blocked = ready.filter((task) => dependencies(task).some((dependency) => failed.has(dependency)));
+          for (const task of blocked) { failed.add(String(task.id)); results.push({ ok: false, id: task.id, error: "Required dependency failed" }); }
+          const runnable = ready.filter((task) => !blocked.includes(task));
+          const registry = new ExecutionRegistry()
+            .register(["image_generate", "image_edit"], async (images) => {
+              const result = await imagePlanTool.execute(`${id}:images`, { runId: params.runId, ids: images.map((task) => String(task.id)), ...(params.reuse === undefined ? {} : { reuse: params.reuse }) }, signal, onUpdate, context);
+              return (JSON.parse((result.content[0] as { text: string }).text) as { results: Record<string, unknown>[] }).results;
+            })
+            .register(["html_generate"], (tasks) => mapWithConcurrency(tasks, imageConcurrency, async (task) => {
+              try { return await materializeHtml(runDir, htmlTask(task), params.reuse !== false, signal); }
+              catch (error) { signal?.throwIfAborted(); return { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) }; }
+            }, signal));
+          const groups = await registry.execute(runnable);
+          for (const result of groups) { (result.ok ? completed : failed).add(String(result.id)); results.push(result); onUpdate?.(textResult(result)); }
+          for (const task of ready) pending.splice(pending.indexOf(task), 1);
+        }
+        const pendingOutputs = await pendingRequiredOutputs(runDir, contract);
+        return textResult({ action: "execute_design_plan", ...batchSummary(results), deliveryComplete: pendingOutputs.length === 0, pendingOutputs,
+          ...(pendingOutputs.length ? { instruction: "Only selected tasks have executed. Complete pending required outputs before build_finalize; call execute_design_plan without ids to execute/reuse the full approved plan. Presentation mode does not remove required deliverables." } : {}) });
+      },
+    });
+
     pi.registerTool({
       name: "showcase_template",
       label: "Build showcase from captions",
-      description: "Render a local responsive gallery from approved deliverable ids, captions and thematic sections. All required image outputs must be included. Finalization adds references and prompt attribution. Use custom HTML when the approved design requires it.",
+      description: "Render a local responsive gallery from approved deliverable ids, captions and thematic sections. Include required images and links to required HTML pages. Finalization adds references and prompt attribution. Pure HTML presentation uses its approved page instead of this gallery.",
       parameters: Type.Object({ runId: Type.String(), title: Type.String(), sections: Type.Array(Type.Object({ title: Type.String(), items: Type.Array(Type.Object({ id: Type.String(), caption: Type.String() }), { minItems: 1 }) }), { minItems: 1 }) }),
       async execute(_id, params, signal) {
         if (options.parentInvocation?.agent !== "builder") throw new Error("Only Builder may render a showcase");
@@ -3180,9 +3620,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           for (const item of section.items) {
             const entry = deliverables.find((entry) => entry.id === item.id);
             if (!entry) throw new Error(`Unknown deliverable: ${item.id}`);
-            const path = artifactOutputPath(workspaceDir, params.runId, item.id, "generated-images", requiredString(entry, "file", "deliverable"));
-            if (!(await stat(path)).isFile()) throw new Error(`Missing image: ${item.id}`);
-            items.push({ ...item, path });
+            const file = requiredString(entry, "file", "deliverable");
+            const path = entry.method === "html_generate"
+              ? await physicalRunFile(runDir, file)
+              : artifactOutputPath(workspaceDir, params.runId, item.id, "generated-images", file);
+            if (!(await stat(path)).isFile()) throw new Error(`Missing output: ${item.id}`);
+            items.push({ ...item, path, ...(entry.method === "html_generate" ? { kind: "html" as const } : {}) });
           }
           sections.push({ title: section.title, items });
         }
@@ -3273,13 +3716,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "build_finalize",
       label: "Finalize build",
-      description: "Finalize the Builder-authored Showcase and approved outputs: append research citations, create delivery metadata, run mechanical lint, and commit build_done. Builder must first write artifacts/00-gallery.html with its layout and public-facing copy; no fallback page is generated. This is not a visual or engineering audit.",
+      description: "Finalize approved outputs and presentation: create delivery metadata, run mechanical lint, and commit build_done. For gallery presentation, first author artifacts/00-gallery.html; finalization appends research citations. For HTML presentation, generate its declared approved page, without an extra gallery. No fallback page is generated. This is not a visual or engineering audit.",
       parameters: Type.Object({
         runId: Type.String(),
         summary: Type.Optional(Type.String()),
         requestedAction: Type.Optional(Type.String()),
       }),
-      async execute(_id, params) {
+      async execute(_id, params, signal) {
         if (options.parentInvocation?.agent !== "builder") throw new Error("build_finalize is available only inside a Builder invocation");
         const runId = safeRunId(params.runId);
         if (runId !== options.parentInvocation.runId) throw new Error("Builder may finalize only its assigned Run");
@@ -3288,6 +3731,39 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const buildBus = (await readFile(join(runDir, "bus.jsonl"), "utf8")).split(/\r?\n/u).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
         const currentGate = currentWorkflowCycle(buildBus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1);
         if (currentGate?.type !== "design_review_pass") throw new Error("build_finalize requires a current approved specification and may commit only once");
+        if (plan.schemaVersion === 2) {
+          let delivery: Awaited<ReturnType<typeof finalizeDelivery>>;
+          try {
+            await assertStageCommitted(workspaceDir, runId, "designer", 0, true);
+            await assertStageCommitted(workspaceDir, runId, "reviewer", 0);
+            delivery = await finalizeDelivery(runDir, runId, signal);
+          }
+          catch (error) {
+            signal?.throwIfAborted();
+            if (error instanceof BuildIncomplete) {
+              const incomplete = { ok: false, blocked: false, retryable: true, runId, repairOwner: "builder", pendingOutputs: error.pendingOutputs,
+                instruction: "Required outputs remain incomplete. Execute missing approved tasks with execute_design_plan (omit ids for the full plan; existing successes are reused), or finish declared manual outputs. Do not remove image deliverables because presentation is HTML. Then retry build_finalize." };
+              return { ...textResult(incomplete), details: incomplete };
+            }
+            if (!(error instanceof DeliveryBlocked)) throw error;
+            const block = { ok: false, blocked: true, retryable: false, runId, repairOwner: error.repairOwner, issues: error.issues,
+              reviewEventId: currentGate.id, runtimeStamp: await deliveryRuntimeStamp(),
+              instruction: error.repairOwner === "designer" ? "The approved source or acceptance checks need correction. Return to Orchestrator, then Designer and Reviewer. Do not edit approved artifacts/source, repeat unchanged finalization, or regenerate images." : "Restore HTML browser validation availability, then retry the same approved sources. Do not redesign or regenerate images." };
+            await mkdir(join(runDir, ".performance"), { recursive: true });
+            await writeFile(join(runDir, ".performance/build-block.json"), JSON.stringify(block, null, 2));
+            return { ...finishWorkflow(block), details: block };
+          }
+          const commitReceipt = { schemaVersion: 2, files: Object.fromEntries(await Promise.all(delivery.files.map(async (path) => [path, await fileHash(runDir, path)]))) };
+          const event = { id: randomUUID(), runId, type: "build_done", from: "builder", from_agent: "builder", to: "orchestrator", phase: "build", summary: params.summary?.trim() || `Implemented ${delivery.artifacts.length} approved deliverables; mechanical validation passed.`, artifactRefs: delivery.files, requestedAction: params.requestedAction?.trim() || "Export the approved delivery.", commitReceipt, at: new Date().toISOString() };
+          await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
+          await updateRunState(workspaceDir, runId, "build_done");
+          await updateDesignContextIndex(workspaceDir, runId, "build_done");
+          return finishWorkflow({ ok: true, runId, event, ...delivery }, process.env.DREAMATIC_STOP_AFTER_COMMIT?.trim().toLowerCase() !== "false");
+        }
+        if (briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length) {
+          await assertStageCommitted(workspaceDir, runId, "designer", 0, true);
+          await assertStageCommitted(workspaceDir, runId, "reviewer", 0);
+        }
         const deliverableManifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
         const prompts = requiredArray(plan, "image_generation_plan", "plan/design_plan.json")
           .map((item, index) => requiredRecord(item, `plan/design_plan.json.image_generation_plan[${index}]`));
@@ -3423,7 +3899,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "export_package",
       label: "Export design package",
-      description: "Package the already finalized Builder-authored Showcase, artifacts, plans, research and review. Preserve its content and layout; only adapt the entry page's resource base. Never generate replacement Showcase content.",
+      description: "Package the finalized presentation, artifacts, plans, research and review. Preserve content and layout. HTML delivery keeps its actual page entry; Gallery delivery only adapts the resource base. Never generate replacement presentation content.",
       parameters: Type.Object({
         runId: Type.String(),
         runDir: Type.String(),
@@ -3447,7 +3923,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         }
         const lint = await readJsonRecord(runDir, "artifacts/lint-report.json");
         if (lint.ok !== true) throw new Error(`Run ${runId} cannot be exported before Builder mechanical lint passes`);
-        const gallery = await readFile(join(runDir, "artifacts/00-gallery.html"), "utf8").catch((error: NodeJS.ErrnoException) => {
+        const builtManifest = await readJsonRecord(runDir, "artifacts/artifact-manifest.json").catch(() => undefined);
+        const typedPresentation = builtManifest?.schemaVersion === 2 ? deliveryContract(await readJsonRecord(runDir, "plan/design_plan.json"), await readJsonRecord(runDir, "plan/deliverable_manifest.json")).presentation : undefined;
+        if (typedPresentation || briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length) {
+          await assertStageCommitted(workspaceDir, runId, "designer", 0);
+          await assertStageCommitted(workspaceDir, runId, "reviewer", 0);
+          await assertStageCommitted(workspaceDir, runId, "builder", 0);
+        }
+        const entryPath = typedPresentation?.entry ?? "artifacts/00-gallery.html";
+        const gallery = await readFile(resolveInside(runDir, entryPath), "utf8").catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") throw new Error("Builder Showcase artifacts/00-gallery.html is missing. Export cannot create a substitute page.");
           throw error;
         });
@@ -3464,12 +3948,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const busPath = join(runDir, "bus.jsonl");
         if (await stat(busPath).then(() => true).catch(() => false)) await cp(busPath, join(finalDir, "bus.jsonl"), { force: true });
         const files = await listFiles(finalDir);
-        await writeFile(join(finalDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), files }, null, 2), "utf8");
+        await writeFile(join(finalDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), ...(typedPresentation ? { schemaVersion: 2, presentation: typedPresentation, entry: typedPresentation.mode === "html" ? typedPresentation.entry : "00-index.html" } : {}), files }, null, 2), "utf8");
 
         const html = /<base\b/i.test(gallery)
           ? gallery
           : gallery.replace(/<head([^>]*)>/i, '<head$1><base href="artifacts/">');
-        await writeFile(join(finalDir, "00-index.html"), html, "utf8");
+        if (typedPresentation?.mode !== "html") await writeFile(join(finalDir, "00-index.html"), html, "utf8");
         await updateRunState(workspaceDir, runId, "export_done");
         await updateDesignContextIndex(workspaceDir, runId, "export_done");
         const progressPath = join(runDir, "plan", "progress.json");

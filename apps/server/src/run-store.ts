@@ -169,6 +169,8 @@ export interface RunView {
   activity: TimelineView[];
   agentSessions: AgentSessionView[];
   showcasePath?: string;
+  presentation?: { mode: "gallery" | "html"; entry: string };
+  htmlEntries?: string[];
   sessionId?: string;
 }
 
@@ -258,6 +260,7 @@ export async function assetInventory(workspaceDir: string, runId?: string): Prom
     if (resolvedRunId) {
       const runDir = join(workspaceDir, "runs", resolvedRunId);
       const runPath = relative(runDir, path).replaceAll("\\", "/");
+      if (runPath.startsWith("plan/html/") || runPath.startsWith(".performance/")) continue;
       if (runPath.startsWith("final/") && runPath !== "final/00-index.html") {
         const sourcePath = join(runDir, runPath.slice("final/".length));
         if (await stat(sourcePath).then(() => true).catch(() => false)) continue;
@@ -543,7 +546,7 @@ async function busActivity(runDir: string): Promise<TimelineView[]> {
         id: typeof event.id === "string" ? event.id : `bus-${index}`,
         kind: failed ? "error" : "result",
         label: typeof event.summary === "string" ? event.summary : type.replaceAll("_", " "),
-        ...(typeof event.requestedAction === "string" ? { detail: event.requestedAction } : {}),
+        ...(event.type === "design_categories_identified" && typeof event.detail === "string" ? { detail: event.detail } : typeof event.requestedAction === "string" ? { detail: event.requestedAction } : {}),
         ...(typeof event.at === "string" ? { at: event.at } : {}),
         ...(typeof event.phase === "string" ? { stage: event.phase } : {}),
         ...(artifactRefs ? { artifactRefs } : {}),
@@ -573,7 +576,12 @@ async function sessionActivity(workspaceDir: string, runId: string): Promise<{ a
   return { activity: result, ...(linkedSessionId ? { sessionId: linkedSessionId } : {}) };
 }
 
-async function showcasePath(runDir: string): Promise<string | undefined> {
+async function showcasePath(runDir: string, manifest?: Record<string, unknown>): Promise<string | undefined> {
+  const presentation = record(manifest?.presentation);
+  if (manifest?.schemaVersion === 2 && presentation.mode === "html" && typeof presentation.entry === "string" && /^artifacts\/(?!.*(?:^|\/)\.\.\/).+\.html$/u.test(presentation.entry)) {
+    for (const path of [join(runDir, "final", presentation.entry), join(runDir, presentation.entry)]) if (await stat(path).then((info) => info.isFile()).catch(() => false)) return path;
+    return undefined;
+  }
   const candidates = [
     join(runDir, "final", "00-index.html"),
     join(runDir, "final", "artifacts", "00-gallery.html"),
@@ -610,7 +618,9 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       .find((value): value is string => typeof value === "string" && Boolean(value.trim()))
       ?? (rawBrief ? rawBrief.slice(0, 72) : entry.name);
     const stages = Object.fromEntries(Object.entries(record(state.stages)).filter((pair): pair is [string, string] => typeof pair[1] === "string"));
-    const path = await showcasePath(runDir);
+    const builtManifest = await readFile(join(runDir, "artifacts/artifact-manifest.json"), "utf8").then((source) => record(JSON.parse(source))).catch(() => undefined);
+    const path = await showcasePath(runDir, builtManifest);
+    const presentation = record(builtManifest?.presentation);
     const updatedAt = typeof state.updatedAt === "string" ? state.updatedAt : info.mtime.toISOString();
     const lastError = activity.filter((item) => item.kind === "error").at(-1);
     const persistedStatus = typeof state.status === "string" ? state.status : "existing";
@@ -623,13 +633,15 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       stages,
       assetCount: files.filter((file) => {
         const runPath = relative(runDir, file).replaceAll("\\", "/");
-        return /\.(png|jpe?g|webp|gif|svg|html)$/i.test(file) && (!runPath.startsWith("final/") || runPath === "final/00-index.html");
+        return !runPath.startsWith("plan/html/") && !runPath.startsWith(".performance/") && /\.(png|jpe?g|webp|gif|svg|html)$/i.test(file) && (!runPath.startsWith("final/") || runPath === "final/00-index.html");
       }).length,
       documents: options.summary ? [] : documents,
       notes: options.summary ? [] : await runNotes(runDir),
       activity,
       agentSessions: childSessions.map(agentSessionSummary),
       ...(path ? { showcasePath: relative(workspaceDir, path).replaceAll("\\", "/") } : {}),
+      ...(builtManifest?.schemaVersion === 2 && ["html", "gallery"].includes(String(presentation.mode)) && typeof presentation.entry === "string" ? { presentation: { mode: presentation.mode as "html" | "gallery", entry: presentation.entry } } : {}),
+      ...(Array.isArray(builtManifest?.htmlEntries) ? { htmlEntries: builtManifest.htmlEntries.filter((path): path is string => typeof path === "string" && path.startsWith("artifacts/") && path.endsWith(".html")) } : {}),
       ...(session.sessionId || typeof brief.sessionId === "string" ? { sessionId: session.sessionId ?? brief.sessionId as string } : {}),
     });
   }

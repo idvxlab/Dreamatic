@@ -4,6 +4,9 @@ description: "Develop illustration, character and visual storytelling systems th
 metadata:
   audience: designer
   domain_type: illustration_art_direction
+  design_categories: [media_communication, ux]
+  module_type: discipline
+  supported_outputs: [image]
 ---
 
 # Illustration and Art Direction

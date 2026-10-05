@@ -51,6 +51,10 @@ export async function getCanvasState(runId: string): Promise<CanvasState | null>
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/canvas`));
 }
 
+export async function getHtmlPreview(runId: string, entry?: string): Promise<{ url: string; entries: Array<{ path: string; url: string }> }> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/preview`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(entry ? { entry } : {}) }));
+}
+
 export async function saveCanvasState(runId: string, state: CanvasState): Promise<CanvasState> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/canvas`, {
     method: "PUT",
@@ -177,4 +181,43 @@ export async function streamPrompt(
     if (done) break;
   }
   if (buffer.trim()) onEvent(JSON.parse(buffer) as PromptEvent);
+}
+
+/** Download the package without asking an agent to regenerate or export it. */
+export async function downloadProject(runId: string): Promise<void> {
+  const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/export`);
+  if (!response.ok) {
+    const value = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(value.error ?? "Project export failed");
+  }
+  if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/zip") {
+    throw new Error("Export did not return a ZIP file. Restart the Dreamatic server to load the export API, then try again.");
+  }
+  const blob = await response.blob();
+  const expectedLength = response.headers.get("content-length");
+  if (expectedLength && !response.headers.get("content-encoding") && Number(expectedLength) !== blob.size) {
+    throw new Error("Project ZIP download is incomplete. Please retry Export.");
+  }
+  const header = new DataView(await blob.slice(0, 4).arrayBuffer());
+  const tailBytes = await blob.slice(Math.max(0, blob.size - 65_557)).arrayBuffer();
+  const tail = new DataView(tailBytes);
+  let complete = false;
+  for (let offset = tail.byteLength - 22; offset >= 0; offset--) {
+    if (tail.getUint32(offset, true) !== 0x06054b50 || offset + 22 + tail.getUint16(offset + 20, true) !== tail.byteLength) continue;
+    const directorySize = tail.getUint32(offset + 12, true);
+    const directoryOffset = tail.getUint32(offset + 16, true);
+    const endOffset = blob.size - tail.byteLength + offset;
+    // ZIP64 carries its sizes in the preceding ZIP64 directory records.
+    complete = directoryOffset + directorySize === endOffset || (directoryOffset === 0xffffffff && directorySize === 0xffffffff);
+    break;
+  }
+  if (header.byteLength !== 4 || ![0x04034b50, 0x06054b50].includes(header.getUint32(0, true)) || !complete) {
+    throw new Error("Project ZIP is invalid or incomplete. Please retry Export.");
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = `${runId}.zip`; link.hidden = true;
+  document.body.appendChild(link); link.click(); link.remove();
+  // Allow the browser to consume the blob before releasing it.
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
