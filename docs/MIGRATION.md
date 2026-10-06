@@ -16,7 +16,7 @@ item is implemented in the new architecture, not merely copied.
 - [x] Image messages accepted by the API
 - [x] Vision inspection through `view_image`
 - [x] Tool output is streamed to the UI
-- [ ] Recovery tests for every Dreamatic media tool
+- [ ] Recovery tests for every DreamaticArt media tool
 - [x] Dedicated visual compare tool for two or more artifacts
 - [x] Generated and edited images return directly to the model for inspection
 - [x] Run-scoped artifact selection with persisted rationale and risks
@@ -52,7 +52,7 @@ item is implemented in the new architecture, not merely copied.
 - [x] Persist uploaded references as paths and prune their base64 message blocks
 - [ ] Avoid retaining full image payloads in durable Pi session history
 
-## Existing Dreamatic workflow
+## Existing DreamaticArt workflow
 
 - [x] Optional Designer domain and craft Skills maintained in `.pi/skills`
 - [x] Default design-agent system instructions

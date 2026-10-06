@@ -638,8 +638,8 @@ test("export_package rejects unapproved or unimplemented design context", async 
 });
 
 test("persona tool policies keep reasoning separate from execution", () => {
-  const researcher = dreamaticPersonaTools("researcher", ["read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
-  const designer = dreamaticPersonaTools("designer", ["read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
+  const researcher = dreamaticPersonaTools("researcher", ["user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
+  const designer = dreamaticPersonaTools("designer", ["user_asset_import", "read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
   const reviewer = dreamaticPersonaTools("reviewer", ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"]);
   const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"]);
   assert.equal(researcher.includes("view_image"), false);
@@ -647,6 +647,8 @@ test("persona tool policies keep reasoning separate from execution", () => {
   assert.equal(researcher.includes("bash"), false);
   assert.equal(researcher.includes("research_asset_discover"), true);
   assert.equal(researcher.includes("research_asset_fetch_batch"), true);
+  assert.equal(designer.includes("user_asset_import"), true);
+  assert.equal(builder.includes("user_asset_import"), false);
   assert.equal(designer.includes("image_generate"), false);
   assert.equal(designer.includes("view_image"), true);
   assert.equal(designer.includes("use_skill"), true);

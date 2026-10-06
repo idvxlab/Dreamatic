@@ -12,8 +12,8 @@ import { configureToolSearchPath } from '../dist/runtime.js';
 import { designScopes } from '../dist/design-categories.js';
 import { encodeImageOutput, imageEncoding } from "../dist/image-output.js";
 import { finalizeDelivery } from "../dist/finalize-delivery.js";
-import { approvedImageAcceptance, deliveryContract, htmlTask, normalizeDraftPresentation, validateDeliveryContract } from '../dist/design-contract.js';
-import { browserExecutable, checkHtmlBrowser, lintHtmlDelivery, materializeHtml } from '../dist/html-delivery.js';
+import { approvedImageEdit, approvedImageAcceptance, deliveryContract, htmlTask, normalizeDraftPresentation, validateDeliveryContract } from '../dist/design-contract.js';
+import { browserExecutable, checkHtmlBrowser, lintHtmlDelivery, lintHtmlSourceDependencies, materializeHtml } from '../dist/html-delivery.js';
 import { assertHtmlSourcePreflight } from '../dist/html-preflight.js';
 import { validateDesignScopes } from '../dist/design-scope-validation.js';
 
@@ -72,7 +72,7 @@ async function fixture(workspaceDir, mixed = false, options = {}) {
   const image = (scope) => ({ id: scope.id, scope_id: scope.id, category: scope.category, method: 'image_generate', prompt_seed: `Approved ${scope.id}`, negative_prompt_seed: 'Watermark', size: '512x512', size_rationale: 'Concept view', acceptance_test: 'Approved concept is communicated', dependencies: [] });
   const tasks = mixed ? [page, image(scopes[0]), image(scopes[2])] : [page];
   if (mixed) { page.resources = [{ source: 'artifacts/product.png', output: 'artifacts/ui/product.png' }]; page.dependencies = ['product']; }
-  if (options.optional) tasks.push({ ...page, id: 'optional', files: [{ source: 'plan/html/ui/index.html', output: 'artifacts/optional/index.html' }], dependencies: [], resources: [] });
+  if (options.optional) tasks.push({ ...page, id: 'optional', files: page.files.filter(file=>!file.source.endsWith('style.css')).map(file=>({...file,output:file.output.replace('artifacts/ui/','artifacts/optional/')})), dependencies: [], resources: [] });
   if (options.imageAcceptance) for (const task of tasks.filter((item) => item.method !== 'html_generate')) {
     const declared = task.acceptance_test; delete task.acceptance_test;
     if (options.imageAcceptance !== 'manifest') task[options.imageAcceptance] = declared;
@@ -467,25 +467,28 @@ test('contact links pass but embedded mailto/script resources remain rejected', 
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
-test('deterministic HTML failure returns a repair owner, never commits build_done and prevents identical Builder relaunch', async () => {
+test('legacy incomplete HTML approval is blocked before execution and recovery requires a corrected specification', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-build-block-'));
   const old = process.env.DREAMATIC_HTML_BROWSER;
   try {
     process.env.DREAMATIC_HTML_BROWSER = 'off';
-    const { runDir, builder, orchestrator } = await fixture(workspace, false, { missingResource: true });
+    const { runDir, builder, orchestrator } = await fixture(workspace);
     const index = join(runDir, 'plan/html/ui/index.html');
     const source = await readFile(index, 'utf8');
-    await invoke(builder, 'execute_design_plan', { runId: 'demo' });
-    const result = await invoke(builder, 'build_finalize', { runId: 'demo' });
-    const blocked = value(result);
-    assert.equal(blocked.blocked, true); assert.equal(blocked.repairOwner, 'designer');
-    assert.equal(specialistCompletionEvent('builder', 'build_finalize', false, { runId: 'demo' }, result), undefined);
+    await writeFile(index, source.replace('</body>', '<img src="missing.png"></body>'));
+    // Reproduce an old approval whose source hash was accepted without resource closure.
+    const events=(await readFile(join(runDir,'bus.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    const hash=createHash('sha256').update(await readFile(index)).digest('hex');
+    for(const event of events) if(event.commitReceipt?.files?.['plan/html/ui/index.html']) event.commitReceipt.files['plan/html/ui/index.html']=hash;
+    await writeFile(join(runDir,'bus.jsonl'),events.map(JSON.stringify).join('\n')+'\n');
+    await assert.rejects(invoke(builder, 'execute_design_plan', { runId: 'demo' }), /undeclared local reference/);
+    await assert.rejects(readFile(join(runDir,'artifacts/ui/index.html')),/ENOENT/);
     assert.doesNotMatch(await readFile(join(runDir, 'bus.jsonl'), 'utf8'), /"type":"build_done"/);
     assert.equal(value(await invoke(orchestrator, 'spawn_agent', { agent: 'builder', runId: 'demo', task: 'Retry unchanged build' }, { ...context, model: { id: 'test', provider: 'test', api: 'openai-completions' } })).blocked, true);
     const designer = harness(workspace, 'designer').tools;
     await invoke(designer, 'use_skill', { name: 'ui-web-design', scopeId: 'ui', role: 'primary' });
     await invoke(designer, 'use_skill', { name: 'html-interface', scopeId: 'ui', role: 'supporting' });
-    await writeFile(index, source.replace('<img src="missing.png">', ''));
+    await writeFile(index, source);
     await invoke(designer, 'design_bus_post', { runId: 'demo', type: 'design_revision_ready', from_agent: 'designer', to: 'orchestrator', summary: 'Fixed source', artifactRefs: ['plan/design_plan.json'], requestedAction: 'Review' });
     await invoke(harness(workspace, 'reviewer').tools, 'design_bus_post', { runId: 'demo', type: 'design_review_pass', from_agent: 'reviewer', to: 'orchestrator', summary: 'Corrected source approved', artifactRefs: ['review/design-review.json'], requestedAction: 'Build' });
     const recovered = harness(workspace, 'builder').tools;
@@ -584,7 +587,7 @@ test('HTML resource publication diagnoses external URL declarations with a task,
     plan.execution_plan[0].resources = [{ type: 'external_url', url: 'https://fonts.googleapis.com/css2?family=Inter', license: 'SIL Open Font License' }];
     const saved = value(await invoke(designer, 'write_json', { runId: 'demo', path: 'plan/design_plan.json', data: plan }));
     assert.ok(saved.warnings.some((warning) => warning.includes('task page.resources[0]') && warning.includes('external_url')));
-    await assert.rejects(invoke(designer, 'design_bus_post', { runId: 'demo', type: 'design_revision_ready', from_agent: 'designer', to: 'orchestrator', summary: 'Declare font', requestedAction: 'proceed_to_build' }), /plan\/design_plan.json.*task page\.resources\[0\].*external_url.*local font/);
+    await assert.rejects(invoke(designer, 'design_bus_post', { runId: 'demo', type: 'design_revision_ready', from_agent: 'designer', to: 'orchestrator', summary: 'Declare font', requestedAction: 'proceed_to_build' }), /plan\/design_plan.json.*task page\.resources\[0\].*external_url.*system-font/);
     assert.equal(await readFile(join(runDir, 'bus.jsonl'), 'utf8'), before);
     plan.execution_plan[0].resources = [{}];
     assert.throws(() => htmlTask(plan.execution_plan[0]), /task page\.resources\[0\]\.source must be a non-empty string/);
@@ -685,7 +688,7 @@ test('HTML presentation retains required images after subset execution and incom
   }
 });
 
-test('Reviewer rejects open major defects but permits minor suggestions and explicit accepted risks', async () => {
+test('Reviewer rejects major accepted risks and permits resolved corrections with minor suggestions', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-review-readiness-'));
   try {
     const { runDir } = await fixture(workspace);
@@ -694,8 +697,11 @@ test('Reviewer rejects open major defects but permits minor suggestions and expl
     review.issues = [{ id: 'filter-bug', severity: 'major', status: 'open', owner: 'designer' }];
     await jsonFile(runDir, 'review/design-review.json', review);
     const args = { runId: 'demo', type: 'design_review_pass', from_agent: 'reviewer', to: 'orchestrator', summary: 'Reviewed' };
-    await assert.rejects(invoke(reviewer, 'design_bus_post', args), /open major issue.*filter-bug/);
+    await assert.rejects(invoke(reviewer, 'design_bus_post', args), /unresolved major issue.*filter-bug/);
     review.issues[0].status = 'accepted_risk';
+    await jsonFile(runDir, 'review/design-review.json', review);
+    await assert.rejects(invoke(reviewer, 'design_bus_post', args), /accepted_risk cannot waive/);
+    review.issues[0].status = 'resolved';
     review.issues.push({ id: 'optional-animation', severity: 'minor', status: 'open', owner: 'designer' });
     await jsonFile(runDir, 'review/design-review.json', review);
     await invoke(reviewer, 'design_bus_post', args);
@@ -707,14 +713,14 @@ test('historical pass with a valid receipt cannot bypass major defect readiness 
   try {
     const { runDir, builder, orchestrator } = await fixture(workspace);
     const review = JSON.parse(await readFile(join(runDir, 'review/design-review.json')));
-    review.issues = [{ id: 'filter-bug', severity: 'major', status: 'open', owner: 'designer' }];
+    review.issues = [{ id: 'filter-bug', severity: 'major', status: 'accepted_risk', owner: 'designer' }];
     await jsonFile(runDir, 'review/design-review.json', review);
     // Simulate a pass committed by the old runtime, with authentic matching hashes.
     const busPath = join(runDir, 'bus.jsonl');
     const bus = (await readFile(busPath, 'utf8')).trim().split('\n').map(JSON.parse);
     bus.at(-1).commitReceipt.files['review/design-review.json'] = createHash('sha256').update(await readFile(join(runDir, 'review/design-review.json'))).digest('hex');
     await writeFile(busPath, bus.map(JSON.stringify).join('\n') + '\n');
-    await assert.rejects(invoke(builder, 'execute_design_plan', { runId: 'demo' }), /open major issue/);
+    await assert.rejects(invoke(builder, 'execute_design_plan', { runId: 'demo' }), /unresolved major issue/);
     const result = await invoke(builder, 'build_finalize', { runId: 'demo' });
     assert.equal(value(result).repairOwner, 'designer'); assert.equal(value(result).blocked, true);
     assert.equal(specialistCompletionEvent('builder', 'build_finalize', false, { runId: 'demo' }, result), undefined);
@@ -940,27 +946,38 @@ test('Designer publication catches duplicate selectors and hidden mobile navigat
   } finally { await rm(workspace, {recursive:true,force:true}); }
 });
 
-test('legacy mixed approval fails HTML source preflight before any image API call or output generation', async (t) => {
-  if (!await browserExecutable()) { t.skip('Chromium unavailable'); return; }
-  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-before-images-'));
+test('Builder performs no second browser/interaction audit after approval, while output integrity still gates completion', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-builder-mechanical-'));
+  const old = Object.fromEntries(['DREAMATIC_HTML_BROWSER','DREAMATIC_HTML_BROWSER_EXECUTABLE','DREAMATIC_HTML_REQUIRE_BROWSER','DREAMATIC_IMAGE_API_KEY'].map(key=>[key,process.env[key]]));
   const originalFetch = globalThis.fetch;
   try {
-    const { runDir, builder, orchestrator } = await fixture(workspace, true, { navigationFailure: true, legacyApproval: true });
-    let imageCalls = 0;
-    globalThis.fetch = async () => { imageCalls++; throw new Error('Image provider must not be called'); };
-    await assert.rejects(invoke(builder, 'execute_design_plan', {runId:'demo'}), /HTML source preflight/);
-    await assert.rejects(invoke(builder, 'execute_image_plan', {runId:'demo',ids:['product']}), /HTML source preflight/);
-    await assert.rejects(invoke(builder, 'html_generate', {runId:'demo',id:'page'}), /HTML source preflight/);
-    await assert.rejects(invoke(builder, 'image_generate', {runId:'demo',id:'product',intent:'Approved product',prompt:'Approved product',acceptanceCriteria:['Works']}), /HTML source preflight/);
-    await assert.rejects(invoke(builder, 'image_generate_batch', {runId:'demo',tasks:[{id:'product',intent:'Approved product',prompt:'Approved product',acceptanceCriteria:['Works']}]}), /HTML source preflight/);
-    await assert.rejects(invoke(builder, 'image_edit', {runId:'demo',id:'product',referenceImagePaths:[],diagnosis:['Repair'],changes:['Fix'],preserve:['Palette'],prompt:'Approved product',intent:'Approved product',acceptanceCriteria:['Works']}), /HTML source preflight/);
-    await assert.rejects(invoke(builder, 'image_edit_batch', {runId:'demo',tasks:[{id:'product',referenceImagePaths:[],diagnosis:['Repair'],changes:['Fix'],preserve:['Palette'],prompt:'Approved product',intent:'Approved product',acceptanceCriteria:['Works']}]}), /HTML source preflight/);
-    const blocked = value(await invoke(orchestrator, 'spawn_agent', {agent:'builder',runId:'demo',task:'Build approved design'}, {...context,model:{id:'test',provider:'test',api:'openai-completions'}}));
-    assert.equal(blocked.blocked, true); assert.equal(blocked.repairOwner, 'designer');
-    assert.equal(imageCalls, 0);
-    await assert.rejects(readFile(join(runDir, 'artifacts/product.png')), /ENOENT/);
-    await assert.rejects(readFile(join(runDir, 'artifacts/ui/index.html')), /ENOENT/);
-  } finally { globalThis.fetch = originalFetch; await rm(workspace, {recursive:true,force:true}); }
+    process.env.DREAMATIC_HTML_BROWSER = 'off';
+    const {runDir,builder} = await fixture(workspace,true);
+    const approved = (await readFile(join(runDir,'bus.jsonl'),'utf8')).trim().split('\n').map(JSON.parse).findLast(event=>event.type==='design_review_pass');
+    assert.equal(approved.commitReceipt.executionReadiness.executable,true);
+    assert.equal(approved.commitReceipt.executionReadiness.sourcePreflight.status,'unavailable');
+    process.env.DREAMATIC_HTML_BROWSER = '';
+    process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE = '/definitely-not-a-browser';
+    process.env.DREAMATIC_HTML_REQUIRE_BROWSER = 'true';
+    process.env.DREAMATIC_IMAGE_API_KEY = 'test';
+    let calls=0;
+    globalThis.fetch = async()=>{calls++;return new Response(JSON.stringify({data:[{b64_json:PNG.toString('base64')}]}));};
+    const result=value(await invoke(builder,'execute_design_plan',{runId:'demo'}));
+    assert.equal(result.succeeded,3); assert.equal(calls,2);
+    const built=await readFile(join(runDir,'artifacts/ui/index.html'));
+    await writeFile(join(runDir,'artifacts/ui/index.html'),'Unapproved replacement');
+    await assert.rejects(invoke(builder,'build_finalize',{runId:'demo'}),/differs from approved source/);
+    await writeFile(join(runDir,'artifacts/ui/index.html'),built);
+    const finalized=value(await invoke(builder,'build_finalize',{runId:'demo'}));
+    assert.equal(finalized.ok,true);
+    const lint=JSON.parse(await readFile(join(runDir,'artifacts/lint-report.json'),'utf8'));
+    assert.equal(lint.browser.status,'not_run');
+    assert.equal(calls,2);
+  } finally {
+    globalThis.fetch=originalFetch;
+    for(const [key,val] of Object.entries(old)) if(val===undefined) delete process.env[key]; else process.env[key]=val;
+    await rm(workspace,{recursive:true,force:true});
+  }
 });
 
 test('source preflight leaves image-only plans unchanged and preserves unavailable browser policy/repair ownership', async () => {
@@ -1287,4 +1304,155 @@ test('Builder raw image tools derive planned paths by id and reject invented pat
     await assert.rejects(invoke(builder,'image_generate',{runId:'demo',...task,id:'campaign'}),/changed.*committed|receipt/i);
     assert.equal(requests,1);
   } finally {globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.DREAMATIC_IMAGE_API_KEY;else process.env.DREAMATIC_IMAGE_API_KEY=oldKey;await rm(workspace,{recursive:true,force:true});}
+});
+
+
+test('lazy/offscreen and fallback images with empty resources fail publication and Reviewer approval without a browser', async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-resource-closure-'));
+  const old=process.env.DREAMATIC_HTML_BROWSER;
+  try {
+    process.env.DREAMATIC_HTML_BROWSER='off';
+    const {runDir,plan,manifest,designer}=await fixture(workspace);
+    const source=join(runDir,'plan/html/ui/index.html');
+    await writeFile(source,(await readFile(source,'utf8')).replace('</body>', '<img loading="lazy" src="images/example.png" onerror="this.style.display=\'none\'"></body>'));
+    const issues=await lintHtmlSourceDependencies(runDir,deliveryContract(plan,manifest));
+    assert.ok(issues.some(issue=>issue.includes('images/example.png')&&issue.includes('producer dependency')));
+    const before=await readFile(join(runDir,'bus.jsonl'),'utf8');
+    await assert.rejects(invoke(designer,'design_bus_post',{runId:'demo',type:'design_revision_ready',from_agent:'designer',to:'orchestrator',summary:'Ready',requestedAction:'Review'}),/undeclared local reference images\/example.png/);
+    assert.equal(await readFile(join(runDir,'bus.jsonl'),'utf8'),before);
+    // Simulate a receipt made by the previous permissive runtime: reviewer still validates executability.
+    const events=before.trim().split('\n').map(JSON.parse);
+    const hash=createHash('sha256').update(await readFile(source)).digest('hex');
+    for(const event of events) if(event.commitReceipt?.files?.['plan/html/ui/index.html']) event.commitReceipt.files['plan/html/ui/index.html']=hash;
+    await writeFile(join(runDir,'bus.jsonl'),events.map(JSON.stringify).join('\n')+'\n');
+    await assert.rejects(invoke(harness(workspace,'reviewer').tools,'design_bus_post',{runId:'demo',type:'design_review_pass',from_agent:'reviewer',to:'orchestrator',summary:'Ready',requestedAction:'Build'}),/undeclared local reference/);
+    assert.equal((await readFile(join(runDir,'bus.jsonl'),'utf8')).trim().split('\n').map(JSON.parse).filter(event=>event.type==='design_review_pass').length,1);
+    await assert.rejects(readFile(join(runDir,'artifacts/ui/index.html')),/ENOENT/);
+  }finally{if(old===undefined)delete process.env.DREAMATIC_HTML_BROWSER;else process.env.DREAMATIC_HTML_BROWSER=old;await rm(workspace,{recursive:true,force:true});}
+});
+
+test('research assets cannot be embedded directly, while declared generated image dependencies remain executable',async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-generated-assets-'));
+  try {
+    const {runDir,plan,manifest,page,designer}=await fixture(workspace,true);
+    const source=join(runDir,'research/assets/reference.png');await mkdir(join(source,'..'),{recursive:true});await writeFile(source,PNG);
+    const resources=page.resources;
+    page.resources=[{source:'research/assets/reference.png',output:'artifacts/ui/product.png'}];
+    assert.throws(()=>htmlTask(page),/reference-only.*image_generate\/image_edit/);
+    const before=await readFile(join(runDir,'bus.jsonl'),'utf8');
+    await invoke(designer,'write_json',{runId:'demo',path:'plan/design_plan.json',data:plan});
+    await assert.rejects(invoke(designer,'design_bus_post',{runId:'demo',type:'design_revision_ready',from_agent:'designer',to:'orchestrator',summary:'Use reference',requestedAction:'Review'}),/reference-only/);
+    assert.equal(await readFile(join(runDir,'bus.jsonl'),'utf8'),before);
+    page.resources=resources;
+    await validateDeliveryContract(runDir,deliveryContract(plan,manifest));
+    assert.deepEqual(await lintHtmlSourceDependencies(runDir,deliveryContract(plan,manifest)),[]);
+    page.dependencies=[];
+    await assert.rejects(validateDeliveryContract(runDir,deliveryContract(plan,manifest)),/producing task in dependencies/);
+  }finally{await rm(workspace,{recursive:true,force:true});}
+});
+
+test('UX page assets are designed as generated tasks, approved for executability and built before the page',async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-ux-generated-'));
+  const oldBrowser=process.env.DREAMATIC_HTML_BROWSER,oldKey=process.env.DREAMATIC_IMAGE_API_KEY,oldFetch=globalThis.fetch;
+  try {
+    process.env.DREAMATIC_HTML_BROWSER='off';process.env.DREAMATIC_IMAGE_API_KEY='test';
+    const {runDir,plan,manifest,page,designer,builder}=await fixture(workspace);
+    await invoke(designer,'use_skill',{name:'image-prompting',scopeId:'ui',role:'supporting'});
+    plan.skill_selection.push({scope_id:'ui',name:'image-prompting',role:'supporting',rationale:'Design the homepage hero asset'});
+    plan.execution_plan.push({id:'hero',scope_id:'ui',category:'ux',method:'image_generate',prompt_seed:'Original homepage hero inspired by researched scientific structure',negative_prompt_seed:'Watermark',size:'1024x1024',size_rationale:'Page hero image',acceptance_test:'Original intended hero composition'});
+    manifest.deliverables.push({id:'hero',scope_id:'ui',category:'ux',skill_refs:['ui-web-design','image-prompting'],kind:'image',purpose:'Page hero',acceptance_test:'Original intended hero composition',required:true,method:'image_generate',file:'artifacts/hero.png',size:'1024x1024'});
+    page.dependencies=['hero'];page.resources=[{source:'artifacts/hero.png',output:'artifacts/ui/images/hero.png'}];
+    const source=join(runDir,'plan/html/ui/index.html');
+    await writeFile(source,(await readFile(source,'utf8')).replace('</body>','<img src="images/hero.png" alt="Designed hero"></body>'));
+    await invoke(designer,'write_json',{runId:'demo',path:'plan/design_plan.json',data:plan});
+    await invoke(designer,'write_json',{runId:'demo',path:'plan/deliverable_manifest.json',data:manifest});
+    await invoke(designer,'design_bus_post',{runId:'demo',type:'design_revision_ready',from_agent:'designer',to:'orchestrator',summary:'Designed page asset',requestedAction:'Review'});
+    await invoke(harness(workspace,'reviewer').tools,'design_bus_post',{runId:'demo',type:'design_review_pass',from_agent:'reviewer',to:'orchestrator',summary:'Executable page and hero approved',requestedAction:'Build'});
+    const prompts=[];
+    globalThis.fetch=async(_url,input)=>{prompts.push(JSON.parse(input.body).prompt);return new Response(JSON.stringify({data:[{b64_json:PNG.toString('base64')}]}));};
+    const result=value(await invoke(builder,'execute_design_plan',{runId:'demo'}));
+    assert.equal(result.deliveryComplete,true);assert.equal(result.succeeded,2);
+    assert.deepEqual(prompts,['Original homepage hero inspired by researched scientific structure\n\nAvoid: Watermark']);
+    assert.ok((await readFile(join(runDir,'artifacts/ui/images/hero.png'))).equals(PNG));
+    assert.ok((await readFile(join(runDir,'artifacts/ui/index.html'))).equals(await readFile(source)));
+    assert.equal(value(await invoke(builder,'build_finalize',{runId:'demo'})).ok,true);
+  }finally{globalThis.fetch=oldFetch;for(const[key,val]of[['DREAMATIC_HTML_BROWSER',oldBrowser],['DREAMATIC_IMAGE_API_KEY',oldKey]])if(val===undefined)delete process.env[key];else process.env[key]=val;await rm(workspace,{recursive:true,force:true});}
+});
+
+
+test('explicit uploaded originals pass Designer and Reviewer receipts and Builder copies without generation',async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-user-material-workflow-'));
+  const oldBrowser=process.env.DREAMATIC_HTML_BROWSER,oldFetch=globalThis.fetch;
+  try {
+    process.env.DREAMATIC_HTML_BROWSER='off';
+    const {runDir,plan,page,designer,builder}=await fixture(workspace);
+    const {prepareDreamaticPrompt}=await import('../dist/prompt.js');
+    const {recordUserMaterialSources}=await import('../dist/user-assets.js');
+    const upload=await prepareDreamaticPrompt({workspaceDir:workspace,scopeId:'web-demo',text:'Use this exact logo',images:[{type:'image',name:'logo.png',mimeType:'image/png',data:PNG.toString('base64')}]});
+    await recordUserMaterialSources(runDir,[upload.text]);
+    const imported=value(await invoke(designer,'user_asset_import',{runId:'demo',source:upload.references[0].path}));
+    assert.ok(imported.filePath.startsWith(runDir));
+    page.resources=[{source:imported.source,output:'artifacts/ui/assets/logo.png'}];
+    const source=join(runDir,'plan/html/ui/index.html');
+    await writeFile(source,(await readFile(source,'utf8')).replace('</body>','<img loading="lazy" src="assets/logo.png" alt="User logo"></body>'));
+    await invoke(designer,'write_json',{runId:'demo',path:'plan/design_plan.json',data:plan});
+    await invoke(designer,'design_bus_post',{runId:'demo',type:'design_revision_ready',from_agent:'designer',to:'orchestrator',summary:'Use approved uploaded original',requestedAction:'Review'});
+    await invoke(harness(workspace,'reviewer').tools,'design_bus_post',{runId:'demo',type:'design_review_pass',from_agent:'reviewer',to:'orchestrator',summary:'Original provenance and output mapping approved',requestedAction:'Build'});
+    const events=(await readFile(join(runDir,'bus.jsonl'),'utf8')).trim().split('\n').map(JSON.parse);
+    const receipt=events.findLast(item=>item.type==='design_review_pass').commitReceipt.files;
+    assert.equal(receipt[imported.source],imported.sha256);
+    assert.ok(receipt['.performance/user-materials.json']);
+    globalThis.fetch=async()=>{throw new Error('Copying user material must not call generation/download APIs')};
+    const result=value(await invoke(builder,'execute_design_plan',{runId:'demo'}));
+    assert.equal(result.deliveryComplete,true);assert.equal(result.succeeded,1);
+    assert.deepEqual(await readFile(join(runDir,'artifacts/ui/assets/logo.png')),PNG);
+    assert.equal(value(await invoke(builder,'build_finalize',{runId:'demo'})).ok,true);
+  }finally{globalThis.fetch=oldFetch;if(oldBrowser===undefined)delete process.env.DREAMATIC_HTML_BROWSER;else process.env.DREAMATIC_HTML_BROWSER=oldBrowser;await rm(workspace,{recursive:true,force:true});}
+});
+
+test('root user input supplies import permission, Orchestrator summaries and specialist requests do not',async()=>{
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-user-source-binding-'));
+  try {
+    const root=harness(workspace);
+    await root.handlers.get('before_agent_start')({prompt:'Use https://93.184.216.34/user-logo.png',systemPrompt:''});
+    await invoke(root.tools,'run_init',{runIdOverride:'demo',projectTitle:'User Assets',brief:'Research https://93.184.216.34/research.png',designScopes:[scopes[1]]});
+    const {userMaterialInventory}=await import('../dist/user-assets.js');
+    const inventory=await userMaterialInventory(join(workspace,'runs/demo'));
+    assert.deepEqual(inventory.sources,['https://93.184.216.34/user-logo.png']);
+    await assert.rejects(invoke(harness(workspace,'designer').tools,'user_asset_import',{runId:'demo',source:'https://93.184.216.34/research.png'}),/not explicitly user-provided/);
+  }finally{await rm(workspace,{recursive:true,force:true});}
+});
+
+
+test('image edits use one approval/execution contract and reject unchanged reuse', async () => {
+  const valid = { id: 'detail', referenceImagePaths: ['research/assets/source.png'], diagnosis: ['User requested a headline revision'], changes: ['Replace the headline with approved copy'], preserve: ['Composition'] };
+  assert.deepEqual(approvedImageEdit(valid).changes, valid.changes);
+  assert.doesNotThrow(() => approvedImageEdit({ ...valid, changes: ['Change background while keeping the subject unchanged'] }));
+  assert.doesNotThrow(() => approvedImageEdit({ ...valid, changes: ['Keep the subject unchanged', 'Replace the headline with approved copy'] }));
+  for (const field of ['referenceImagePaths', 'diagnosis', 'changes', 'preserve']) {
+    const missing = { ...valid }; delete missing[field];
+    assert.throws(() => approvedImageEdit(missing), new RegExp(field));
+  }
+  assert.throws(() => approvedImageEdit({ ...valid, referenceImagePaths: undefined, reference_ids_or_paths: valid.referenceImagePaths }), /provenance only/);
+  for (const change of ['Retain original image without visual modification', 'Copy the original unchanged', '原样复制图片'])
+    assert.throws(() => approvedImageEdit({ ...valid, changes: [change] }), /unchanged reuse/);
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-edit-readiness-'));
+  try {
+    const { plan, manifest, runDir } = await fixture(workspace, true);
+    const image = plan.execution_plan.find(task => task.method === 'image_generate');
+    image.method = 'image_edit';
+    manifest.deliverables.find(item => item.id === image.id).method = 'image_edit';
+    await jsonFile(runDir, 'plan/design_plan.json', plan);
+    await jsonFile(runDir, 'plan/deliverable_manifest.json', manifest);
+    assert.equal((await designerDraftReadiness(runDir)).ok, false);
+    await assert.rejects(validateDeliveryContract(runDir, deliveryContract(plan, manifest)), /referenceImagePaths/);
+    Object.assign(image, valid, { id: image.id, referenceImagePaths: ['research/assets/missing.png'] });
+    await assert.rejects(validateDeliveryContract(runDir, deliveryContract(plan, manifest)), /ENOENT/);
+    await mkdir(join(runDir, 'research/assets'), { recursive: true });
+    await writeFile(join(runDir, 'research/assets/source.png'), PNG);
+    image.referenceImagePaths = ['research/assets/source.png'];
+    await validateDeliveryContract(runDir, deliveryContract(plan, manifest));
+    image.changes = ['Retain original image without visual modification'];
+    await assert.rejects(validateDeliveryContract(runDir, deliveryContract(plan, manifest)), /unchanged reuse/);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
 });

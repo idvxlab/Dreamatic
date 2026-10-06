@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { briefDesignScopes } from "./design-categories.js";
-import { deliveryContract, htmlTask, physicalRunFile, validateDeliveryContract, runPath, taskIdentityIssues, approvedImageAcceptance, record } from "./design-contract.js";
+import { deliveryContract, htmlTask, physicalRunFile, validateDeliveryContract, runPath, taskIdentityIssues, approvedImageEdit, approvedImageAcceptance, record } from "./design-contract.js";
 import { imageOutputFormat } from "./image-output.js";
 import { assertImageSizeWithinCeiling } from "./image-size.js";
-import { lintHtmlSourceResources } from "./html-delivery.js";
+import { lintHtmlSourceDependencies, lintHtmlSourceResources } from "./html-delivery.js";
 
 export function designerHandoffError(task: string, brief: Record<string, unknown>): string | undefined {
   if (!briefDesignScopes(brief).some((scope) => scope.category === "ux")) return;
@@ -17,7 +17,7 @@ export async function designerDraftReadiness(runDir: string) {
   const read = async (path: string) => { try { return JSON.parse(await readFile(await physicalRunFile(runDir, path), "utf8")) as Record<string, unknown>; } catch { issues.push(`${path}: missing or invalid JSON`); return undefined; } };
   const plan = await read("plan/design_plan.json"), manifest = await read("plan/deliverable_manifest.json");
   if (plan && manifest) {
-    try { await validateDeliveryContract(runDir, deliveryContract(plan, manifest)); } catch (error) { issues.push(error instanceof Error ? error.message : String(error)); }
+    try { const contract = deliveryContract(plan, manifest); await validateDeliveryContract(runDir, contract); issues.push(...await lintHtmlSourceDependencies(runDir, contract)); } catch (error) { issues.push(error instanceof Error ? error.message : String(error)); }
     const deliverables = Array.isArray(manifest.deliverables) ? manifest.deliverables : [];
     if ((manifest.schemaVersion === 2 || plan.schemaVersion === 2) && Array.isArray(plan.execution_plan)) {
       try { issues.push(...taskIdentityIssues(plan.execution_plan.map((item) => record(item, "execution task")), deliverables.map((item) => record(item, "deliverable")))); } catch (error) { issues.push(error instanceof Error ? error.message : String(error)); }
@@ -37,6 +37,7 @@ export async function designerDraftReadiness(runDir: string) {
       const label = `plan/design_plan.json.${key}[${index}] (${String(item?.id ?? item?.deliverable_id ?? "missing id")})`;
       if (!item || typeof item !== "object" || Array.isArray(item)) { issues.push(`${label} must be an object`); continue; }
       if (item.method === "html_generate") continue;
+      if (item.method === "image_edit") try { approvedImageEdit(item); } catch (error) { issues.push(`${label}: ${error instanceof Error ? error.message : String(error)}`); }
       const deliverable = deliverables.find((entry) => entry?.id === item.id);
       if (!deliverable && plan.schemaVersion !== 2) issues.push(`${label}.id must match a deliverables[].id; use the identical id in both files`);
       const missing = ["prompt_seed", "negative_prompt_seed", "size", "size_rationale"].filter((field) => typeof item[field] !== "string" || !item[field].trim());

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative } from "node:path";
 import { resolveInside } from "./paths.js";
+import { validateUserAsset } from "./user-assets.js";
 import { IMAGE_OUTPUT_FORMATS, imageOutputFormat } from "./image-output.js";
 
 export const DESIGN_CAPABILITIES = [
@@ -54,6 +55,26 @@ export function approvedImageAcceptance(entry: Record<string, unknown>, delivera
   const criteria = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : typeof value === "string" && value.trim() ? [value] : [];
   if (!criteria.length) throw new Error(`Plan ${String(entry.id)} needs declared acceptance criteria (acceptance_test, acceptanceCriteria, acceptance_criteria or acceptance; otherwise deliverable.acceptance_test)`);
   return criteria;
+}
+
+/** The same edit payload is checked before approval and consumed by execution.
+ * reference_ids_or_paths is provenance, never pixel conditioning. */
+export function approvedImageEdit(entry: Record<string, unknown>) {
+  const list = (value: unknown, field: string): string[] => {
+    const values = typeof value === "string" ? [value] : value;
+    if (!Array.isArray(values) || !values.length || values.some((item) => typeof item !== "string" || !item.trim()))
+      throw new Error(`Plan ${String(entry.id)} needs explicit ${field}; request specification correction before approval`);
+    return values as string[];
+  };
+  const referenceImagePaths = list(entry.referenceImagePaths ?? entry.reference_image_paths, "referenceImagePaths (reference_ids_or_paths is provenance only)");
+  const diagnosis = list(entry.diagnosis ?? entry.edit_diagnosis, "diagnosis");
+  const changes = list(entry.changes ?? entry.edit_changes, "changes");
+  const preserve = list(entry.preserve ?? entry.preservation_rules ?? entry.preservation, "preserve");
+  // These are explicit copy instructions, not edits. A meaningful edit may still
+  // preserve unrelated elements, and different assets may use different methods.
+  if (changes.every((change) => /^(?:(?:copy|reuse|retain|keep|reproduce)\b.*(?:without (?:any )?(?:visual )?(?:modification|changes?)|unchanged|exactly|identical)|(?:原样|直接)(?:复制|复用|使用)|不(?:做|作|进行)?(?:任何)?(?:视觉)?(?:修改|改动))/i.test(change.trim())))
+    throw new Error(`Plan ${String(entry.id)} declares image_edit but requests unchanged reuse. Import user material with user_asset_import and map inputs/user-assets/ directly; remove the redundant image producer. Do not use an image model to copy files.`);
+  return { referenceImagePaths, diagnosis, changes, preserve };
 }
 
 /** Collect independent identity failures before path or payload validation can mask them. */
@@ -124,8 +145,9 @@ export function designSpecificationProtocol(sizeCeiling: string) {
   return {
     imageSizeCeiling: sizeCeiling, imageOutputExtension: ".png", imageOutputFormats: IMAGE_OUTPUT_FORMATS, imageOutputRule: "Default PNG; .png/.jpg/.jpeg select the actual saved encoding. b64_json/url select transport only. Builder binds the output path to deliverables[].file by id; omit outputPath instead of inventing or restating a path.",
     imageOnly: { schemaVersion: 1, imageTasks: "plan/design_plan.json.image_generation_plan" },
-    typed: { schemaVersion: 2, imageTasks: "plan/design_plan.json.execution_plan", rule: "Same schemaVersion in plan and manifest. One task per deliverable with identical id; deliverable_id, groups and legacy prompt arrays do not substitute for executable tasks.", imageTaskFields: ["id", "scope_id", "category", "method", "prompt_seed", "negative_prompt_seed", "size", "size_rationale"], htmlSkill: "html-interface" },
+    typed: { schemaVersion: 2, imageTasks: "plan/design_plan.json.execution_plan", rule: "Same schemaVersion in plan and manifest. One task per deliverable with identical id; deliverable_id, groups and legacy prompt arrays do not substitute for executable tasks.", imageEditFields: ["referenceImagePaths", "diagnosis", "changes", "preserve"], imageEditRule: "image_edit requires a real visual change, explicit pixel sources and preservation rules. reference_ids_or_paths is provenance only. Unchanged reuse uses user_asset_import and HTML resources, never a generation/edit task for that same asset.", imageTaskFields: ["id", "scope_id", "category", "method", "prompt_seed", "negative_prompt_seed", "size", "size_rationale"], htmlSkill: "html-interface" },
     presentation: { gallery: { mode: "gallery", entry: GALLERY_ENTRY }, html: { mode: "html", entry: "artifacts/<scope-id>/index.html" }, rule: "entry is the single Showcase homepage, not an artifacts[] list. Designer saves deterministically fill a missing Gallery entry or the sole html_page deliverable.file before hashing. Pure image/HTML deliverables also determine a missing mode. Mixed/manual outputs require an explicit mode; multiple HTML deliverables require an explicit entry. Explicit choices are preserved and validated, never guessed from file order." },
+    resourcePolicy: { researchAssets: "Researcher-discovered materials remain reference-only. Exception: explicitly user-provided URLs/uploads can be imported with user_asset_import and reused unchanged.", userMaterials: "Call user_asset_import(runId, source, sourcePageUrl?) before review. It verifies the user source and saves exact image/video/document bytes under inputs/user-assets/. Map its returned source to artifacts/<page>/assets/<file> in resources; no image producer dependency is needed. Never embed remote assets or copy arbitrary repository/research files.", pageImages: "Declare image_generate/image_edit tasks with complete prompts, sizes and acceptance. Map their artifacts/... outputs in HTML resources and include producer ids in dependencies. Designer-authored SVG/CSS/JS belongs in files.", approval: "All local references must resolve to declared outputs before publication and Reviewer approval, including lazy images and fallbacks.", builder: "Execute approved producers and HTML mappings; check paths, integrity and source equality. No second browser/visual/design audit." },
     publication: { artifactRefs: "Optional additional existing owned outputs or canonical read-only research inputs. Runtime always attaches validated Designer plan/source outputs. Changing the publication envelope cannot repair draft fields." },
   };
 }
@@ -166,16 +188,17 @@ export function htmlTask(value: Record<string, unknown>): HtmlTask {
     return items.map((item, index) => {
       const label = `plan/design_plan.json execution_plan task ${id}.${resource ? "resources" : "files"}[${index}]`;
       const mapping = record(item, label);
-      if (resource && (mapping.type === "external_url" || mapping.url !== undefined)) throw new Error(`${label}: external_url/url declarations are unsupported. resources must map existing local files with {source: "research/assets/<file>", output: "artifacts/<file>"} (or a declared generated artifact). For Google Fonts, use acquired local font files or system-font stacks and remove remote stylesheets/@import from HTML/CSS; adding a URL or license does not make it executable.`);
+      if (resource && (mapping.type === "external_url" || mapping.url !== undefined)) throw new Error(`${label}: external_url/url declarations are unsupported. resources must map a declared generated artifact with {source: "artifacts/<image-file>", output: "artifacts/<page>/images/<file>"} and depend on its producer. Research assets are reference-only; user_asset_import returns a trusted inputs/user-assets/... alternative for explicit user URLs/uploads. For Google Fonts, use system-font stacks and remove remote stylesheets/@import from HTML/CSS; adding a URL or license does not make it executable.`);
       const source = string(mapping.source, `${label}.source`);
+      const output = runPath(string(mapping.output, `${label}.output`), "artifacts");
       if (resource) {
-        if (!source.startsWith("research/assets/") && !source.startsWith("artifacts/")) throw new Error("Resource source must be a Run research asset or artifact");
-        runPath(source, source.startsWith("research/") ? "research" : "artifacts");
+        if (!source.startsWith("artifacts/") && !source.startsWith("inputs/user-assets/")) throw new Error(`${label}: research/repository assets are reference-only, not delivery resources. Declare an image_generate/image_edit task, use its artifacts/... output here, and add its id to dependencies. For explicit user URLs/uploads, call user_asset_import and map its returned inputs/user-assets/... source. Author vector/UI code in plan/html/... files; use system fonts.`);
+        runPath(source, source.startsWith("inputs/user-assets/") ? "inputs/user-assets" : "artifacts");
+        if (source.startsWith("inputs/user-assets/") && source.split(".").at(-1)?.replace("jpeg", "jpg") !== output.split(".").at(-1)?.replace("jpeg", "jpg")) throw new Error(`${label}: imported material source/output extensions must agree; copying preserves original bytes`);
       } else {
         runPath(source, "plan/html");
         if (!/\.(html|css|js|json|svg)$/u.test(source)) throw new Error("HTML design sources must be HTML, CSS, JS, JSON or SVG");
       }
-      const output = runPath(string(mapping.output, `${label}.output`), "artifacts");
       if (["artifacts/artifact-manifest.json", "artifacts/lint-report.json"].includes(output) || output.includes("/.")) throw new Error("HTML output targets a runtime-owned path");
       if (/\.(html|css|js)$/u.test(source) && source.split(".").at(-1) !== output.split(".").at(-1)) throw new Error("Source/output extensions must agree");
       return { source, output };
@@ -254,6 +277,15 @@ export async function validateDeliveryContract(runDir: string, contract: Deliver
     const deliverable = contract.deliverables.find((item) => item.id === id);
     if (!deliverable || deliverable.method !== task.method) throw new Error(`Task ${id} does not match its deliverable`);
     if (task.method !== "html_generate") approvedImageAcceptance(task, deliverable);
+    if (task.method === "image_edit") {
+      const edit = approvedImageEdit(task);
+      for (const source of edit.referenceImagePaths) {
+        const producer = producers.get(source);
+        if (producer) {
+          if (!Array.isArray(task.dependencies) || !task.dependencies.includes(producer)) throw new Error(`Image edit ${id} source ${source} needs its producing task in dependencies`);
+        } else await physicalRunFile(runDir, source);
+      }
+    }
     if (task.method !== "html_generate") imageOutputFormat(String(deliverable.file), `Image task ${id} output`);
     if (task.method === "html_generate") {
       if (deliverable.kind !== "html_page") throw new Error(`HTML task ${id} requires kind html_page`);
@@ -266,7 +298,11 @@ export async function validateDeliveryContract(runDir: string, contract: Deliver
         if (mapping.source.startsWith("artifacts/")) {
           const producer = producers.get(mapping.source);
           if (!producer || !html.dependencies.includes(producer)) throw new Error(`HTML resource ${mapping.source} needs its producing task in dependencies`);
-        } else await physicalRunFile(runDir, mapping.source);
+          if (html.resources.includes(mapping) && !["image_generate", "image_edit"].includes(String(contract.tasks.find((item) => item.id === producer)?.method))) throw new Error(`HTML resource ${mapping.source} must come from an approved image_generate/image_edit producer. Designer-authored SVG/CSS/JS belongs in files.`);
+        } else {
+          if (mapping.source.startsWith("inputs/user-assets/")) await validateUserAsset(runDir, mapping.source);
+          await physicalRunFile(runDir, mapping.source);
+        }
       }
       for (const check of html.interaction_checks) if (check.page && !html.files.some((mapping) => mapping.output === check.page)) throw new Error(`Check page is not owned by task ${id}`);
     }
@@ -294,7 +330,7 @@ export async function designSourceFiles(runDir: string): Promise<string[]> {
   if (!Array.isArray(plan.execution_plan)) throw new Error("execution_plan must be an array");
   return [...new Set(plan.execution_plan.map((item) => record(item)).filter((task) => task.method === "html_generate").flatMap((task) => {
     const html = htmlTask(task);
-    return [...html.files, ...html.resources.filter((file) => !file.source.startsWith("artifacts/"))].map((file) => file.source);
+    return [...html.files, ...html.resources.filter((file) => !file.source.startsWith("artifacts/"))].map((file) => file.source).concat(html.resources.some((file) => file.source.startsWith("inputs/user-assets/")) ? [".performance/user-materials.json"] : []);
   }))];
 }
 export async function fileHash(runDir: string, path: string): Promise<string> {

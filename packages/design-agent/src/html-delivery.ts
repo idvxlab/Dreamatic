@@ -6,8 +6,8 @@ import type { Browser } from "playwright-core";
 import { assertSafeOutput, fileHash, htmlTask, physicalRunFile, type DeliveryContract, type HtmlTask } from "./design-contract.js";
 import { resolveInside } from "./paths.js";
 
-export const HTML_PREVIEW_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
-export const HTML_CONTENT_TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".woff": "font/woff", ".woff2": "font/woff2" };
+export const HTML_PREVIEW_CSP = "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+export const HTML_CONTENT_TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".woff": "font/woff", ".woff2": "font/woff2", ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".pdf": "application/pdf", ".txt": "text/plain; charset=utf-8", ".csv": "text/csv; charset=utf-8", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" };
 
 export async function materializeHtml(runDir: string, task: HtmlTask, reuse = true, signal?: AbortSignal): Promise<Record<string, unknown>> {
   const mappings = [...task.files, ...task.resources];
@@ -61,6 +61,35 @@ export async function lintHtmlSourceResources(runDir: string, task: Pick<HtmlTas
     for (const reference of source.matchAll(/url\(\s*["']?([^)'"\s]+)["']?\s*\)|@import\s*["']([^"']+)["']/giu)) check(reference[1] ?? reference[2]!);
   }
   return issues;
+}
+
+/** Validate every declared local reference against output mappings, including lazy/offscreen images.
+ * This reads Designer sources only: generated image files need not exist before approval. */
+export async function lintHtmlSourceDependencies(runDir: string, contract: DeliveryContract): Promise<string[]> {
+  const tasks = contract.tasks.filter((task) => task.method === "html_generate").map(htmlTask);
+  const mappings = tasks.flatMap((task) => [...task.files, ...task.resources]);
+  const outputs = new Set(mappings.map((mapping) => mapping.output));
+  const issues: string[] = [];
+  for (const task of tasks) for (const file of task.files.filter((file) => /\.(html|css|svg)$/u.test(file.source))) {
+    const source = await readFile(await physicalRunFile(runDir, file.source), "utf8");
+    const check = (reference: string, navigation = false) => {
+      if (!reference || reference.startsWith("#") || /^data:image\//iu.test(reference) || (navigation && (reference.startsWith("?") || /^(?:https?:\/\/|mailto:|tel:)/iu.test(reference)))) return;
+      try {
+        if (/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/)/iu.test(reference)) throw new Error("not a local relative path");
+        const absolute = resolveInside(resolveInside(runDir, "artifacts"), resolve(dirname(resolveInside(runDir, file.output)), decodeURIComponent(reference.split(/[?#]/u)[0]!)));
+        const output = relative(runDir, absolute).replaceAll("\\", "/");
+        if (!outputs.has(output)) throw new Error(`no declared output mapping for ${output}`);
+      } catch (error) {
+        issues.push(`${task.id}.files (${file.source} → ${file.output}): undeclared local reference ${reference}: ${error instanceof Error ? error.message : String(error)}. Declare the designed file, a generated image resource with producer dependency, or a verified user_asset_import resource before review; fallbacks/lazy loading do not satisfy delivery.`);
+      }
+    };
+    if (/\.(html|svg)$/u.test(file.source)) for (const tag of source.matchAll(/<([a-z][a-z0-9-]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/giu)) {
+      for (const attr of tag[0].matchAll(/\b(src|href|poster|data)\s*=\s*["']([^"']+)["']/giu)) check(attr[2]!, tag[1]!.toLowerCase() === "a" && attr[1]!.toLowerCase() === "href");
+      for (const attr of tag[0].matchAll(/\bsrcset\s*=\s*["']([^"']+)["']/giu)) for (const candidate of attr[1]!.split(",")) check(candidate.trim().split(/\s/u)[0]!);
+    }
+    for (const reference of source.matchAll(/url\(\s*["']?([^)'"\s]+)["']?\s*\)|@import\s*["']([^"']+)["']/giu)) check(reference[1] ?? reference[2]!);
+  }
+  return [...new Set(issues)];
 }
 
 export async function lintHtmlDelivery(runDir: string, contract: DeliveryContract) {
@@ -127,7 +156,7 @@ export async function lintGalleryPresentation(runDir: string, entry: string): Pr
 export async function browserExecutable(): Promise<string | undefined> {
   if (process.env.DREAMATIC_HTML_BROWSER === "off") return undefined;
   const { chromium } = await import("playwright-core");
-  const candidates = [process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE, chromium.executablePath(), ...(process.platform === "darwin" ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"] : process.platform === "linux" ? ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"] : [])];
+  const candidates = [process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE, process.env.DREAMATIC_DESKTOP_BROWSER, chromium.executablePath(), ...(process.platform === "darwin" ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"] : process.platform === "linux" ? ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"] : [])];
   for (const candidate of candidates) if (candidate && await access(candidate).then(() => true).catch(() => false)) return candidate;
   return undefined;
 }

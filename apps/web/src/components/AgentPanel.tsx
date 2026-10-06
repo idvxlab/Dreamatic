@@ -148,9 +148,9 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
 
   async function addFiles(files: FileList | null) {
     if (!files) return;
-    const next = await Promise.all([...files].filter((file) => file.type.startsWith("image/")).map(async (file) => ({
+    const next = await Promise.all([...files].map(async (file) => ({
       name: file.name,
-      mimeType: file.type,
+      mimeType: file.type || ({ md: "text/markdown", csv: "text/csv", txt: "text/plain" }[file.name.split(".").at(-1)?.toLowerCase() ?? ""] ?? "application/octet-stream"),
       data: await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
@@ -163,7 +163,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
 
   function submit() {
     if ((!text.trim() && images.length === 0) || running) return;
-    onSend(text.trim() || "请分析这些参考图片，并开始设计。", images);
+    onSend(text.trim() || "请分析这些上传资料，并开始设计。", images);
     setText("");
     setImages([]);
   }
@@ -208,7 +208,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
           <textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="Describe the design outcome…" rows={3} />
           <div>
             <button className="attach" onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
-            <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => addFiles(event.target.files)} />
+            <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv" multiple onChange={(event) => addFiles(event.target.files)} />
             <span>Enter to send</span>
             <button className="send" disabled={running || (!text.trim() && images.length === 0)} onClick={submit}>{running ? <LoaderCircle className="spin" size={17} /> : <ArrowUp size={17} />}</button>
           </div>

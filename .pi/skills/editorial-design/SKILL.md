@@ -55,7 +55,7 @@ prompts instead of requesting blank layouts. For long publications, choose
 representative readable content appropriate to the image's purpose without
 claiming that one generated spread is a complete editable publication. Generated
 layouts do not by themselves prove typographic fidelity, pagination or print
-readiness. Current Dreamatic delivery may include publication visualizations
+readiness. Current DreamaticArt delivery may include publication visualizations
 and production specifications, not an unimplemented editable publication.
 
 ## Quality judgment

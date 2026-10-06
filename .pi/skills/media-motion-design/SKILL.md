@@ -45,7 +45,7 @@ for silent or reduced-motion viewing where relevant. Identify aspect ratios,
 safe content regions and platform-specific recomposition requirements from
 available evidence rather than assuming one universal placement rule.
 
-## Current Dreamatic delivery
+## Current DreamaticArt delivery
 The runtime produces static PNGs. Specify storyboards, distinct keyframes,
 style frames, shot lists and timing notes; do not invoke video, audio or 3D
 generation tools or claim a playable film. Keep critical narration and captions

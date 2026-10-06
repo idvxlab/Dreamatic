@@ -7,3 +7,6 @@ workspace/sessions/
 workspace/.trash/
 *.log
 *.tsbuildinfo
+
+.desktop-runtime/
+release/

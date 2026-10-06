@@ -7,6 +7,7 @@ color: "#5AA9A4"
 default_approval_mode: ask
 can_spawn: false
 allowed_tools:
+  - user_asset_import
   - read
   - write
   - write_json

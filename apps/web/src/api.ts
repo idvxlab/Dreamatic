@@ -119,7 +119,14 @@ export async function getHealth(): Promise<HealthView> {
   return parse(await fetch("/api/health"));
 }
 
+export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export interface RuntimeConfig {
+  envPath: string;
+  modules: Array<{ id: string; title: string; description: string }>;
+  fields: ConfigField[];
+  values: Record<string, string>;
+  secretConfigured: Record<string, boolean>;
+  secrets?: Record<string, string>;
   activeProfile: string;
   providerName: string;
   providerType: string;
@@ -191,7 +198,7 @@ export async function downloadProject(runId: string): Promise<void> {
     throw new Error(value.error ?? "Project export failed");
   }
   if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/zip") {
-    throw new Error("Export did not return a ZIP file. Restart the Dreamatic server to load the export API, then try again.");
+    throw new Error("Export did not return a ZIP file. Restart the DreamaticArt server to load the export API, then try again.");
   }
   const blob = await response.blob();
   const expectedLength = response.headers.get("content-length");

@@ -1,5 +1,5 @@
 import { Archive, Check, ChevronDown, Layers3, MoreHorizontal, Pencil, Plus, Search, Settings2, Sparkles, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RunView } from "../types";
 
 interface SidebarProps {
@@ -14,6 +14,17 @@ interface SidebarProps {
 }
 
 export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun, onDeleteRun, onSettings, creating = false }: SidebarProps) {
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const userButtonRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const dismiss = (event: MouseEvent) => { if (!userMenuRef.current?.contains(event.target as Node)) setUserMenuOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setUserMenuOpen(false); userButtonRef.current?.focus(); } };
+    document.addEventListener("mousedown", dismiss); document.addEventListener("keydown", escape);
+    userMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    return () => { document.removeEventListener("mousedown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [userMenuOpen]);
   const [query, setQuery] = useState("");
   const [menuRunId, setMenuRunId] = useState<string>();
   const [editingRunId, setEditingRunId] = useState<string>();
@@ -42,14 +53,14 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
   };
   const confirmDelete = (run: RunView) => {
     setMenuRunId(undefined);
-    if (window.confirm(`Delete “${run.title}”?\n\nThe project will be moved to Dreamatic's local Trash and can be recovered from disk.`)) onDeleteRun(run.id);
+    if (window.confirm(`Delete “${run.title}”?\n\nThe project will be moved to DreamaticArt's local Trash and can be recovered from disk.`)) onDeleteRun(run.id);
   };
 
   return (
     <aside className="sidebar" id="project-panel">
       <div className="brand-row">
         <div className="brand-mark"><Sparkles size={17} strokeWidth={1.8} /></div>
-        <div><strong>Dreamatic</strong><span>Design intelligence</span></div>
+        <div><strong>DreamaticArt</strong><span>Design intelligence</span></div>
         <ChevronDown className="muted-icon" size={15} />
       </div>
       <button className="new-project" onClick={onCreate} disabled={creating}><Plus size={16} /> {creating ? "Creating…" : "New project"}</button>
@@ -80,8 +91,10 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
         ))}
         {visibleRuns.length === 0 && <p className="empty-projects">No matching projects</p>}
       </div>
-      <button className="settings-link" onClick={onSettings}><Settings2 size={16} /> Settings</button>
-      <div className="profile"><div className="avatar">D</div><span><strong>Designer</strong><small>Local workspace</small></span></div>
+      <div className="profile-area" ref={userMenuRef}>
+        {userMenuOpen && <div className="user-menu" id="user-menu" role="menu" aria-label="User menu"><button role="menuitem" onClick={() => { setUserMenuOpen(false); onSettings(); }}><Settings2 size={16} /> Settings</button></div>}
+        <button ref={userButtonRef} className="profile" aria-label="User menu: Designer" aria-haspopup="menu" aria-expanded={userMenuOpen} aria-controls={userMenuOpen ? "user-menu" : undefined} onClick={() => setUserMenuOpen((open) => !open)}><div className="avatar">D</div><span><strong>Designer</strong><small>Local workspace</small></span><ChevronDown size={15} /></button>
+      </div>
     </aside>
   );
 }

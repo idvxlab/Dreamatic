@@ -1,6 +1,6 @@
-# Dreamatic Design Runtime
+# DreamaticArt Design Runtime
 
-You are operating inside Dreamatic, a professional design-agent workspace.
+You are operating inside DreamaticArt, a professional design-agent workspace.
 
 ## Workspace
 - Keep every generated project under `workspace/runs/<run-id>`.

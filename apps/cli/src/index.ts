@@ -76,7 +76,7 @@ function parseArgs(args: string[]): CliOptions {
 }
 
 function printHelp(): void {
-  stdout.write(`Dreamatic CLI — run the same design agent used by the React workspace\n\n`);
+  stdout.write(`DreamaticArt CLI — run the same design agent used by the React workspace\n\n`);
   stdout.write(`Usage:\n`);
   stdout.write(`  dreamatic "设计一个展览主视觉和海报系统"\n`);
   stdout.write(`  dreamatic --image reference.png "基于参考图设计品牌海报"\n`);
@@ -173,7 +173,7 @@ async function runPrompt(
 async function interactiveLoop(session: AgentSession, json: boolean, workspaceDir: string, scopeId: string): Promise<void> {
   if (json) throw new Error("--json cannot be combined with interactive mode");
   const readline = createInterface({ input: stdin, output: stdout });
-  stdout.write("Dreamatic interactive session. Use /exit to finish.\n");
+  stdout.write("DreamaticArt interactive session. Use /exit to finish.\n");
   try {
     while (true) {
       const input = (await readline.question("dreamatic › ")).trim();
@@ -197,7 +197,7 @@ async function main(): Promise<void> {
   const workspaceDir = isAbsolute(configuredWorkspace) ? configuredWorkspace : resolve(repoRoot, configuredWorkspace);
   let task = options.task;
   if (options.resumeRunId && !task) {
-    task = `Resume the existing Dreamatic Run ${options.resumeRunId}. Do not call run_init and do not create a new Run. Read run-state.json, bus.jsonl, the current todo, and durable Design Context; continue from the first incomplete responsibility. Reuse completed work and existing child sessions. Complete the Researcher-Designer-Reviewer loop, invoke Builder only after design_review_pass, then export unless the Run is already complete.`;
+    task = `Resume the existing DreamaticArt Run ${options.resumeRunId}. Do not call run_init and do not create a new Run. Read run-state.json, bus.jsonl, the current todo, and durable Design Context; continue from the first incomplete responsibility. Reuse completed work and existing child sessions. Complete the Researcher-Designer-Reviewer loop, invoke Builder only after design_review_pass, then export unless the Run is already complete.`;
   }
   if (!task && !stdin.isTTY) task = await stdinText();
   const shouldInteract = options.interactive || (!task && stdin.isTTY);
@@ -224,6 +224,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  stderr.write(`Dreamatic CLI error: ${error instanceof Error ? error.message : String(error)}\n`);
+  stderr.write(`DreamaticArt CLI error: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

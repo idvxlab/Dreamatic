@@ -1,7 +1,7 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deliveryContract, fileHash, htmlTask, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
-import { checkHtmlBrowser, lintGalleryPresentation, lintHtmlDelivery } from "./html-delivery.js";
+import { lintGalleryPresentation, lintHtmlDelivery } from "./html-delivery.js";
 import { appendShowcaseReferences, annotateShowcasePrompts } from "./showcase.js";
 import { imageBytesMatchPath, imageOutputFormat } from "./image-output.js";
 import { resolveInside } from "./paths.js";
@@ -57,15 +57,13 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
     lint.ok = lint.issues.length === 0;
   }
   if (!await physicalRunFile(runDir, contract.presentation.entry).then(async (path) => (await stat(path)).size > 0).catch(() => false)) { lint.ok = false; lint.issues.push("Presentation entry is missing or empty"); }
-  const browser = lint.ok && completed.tasks.some((task) => task.method === "html_generate")
-    ? await checkHtmlBrowser(runDir, completed, signal)
-    : { status: "not_applicable", passed: false, issues: [] as string[] };
-  if (browser.status === "completed" && !browser.passed) { lint.ok = false; lint.issues.push(...browser.issues); }
-  if (process.env.DREAMATIC_HTML_REQUIRE_BROWSER === "true" && browser.status === "unavailable") { lint.ok = false; lint.issues.push("Required HTML browser validation is unavailable"); }
+  // Source interaction/viewport validation belongs to Designer publication and Reviewer approval.
+  // Builder validates exact approved output bytes and resource/file integrity only.
+  const browser = { status: "not_run", passed: false, issues: [] as string[], reason: "Builder performs integrity checks only; source interactions are validated before approval." };
   const lintReport = { runId, ...lint, browser };
   await writeFile(join(artifactsDir, "lint-report.json"), JSON.stringify(lintReport, null, 2));
-  if (!lint.ok) throw new DeliveryBlocked(browser.status === "unavailable" && process.env.DREAMATIC_HTML_REQUIRE_BROWSER === "true" ? "runtime" : "designer", lint.issues);
-  const artifactManifest = { schemaVersion: 2, runId, generatedAt: new Date().toISOString(), presentation: contract.presentation, previewFiles: lint.files, htmlEntries: completed.tasks.filter((task) => task.method === "html_generate").flatMap((task) => htmlTask(task).files.filter((file) => file.output.endsWith(".html")).map((file) => file.output)), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "passed", interactions: browser.status === "completed" && browser.passed ? "passed_declared_checks" : "not_assessed", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts };
+  if (!lint.ok) throw new DeliveryBlocked("designer", lint.issues);
+  const artifactManifest = { schemaVersion: 2, runId, generatedAt: new Date().toISOString(), presentation: contract.presentation, previewFiles: lint.files, htmlEntries: completed.tasks.filter((task) => task.method === "html_generate").flatMap((task) => htmlTask(task).files.filter((file) => file.output.endsWith(".html")).map((file) => file.output)), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "passed", interactions: "not_assessed", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts };
   await writeFile(join(artifactsDir, "artifact-manifest.json"), JSON.stringify(artifactManifest, null, 2));
   return { artifacts, lint: lintReport, presentation: contract.presentation, files: [...new Set(["artifacts/artifact-manifest.json", "artifacts/lint-report.json", contract.presentation.entry, ...artifacts.map((item) => item.path), ...lint.files])] };
 }

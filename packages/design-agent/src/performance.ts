@@ -1,4 +1,4 @@
-/** Dreamatic image-service admission control; Pi continues to own agent execution. */
+/** DreamaticArt image-service admission control; Pi continues to own agent execution. */
 export class ImageRequestScheduler {
   #queues = new Map<string, Array<{ start: () => void; cancel: () => void }>>();
   #active = 0;

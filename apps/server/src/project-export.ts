@@ -42,7 +42,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string):
       } else throw new Error(`Unsupported project file: ${path}`);
     }
     // Keep relative asset links intact, without sessions, caches or duplicate historical Runs.
-    for (const path of ["artifacts", "plan", "research", "review", "references", "brief.json", "run-state.json"]) {
+    for (const path of ["artifacts", "plan", "research", "review", "references", "inputs", "brief.json", "run-state.json"]) {
       const exists = await lstat(join(runDir, path)).then(() => true).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return false;
         throw error;
@@ -58,7 +58,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string):
     if (receipt && typeof receipt["artifacts/artifact-manifest.json"] !== "string") throw new Error("Build manifest has no approval receipt");
     const entryUrl = entry.split("/").map(encodeURIComponent).join("/");
     // A portable launcher; the approved page itself is copied byte-for-byte.
-    await writeFile(join(packageDir, "index.html"), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${entryUrl}"><title>Dreamatic Preview</title><a href="${entryUrl}">Open preview</a>\n`);
+    await writeFile(join(packageDir, "index.html"), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${entryUrl}"><title>DreamaticArt Preview</title><a href="${entryUrl}">Open preview</a>\n`);
     await writeFile(join(packageDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), entry, files: [...files, "index.html", "package-manifest.json"] }, null, 2));
     const archive = join(temp, `${runId}.zip`);
     // Argument array (no shell); work on the snapshot so concurrent Run updates cannot enter the archive.

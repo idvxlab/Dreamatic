@@ -1,0 +1,9 @@
+{
+  "name": "@dreamatic/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "description": "DreamaticArt AI design desktop application",
+  "author": "DreamaticArt"
+}

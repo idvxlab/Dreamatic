@@ -82,3 +82,29 @@ test('real browser runs local interactions inside the product scripts-only ifram
     assert.equal(await child.evaluate(() => { try { document.cookie; return false; } catch { return true; } }), true);
   } finally { await browser?.close(); await service.close(); await rm(workspace, { recursive: true, force: true }); }
 });
+
+test('isolated HTML preview permits an explicit local document download while retaining opaque origin',async(t)=>{
+  const executablePath=await browserExecutable();if(!executablePath){t.skip('Chromium unavailable');return;}
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-user-document-preview-'));
+  const service=new PreviewService(workspace);let browser;
+  try{
+    const runDir=await fixture(workspace);
+    const document='artifacts/ui/brief.pdf',bytes='%PDF-1.7 User document';
+    const source='artifacts/ui/index.html';
+    const html=(await readFile(join(runDir,source),'utf8')).replace('</body>','<a download href="brief.pdf">Download brief</a></body>');
+    await writeFile(join(runDir,source),html);await writeFile(join(runDir,document),bytes);
+    const manifestPath=join(runDir,'artifacts/artifact-manifest.json');
+    const manifest=JSON.parse(await readFile(manifestPath,'utf8'));manifest.previewFiles.push(document);
+    const manifestBytes=JSON.stringify(manifest);await writeFile(manifestPath,manifestBytes);
+    const event=JSON.parse((await readFile(join(runDir,'bus.jsonl'),'utf8')).trim());
+    Object.assign(event.commitReceipt.files,{[source]:hash(html),[document]:hash(bytes),'artifacts/artifact-manifest.json':hash(manifestBytes)});
+    await writeFile(join(runDir,'bus.jsonl'),JSON.stringify(event)+'\n');
+    const preview=await service.open('demo');
+    const response=await fetch(new URL('brief.pdf',preview.url));assert.match(response.headers.get('content-type'),/application\/pdf/);assert.match(response.headers.get('content-disposition'),/attachment/);assert.equal(await response.text(),bytes);
+    const {chromium}=await import('playwright-core');browser=await chromium.launch({executablePath,headless:true});const page=await browser.newPage({acceptDownloads:true});
+    await page.setContent(`<iframe src="${preview.url}" sandbox="allow-scripts allow-downloads"></iframe>`);
+    const downloadEvent=page.waitForEvent('download');await page.frameLocator('iframe').getByRole('link',{name:'Download brief'}).click();const download=await downloadEvent;
+    assert.equal(download.suggestedFilename(),'brief.pdf');assert.equal(await readFile(await download.path(),'utf8'),bytes);
+    const child=page.frames().find(frame=>frame.url()===preview.url);assert.equal(await child.evaluate(()=>{try{document.cookie;return false;}catch{return true;}}),true);
+  }finally{await browser?.close();await service.close();await rm(workspace,{recursive:true,force:true});}
+});

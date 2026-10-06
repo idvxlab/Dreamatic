@@ -36,7 +36,7 @@ async function waitForServer(server) {
       const response = await fetch(url);
       const health = response.ok ? await response.json() : undefined;
       if (health?.processId === server.pid) {
-        console.log(`[dev] Dreamatic server is ready: ${url}`);
+        console.log(`[dev] DreamaticArt server is ready: ${url}`);
         return;
       }
     } catch {

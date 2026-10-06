@@ -4,7 +4,7 @@ export function resolveInside(root: string, candidate: string): string {
   const absoluteRoot = resolve(root);
   const absoluteCandidate = resolve(absoluteRoot, candidate);
   if (absoluteCandidate !== absoluteRoot && !absoluteCandidate.startsWith(`${absoluteRoot}${sep}`)) {
-    throw new Error(`Path escapes the Dreamatic workspace: ${candidate}`);
+    throw new Error(`Path escapes the DreamaticArt workspace: ${candidate}`);
   }
   return absoluteCandidate;
 }

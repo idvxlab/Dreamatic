@@ -45,7 +45,7 @@ world. Differentiate atmospheric imagery from actionable UI.
 
 ## Current runtime deliverables
 Plan static world views, interface concepts, interaction sequences, character
-or environment studies and rule documentation. Dreamatic does not implement
+or environment studies and rule documentation. DreamaticArt does not implement
 a playable game, animated sequence or 3D asset in its current image-based
 runtime; frame the delivery accordingly.
 

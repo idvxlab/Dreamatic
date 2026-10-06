@@ -20,9 +20,17 @@
     "cli": "npm run start -w @dreamatic/cli --",
     "diagnose:image-edit": "node scripts/diagnose-image-edit.mjs",
     "compact-session": "node scripts/compact-visual-session.mjs",
-    "diagnose:performance": "node scripts/diagnose-performance.mjs"
+    "diagnose:performance": "node scripts/diagnose-performance.mjs",
+    "desktop:prepare": "npm run build && node scripts/desktop/prepare.mjs",
+    "desktop": "npm run desktop:prepare && electron apps/desktop",
+    "desktop:package": "npm run desktop:prepare && node scripts/desktop/package.mjs",
+    "desktop:test": "node --test apps/desktop/test/*.test.mjs",
+    "desktop:test:ui": "node apps/desktop/test-ui.mjs",
+    "release:mac": "node scripts/release.mjs"
   },
   "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.17.0",
     "typescript": "5.9.3"
   }
 }

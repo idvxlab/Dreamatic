@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Keep application bundles separate from Dreamatic's /assets/* design-output API.
+    // Keep application bundles separate from DreamaticArt's /assets/* design-output API.
     assetsDir: "ui",
   },
   server: {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { assertSafeOutput, htmlTask, physicalRunFile, validateDeliveryContract, type DeliveryContract } from "./design-contract.js";
 import { encodeImageOutput } from "./image-output.js";
-import { browserExecutable, checkHtmlBrowser } from "./html-delivery.js";
+import { browserExecutable, checkHtmlBrowser, lintHtmlSourceDependencies } from "./html-delivery.js";
 import { DeliveryBlocked, deliveryRuntimeStamp } from "./delivery-block.js";
 
 // Only for disposable interaction previews. Never write placeholders into a Run's artifacts.
@@ -18,6 +18,8 @@ export async function assertHtmlSourcePreflight(runDir: string, contract: Delive
   if (!tasks.length) return { status: "not_applicable", reused: false };
   signal?.throwIfAborted();
   await validateDeliveryContract(runDir, contract);
+  const sourceIssues = await lintHtmlSourceDependencies(runDir, contract);
+  if (sourceIssues.length) throw failure(sourceIssues);
   const executable = await browserExecutable();
   if (!executable) {
     if (process.env.DREAMATIC_HTML_REQUIRE_BROWSER === "true") throw new DeliveryBlocked("runtime", ["Required HTML source preflight browser is unavailable; configure DREAMATIC_HTML_BROWSER_EXECUTABLE"]);

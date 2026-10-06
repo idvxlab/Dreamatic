@@ -26,7 +26,7 @@ or local state. Record real backend dependencies without pretending they exist.
 Use native browser features and local assets; no remote scripts/styles/fonts,
 network requests, iframe embeds, eval, service workers or base elements. Use inline
 data or local JS constants instead of fetch. Prevent default form submission
-when handling it locally. Relative page links and system/local fonts are valid.
+when handling it locally. Relative page links and system fonts are valid.
 
 Use schemaVersion 2 in design_plan.json and deliverable_manifest.json. Each
 execution task has the same id/scope_id/category as its deliverable, method
@@ -39,11 +39,18 @@ id such as decorative-images is not a replacement for these tasks. Do not keep
 executable image prompts solely in the legacy image_generation_plan when using
 schemaVersion 2. Builder batches those individual tasks without changing them.
 All outputs stay under artifacts/. Preserve relative URLs in the source code.
-Resources come from research/assets/ or declared generated artifacts; generated
-resources need a dependency on their producing task. Every resource is a concrete
-{source, output} local mapping, not an external_url/url/license declaration.
-Google Fonts URLs remain remote styles/fonts even if declared here: use acquired
-local font files or system-font stacks and remove remote imports from HTML/CSS. Author all required sources
+Researcher-discovered images are reference-only. User-specified existing works
+can be imported unchanged with user_asset_import and mapped directly from
+inputs/user-assets/; do not regenerate originals merely to deliver them. For new
+or meaningfully changed imagery declare image_generate/image_edit tasks, map
+the resulting artifacts/... files and include producer dependencies. For edits
+supply referenceImagePaths, diagnosis, actual changes and preserve; provenance
+reference_ids_or_paths alone does not supply pixels. Keep each asset strategy
+consistent across the plan, task breakdown, manifest and resource mappings. A missing-image
+fallback, lazy loading or a changed src does not replace this execution plan.
+Every resource is a concrete {source, output} mapping, not an external_url/url/license
+declaration. Author icons/vector/UI code under plan/html/... using files mappings.
+Use system-font stacks and remove remote Google Fonts imports. Author all required sources
 before posting completion. An HTML page has no image prompts or image sizes.
 
 Example execution task (adapt coverage to the actual design):
@@ -113,3 +120,31 @@ the task, check, viewport, step and selector; correct the check or actual source
 before publishing. Generated image dependencies use private preview placeholders;
 this does not certify the final imagery or layout. Builder still runs full final
 validation with real assets. Unchanged source/checks reuse the preflight result.
+
+For a page needing a designed hero image, declare an image deliverable and task
+(e.g. hero-image) with the full prompt/negative prompt, size, rationale and
+acceptance. Then add to the HTML task:
+
+```json
+{
+  "resources": [{"source": "artifacts/hero-image.png", "output": "artifacts/control-ui/images/hero.png"}],
+  "dependencies": ["hero-image"]
+}
+```
+
+The HTML uses images/hero.png. The producer is executed before page copying;
+no reference image is copied as the hero. Designer/Reviewer validate all local
+references and declared interactions before approval. Builder only executes the
+approved producers/mappings and verifies file integrity/source equality.
+
+User-specified material exception: explicitly user-provided URLs and uploads may
+be reused unchanged. Orchestrator/Researcher/Designer calls user_asset_import
+before approval (sourcePageUrl only for an asset actually linked on the user's
+page). The tool returns a verified inputs/user-assets/<hash>.<ext> source. Designer
+maps it in resources to artifacts/<page>/assets/<file>; no image producer
+dependency is required for this imported resource. Reviewer checks the trusted
+import receipt, source hash and every output mapping. Builder copies approved
+mappings mechanically; never download/reselect/reinterpret materials during
+building. Researcher-discovered sources remain reference-only. Local video/audio
+is supported; documents are local download links. Remote embeds and script/HTML
+material imports are unsupported.

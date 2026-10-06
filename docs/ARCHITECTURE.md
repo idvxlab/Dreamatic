@@ -2,7 +2,7 @@
 
 ## Dependency rule
 
-Dreamatic depends on Pi. Pi does not depend on Dreamatic, and Dreamatic does not
+DreamaticArt depends on Pi. Pi does not depend on DreamaticArt, and DreamaticArt does not
 modify Pi internals. Integration happens through `createAgentSession`,
 `DefaultResourceLoader`, and extension factories.
 
@@ -46,9 +46,9 @@ User -> Orchestrator -> Researcher -> Designer -> Reviewer
 
 - Pi owns provider calls, conversation state, tool-call protocol, context
   compaction, session persistence, Skills discovery, and extension lifecycle.
-- Dreamatic owns design runs, media generation jobs, visual review semantics,
+- DreamaticArt owns design runs, media generation jobs, visual review semantics,
   artifact manifests, workflow messages, and the design workspace.
-- The frontend never imports Pi packages. It consumes a stable Dreamatic API.
+- The frontend never imports Pi packages. It consumes a stable DreamaticArt API.
 
 ## Runtime dependency choice
 

@@ -277,6 +277,7 @@ export function App() {
   async function openSettings() {
     try {
       setRuntimeConfig(await getRuntimeConfig());
+      setNavigationOpen(false);
       setSettingsOpen(true);
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : String(error));
@@ -288,8 +289,9 @@ export function App() {
     setRuntimeConfig(saved);
     setHealth(await getHealth());
     setSettingsOpen(false);
-    setNotice("Agent configuration saved");
-    window.setTimeout(() => setNotice(undefined), 2200);
+    const requiresRestart = config.fields.some((field) => field.restartRequired && Object.hasOwn(config.values, field.key));
+    setNotice(requiresRestart ? "Settings saved · Restart server to apply port or workspace changes" : "Settings saved");
+    window.setTimeout(() => setNotice(undefined), requiresRestart ? 5000 : 2200);
   }
 
   function receive(item: PromptEvent) {

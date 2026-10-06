@@ -1,11 +1,11 @@
-# Dreamatic frontend design system
+# DreamaticArt frontend design system
 
-This specification formalizes the existing Dreamatic visual language. It is a
+This specification formalizes the existing DreamaticArt visual language. It is a
 constraint for the React rebuild, not a rebrand.
 
 ## 1. Product character
 
-Dreamatic should feel like a calm professional design workspace: editorial,
+DreamaticArt should feel like a calm professional design workspace: editorial,
 precise, warm, and tool-like. The interface stays visually quiet so references
 and generated work carry the color. Avoid generic dashboard gradients, glowing
 AI decoration, oversized cards, and dense developer logs.
@@ -79,7 +79,7 @@ queries where useful.
    recovery controls.
 
 Only one control in a local group receives the dark primary treatment. Lime is
-reserved for the Dreamatic agent identity and active automation, while terracotta
+reserved for the DreamaticArt agent identity and active automation, while terracotta
 marks selection and authored design actions.
 
 ## 5. Canvas interaction

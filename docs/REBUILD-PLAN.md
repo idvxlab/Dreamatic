@@ -1,8 +1,8 @@
-# Dreamatic rebuild plan
+# DreamaticArt rebuild plan
 
 ## Product outcome
 
-Dreamatic turns one design brief into a durable, inspectable design package.
+DreamaticArt turns one design brief into a durable, inspectable design package.
 The same Run can be started from the CLI or Web UI, resumed after interruption,
 and opened in the React workspace. The package contains research references,
 an executable Design Context, a coherent image set, review challenges, revision history, and

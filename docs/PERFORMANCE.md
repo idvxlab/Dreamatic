@@ -1,8 +1,8 @@
-# Dreamatic performance changes
+# DreamaticArt performance changes
 
 ## Behavior and ownership
 
-Pi remains the agent/session runtime. These changes live in Dreamatic's design
+Pi remains the agent/session runtime. These changes live in DreamaticArt's design
 workflow tools, server transport/indexing, and React UI. They do not copy Pi
 internals, bypass review approval, reduce deliverable coverage, or claim visual
 inspection from successful generation.

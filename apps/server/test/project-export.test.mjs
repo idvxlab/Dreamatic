@@ -63,3 +63,15 @@ test('export rejects pending builds, changed/missing committed output, traversal
   await symlink(join(f.run,'brief.json'),join(f.run,'artifacts/linked.json'));
   await assert.rejects(prepareProjectExport(f.workspace,f.runId),/symbolic link/);
 });
+
+test('export includes original imported user material and its delivered image/video/document files',async(t)=>{
+  const f=await fixture(t,'html');
+  for(const [name,bytes]of [['logo.png','original image'],['intro.mp4','original video'],['brief.pdf','%PDF original document']]){
+    for(const path of [`inputs/user-assets/${name}`,`artifacts/home/assets/${name}`]){await mkdir(dirname(join(f.run,path)),{recursive:true});await writeFile(join(f.run,path),bytes);}
+  }
+  const archive=await prepareProjectExport(f.workspace,f.runId);t.after(archive.cleanup);
+  await exec('unzip',['-t',archive.path]);
+  for(const [name,bytes]of [['logo.png','original image'],['intro.mp4','original video'],['brief.pdf','%PDF original document']]){
+    for(const path of [`inputs/user-assets/${name}`,`artifacts/home/assets/${name}`])assert.equal((await exec('unzip',['-p',archive.path,`${f.runId}/${path}`])).stdout,bytes);
+  }
+});

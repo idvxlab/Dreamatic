@@ -32,7 +32,7 @@ function safeError(error) {
   return apiKey ? message.replaceAll(apiKey, "[redacted]") : message;
 }
 
-console.log("Dreamatic image-edit diagnostics");
+console.log("DreamaticArt image-edit diagnostics");
 print("endpoint", endpoint);
 print("model", model);
 print("size", size);

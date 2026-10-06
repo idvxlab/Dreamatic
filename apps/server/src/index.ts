@@ -13,19 +13,22 @@ import { recordRequest, serverPerformance } from "./performance-store.js";
 import { compactPromptEvent, streamWriter } from "./stream-writer.js";
 import { SessionRegistry } from "./session-registry.js";
 import { PreviewService } from "./preview-service.js";
+import { readRuntimeConfig, saveRuntimeConfig } from "./config-store.js";
 import { prepareProjectExport } from "./project-export.js";
 import { pipeline } from "node:stream/promises";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
-try { loadEnvFile(join(repoRoot, ".env")); } catch { /* The diagnostics endpoint reports missing configuration. */ }
+const configRoot = resolve(process.env.DREAMATIC_CONFIG_DIR || repoRoot);
+const desktop = process.env.DREAMATIC_DESKTOP === "1";
+try { loadEnvFile(join(configRoot, ".env")); } catch { /* The diagnostics endpoint reports missing configuration. */ }
 const configuredWorkspace = process.env.DREAMATIC_WORKSPACE?.trim();
 // Relative workspace paths are project settings, not process-working-directory settings.
 // npm workspaces launch this package from apps/server, so resolve them from the repo root.
 const workspaceDir = configuredWorkspace
-  ? resolve(repoRoot, configuredWorkspace)
-  : join(repoRoot, "workspace");
+  ? resolve(configRoot, configuredWorkspace)
+  : join(configRoot, "workspace");
 const webDist = join(repoRoot, "apps", "web", "dist");
-const port = Number(process.env.PORT ?? 4310);
+const port = desktop ? 0 : Number(process.env.PORT ?? 4310);
 await validateDreamaticPersonaContracts(repoRoot);
 await mkdir(workspaceDir, { recursive: true });
 
@@ -136,7 +139,13 @@ async function streamWorkflow(request: IncomingMessage, response: ServerResponse
 
 async function body(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
-  for await (const chunk of request) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  let size = 0;
+  for await (const chunk of request) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += bytes.length;
+    if (size > 220 * 1024 * 1024) throw new Error("Request exceeds the 220 MB upload limit");
+    chunks.push(bytes);
+  }
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
@@ -144,61 +153,6 @@ async function body(request: IncomingMessage): Promise<unknown> {
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected a JSON object");
   return value as Record<string, unknown>;
-}
-
-const CONFIG_KEYS = {
-  activeProfile: "DREAMATIC_ACTIVE_PROFILE",
-  providerName: "DREAMATIC_PROVIDER_NAME",
-  providerType: "DREAMATIC_PROVIDER_TYPE",
-  baseUrl: "DREAMATIC_BASE_URL",
-  model: "DREAMATIC_MODEL",
-  searchProvider: "DREAMATIC_SEARCH_PROVIDER",
-  imageBaseUrl: "DREAMATIC_IMAGE_BASE_URL",
-  imageModel: "DREAMATIC_IMAGE_MODEL",
-  imageGenerationEndpoint: "DREAMATIC_IMAGE_GENERATION_ENDPOINT",
-  imageEditEndpoint: "DREAMATIC_IMAGE_EDIT_ENDPOINT",
-  imageDefaultSize: "DREAMATIC_IMAGE_DEFAULT_SIZE",
-  imageResponseFormat: "DREAMATIC_IMAGE_RESPONSE_FORMAT",
-} as const;
-
-function configView() {
-  return {
-    ...Object.fromEntries(Object.entries(CONFIG_KEYS).map(([field, key]) => [field, process.env[key] ?? ""])),
-    textApiKeyConfigured: Boolean(process.env.DREAMATIC_API_KEY),
-    searchApiKeyConfigured: Boolean(process.env.DREAMATIC_SEARCH_API_KEY || process.env.SERPER_API_KEY),
-    imageApiKeyConfigured: Boolean(process.env.DREAMATIC_IMAGE_API_KEY || process.env.DREAMATIC_API_KEY),
-  };
-}
-
-async function saveConfig(input: Record<string, unknown>): Promise<void> {
-  const envPath = join(repoRoot, ".env");
-  const source = await readFile(envPath, "utf8").catch(() => "");
-  const updates = new Map<string, string>();
-  for (const [field, key] of Object.entries(CONFIG_KEYS)) {
-    const value = input[field];
-    if (typeof value === "string") updates.set(key, value.trim());
-  }
-  if (typeof input.textApiKey === "string" && input.textApiKey.trim()) updates.set("DREAMATIC_API_KEY", input.textApiKey.trim());
-  if (typeof input.searchApiKey === "string" && input.searchApiKey.trim()) updates.set("DREAMATIC_SEARCH_API_KEY", input.searchApiKey.trim());
-  if (typeof input.imageApiKey === "string" && input.imageApiKey.trim()) updates.set("DREAMATIC_IMAGE_API_KEY", input.imageApiKey.trim());
-  for (const [key, value] of updates) {
-    if (key.includes("URL") || key.includes("ENDPOINT")) {
-      const url = new URL(value);
-      if (!['http:', 'https:'].includes(url.protocol)) throw new Error(`${key} must use http or https`);
-    }
-    process.env[key] = value;
-  }
-  const remaining = new Map(updates);
-  const lines = source.split(/\r?\n/).map((line) => {
-    const match = line.match(/^\s*([A-Z][A-Z0-9_]*)=/);
-    if (!match || !remaining.has(match[1]!)) return line;
-    const key = match[1]!;
-    const value = remaining.get(key)!;
-    remaining.delete(key);
-    return `${key}=${value}`;
-  });
-  for (const [key, value] of remaining) lines.push(`${key}=${value}`);
-  await writeFile(envPath, `${lines.join("\n").replace(/\n+$/, "")}\n`, "utf8");
 }
 
 function resolveAsset(path: string): string {
@@ -210,7 +164,12 @@ function resolveAsset(path: string): string {
 const server = createServer(async (request, response) => {
   const requestAt = performance.now();
   response.once("finish", () => { recordRequest(request.method ?? "GET", (request.url ?? "/").split("?")[0]!, response.statusCode, performance.now() - requestAt); });
-  response.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
+  if (desktop) {
+    const expectedHost = `127.0.0.1:${(server.address() as import("node:net").AddressInfo).port}`;
+    if (request.headers.host !== expectedHost || (request.headers.origin && request.headers.origin !== `http://${expectedHost}`)) {
+      json(response, 403, { error: "Untrusted desktop request origin" }); return;
+    }
+  } else response.setHeader("Access-Control-Allow-Origin", "http://localhost:5173");
   response.setHeader("Access-Control-Allow-Headers", "content-type");
   if (request.method === "OPTIONS") {
     response.writeHead(204);
@@ -244,12 +203,11 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/config") {
-      json(response, 200, configView());
+      json(response, 200, await readRuntimeConfig(configRoot));
       return;
     }
     if (request.method === "PUT" && url.pathname === "/api/config") {
-      await saveConfig(record(await body(request)));
-      json(response, 200, configView());
+      json(response, 200, await saveRuntimeConfig(configRoot, record(await body(request))));
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/sessions") {
@@ -404,7 +362,7 @@ const server = createServer(async (request, response) => {
 
     // An unavailable API must never become a successful HTML download via SPA fallback.
     if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
-      json(response, 404, { error: "Unknown API endpoint. Restart the Dreamatic server if it was recently updated." });
+      json(response, 404, { error: "Unknown API endpoint. Restart the DreamaticArt server if it was recently updated." });
       return;
     }
     const requested = url.pathname === "/" ? "index.html" : url.pathname.slice(1);
@@ -422,14 +380,17 @@ const server = createServer(async (request, response) => {
 });
 
 server.once("error", async (error: NodeJS.ErrnoException) => {
-  if (error.code === "EADDRINUSE") console.error(`Dreamatic cannot start because port ${port} is already in use. Stop the previous Dreamatic dev process, then try again.`);
+  if (error.code === "EADDRINUSE") console.error(`DreamaticArt cannot start because port ${port} is already in use. Stop the previous DreamaticArt dev process, then try again.`);
   else console.error(error);
   await registry.dispose().catch(() => undefined);
   process.exit(1);
 });
 
-server.listen(port, () => {
-  console.log(`Dreamatic server: http://localhost:${port}`);
+server.listen(port, desktop ? "127.0.0.1" : undefined, () => {
+  const address = server.address();
+  const actualPort = typeof address === "object" && address ? address.port : port;
+  if (desktop && process.send) process.send({ type: "dreamatic-ready", port: actualPort });
+  console.log(`DreamaticArt server: http://localhost:${actualPort}`);
   console.log(`Workspace: ${workspaceDir}`);
 });
 
@@ -444,3 +405,9 @@ async function shutdown(): Promise<void> {
 }
 process.once("SIGINT", shutdown);
 process.once("SIGTERM", shutdown);
+
+// A desktop child must not outlive its parent application.
+if (desktop && process.connected) process.once("disconnect", () => {
+  setTimeout(() => process.exit(0), 5000).unref();
+  void shutdown();
+});

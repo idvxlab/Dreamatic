@@ -36,7 +36,7 @@ Designer 应按已有 CSS 的 767px 分界给检查设置 `viewport: {max_width:
 
 没有调用真实图片或文本模型做质量对照评估；本地测试证明执行合同和已有回归行为，不能证明模型创意质量绝对不变。原图片生成与编辑工具链未替换。现有 Agent Markdown 仅增补局部协议说明；Researcher 未修改，已有非 UX Skill 的知识正文未修改。
 
-更新后需要重启 Dreamatic 服务以载入新工具和环境配置。`DREAMATIC_TOOL_PATH` 是本机配置，可指定已安装 rg 的绝对目录；不自动下载搜索工具或浏览器。
+更新后需要重启 DreamaticArt 服务以载入新工具和环境配置。`DREAMATIC_TOOL_PATH` 是本机配置，可指定已安装 rg 的绝对目录；不自动下载搜索工具或浏览器。
 
 
 ## write_json 项目归属冲突（后续排查）
@@ -211,7 +211,7 @@ rejection, image inventory path compatibility and ownership enforcement.
 产生 15 项视口结果（13 通过、2 个移动菜单检查不适用、0 失败）。完整
 构建通过，201 项回归测试全部通过，无跳过。新增测试覆盖发布前拦截、
 修正后恢复、源码变化导致缓存失效、旧审批在任何图片调用前被阻止，以及
-浏览器运行时修复归属。重启 Dreamatic 服务后加载新的运行时。
+浏览器运行时修复归属。重启 DreamaticArt 服务后加载新的运行时。
 
 
 ## 晶格仿生肌肉 Designer 发布重复失败（ac3ab826）
@@ -315,7 +315,7 @@ Skill 的执行协议中补充字段含义和自动补全边界，创意方法�
 已批准内容修改被拒绝以及旧 schema 不变。原始失败清单的只读回放能
 补齐 Gallery entry，12 项成果声明前后完全一致；其他原始执行字段错误
 仍交由已有保存诊断修复，不伪称整份原始草稿因此自动合格。
-重启 Dreamatic 服务后加载新的运行时；没有手动更改历史工作流记录。
+重启 DreamaticArt 服务后加载新的运行时；没有手动更改历史工作流记录。
 
 
 ## Builder 图片批次等待至用户中断（ac3ab826，22:16）
@@ -420,7 +420,7 @@ project-2026-10-05-ac3ab826：Designer 就绪检查通过（0 个问题），
 ## Export 下载只有 440 字节且不能解压
 
 实际 Downloads/project-2026-10-05-ac3ab826.zip 为 440 字节，正文是
-Dreamatic 的 SPA index.html，而非 ZIP。运行中的旧 Server（PID 58679）
+DreamaticArt 的 SPA index.html，而非 ZIP。运行中的旧 Server（PID 58679）
 尚未加载新增 export 路由，GET /api/runs/:id/export 被静态首页回退处理，
 响应 HTTP 200 / text/html。前端原先只检查 response.ok，于是把首页 Blob
 直接命名为 .zip。这次并不是压缩程序生成了错误尺寸或传输中断。
@@ -435,3 +435,66 @@ Dreamatic 的 SPA index.html，而非 ZIP。运行中的旧 Server（PID 58679�
 7,501,375 字节，133 个文件，解压总大小 9,020,547 字节，所有 ZIP CRC
 通过。未知 API 实测返回 404。完整构建、28 项 Server/Web 回归全部通过，
 无失败或跳过。没有改动原项目成果、工作流记录、Agent prompt 或 Skill。
+
+## Reference-only material and mechanical Builder execution
+
+The DreamaticArt Homepage Run project-2026-10-05-dd42724f approved a page with seven
+example-image references and an empty resources array. Two Builder invocations
+copied only the declared HTML. The first Designer revision changed src values
+without importing assets or declaring producers; Reviewer approved the incomplete
+pipeline again. Builder then incorrectly tried image_edit_batch as file copying;
+undeclared ids were rejected before provider work. Finalization correctly found
+missing page resources; these failures were not post-generation aesthetic audits.
+
+The updated policy keeps research/repository images as reference material. Needed
+page imagery must have an image_generate/image_edit deliverable/task, exact prompt,
+size and acceptance, plus an HTML resource mapping and producer dependency.
+Direct research/repository resource mappings are rejected. Designer-authored
+SVG/CSS/JS is still valid design source; approved image editing can use reference
+pixels as inputs to a planned transformation. Research Gallery appendices remain
+reference libraries, not design assets.
+
+Designer draft/publication and Reviewer approval now validate local reference
+closure independent of browser loading, including lazy/offscreen images, CSS URLs,
+relative page links and image fallbacks. Reviewer records runtime-derived
+executionReadiness/source-preflight evidence in its sealed receipt. Source browser
+validation stays before approval. Builder tools and build_finalize no longer run
+browser/viewport/interaction audits; they retain approval hash gates, exact source
+copying, dependencies, output encoding, file/resource integrity and completion.
+The final report explicitly records browser validation as not_run, without claiming
+post-build interactions passed. No prompts, image sizes or provider parameters are
+rewritten. Prior image-only generation/editing/Gallery execution stays intact.
+
+Validation: full build and 230 design-agent/server/web tests passed with no skips;
+one additional UX-only generated-image-to-page integration case also passed.
+Coverage includes rejection of direct research resources, lazy missing references
+before publication/approval, recorded readiness, execution without a second browser
+check, exact approved-source enforcement and generated dependencies/reuse. Only
+mock image endpoints were used. Read-only diagnostics of the original Run now
+catch the undeclared image references before Builder; its files/state were not
+changed or resumed. Agent prompt edits were limited to the new ownership/resource
+rules; the HTML expression Skill supplies the concrete producer mapping.
+
+## User-provided material exception (2026-10-06)
+
+The previous generated-assets rule intentionally prohibited arbitrary Researcher
+asset reuse, but also rejected user-provided originals. The existing HTML copier
+already preserves bytes; the missing boundary was trusted origin/import
+metadata, not a new Builder audit or generative copy tool.
+
+Added runtime user source recording, `user_asset_import`, content-addressed local
+inputs, page-link verification, imported-source contract/approval hashes, common
+video/document upload ingestion and local media MIME/CSP support. Designer maps
+imported originals, Reviewer validates the executable mapping, and Builder uses
+the existing mechanical copier. Export retains originals and delivered copies.
+Researcher-discovered sources remain reference-only. Updated only the relevant
+Agent tool declarations and material-policy instructions.
+
+Regression coverage checks exact image/video/document bytes through import and
+finalization, cross-Agent publication/approval/build with no network/generation
+calls, permission derived from real root input, undeclared Researcher URL
+rejection, source/output tampering, symlink escape, page-linked and extensionless
+URL imports, cached imports, HTML gateway errors, private redirects and ZIP
+contents/CRC. The Preview browser test verifies an explicit local PDF download while keeping
+the iframe origin isolated. No production Run or application Server was started
+by these tests.

@@ -40,7 +40,7 @@ window.setRun(window.initialRun);`;
     if (req.url.endsWith('/export')) {
       exportCalls++;
       if (failExport) { failExport = false; res.statusCode = 400; res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({error:'Export temporarily unavailable'})); return; }
-      if (invalidExport === 'html') { invalidExport = undefined; res.setHeader('Content-Type','text/html'); res.end('<!doctype html><title>Dreamatic</title>'); return; }
+      if (invalidExport === 'html') { invalidExport = undefined; res.setHeader('Content-Type','text/html'); res.end('<!doctype html><title>DreamaticArt</title>'); return; }
       if (invalidExport === 'truncated') { invalidExport = undefined; res.setHeader('Content-Type','application/zip'); res.end(Buffer.from([0x50,0x4b,0x03,0x04,0,0])); return; }
       res.setHeader('Content-Type', 'application/zip'); res.end(Buffer.from('UEsDBBQAAAAIAK69RV2HWYxAHwAAAB8AAAASAAAAcHJvamVjdC9pbmRleC5odG1ss1FMyU8uqSxIVcgoyc2xs8kwtAsoSi3LTC230QeyAVBLAQIUAxQAAAAIAK69RV2HWYxAHwAAAB8AAAASAAAAAAAAAAAAAACAAQAAAABwcm9qZWN0L2luZGV4Lmh0bWxQSwUGAAAAAAEAAQBAAAAATwAAAAAA','base64')); return;
     }
@@ -65,7 +65,7 @@ window.setRun(window.initialRun);`;
     assert.deepEqual(entries, [ux.presentation.entry]);
     assert.equal(await frame.locator('h1').evaluate((node) => getComputedStyle(node).color), 'rgb(10, 20, 30)');
     await frame.locator('#language').click(); assert.equal(await frame.locator('#greeting').textContent(), 'Hello');
-    assert.equal(await page.locator('iframe').getAttribute('sandbox'), 'allow-scripts');
+    assert.equal(await page.locator('iframe').getAttribute('sandbox'), 'allow-scripts allow-downloads');
     assert.equal(await page.getByRole('combobox', { name: 'Prototype viewport' }).count(), 0);
     assert.equal(await page.getByRole('link', {name:'Open',exact:true}).getAttribute('href'), `http://127.0.0.1:${server.address().port}/designed/index.html`);
     const downloadEvent = page.waitForEvent('download');
@@ -80,7 +80,7 @@ window.setRun(window.initialRun);`;
     const onDownload = () => invalidDownloads++;
     page.on('download', onDownload);
     invalidExport = 'html'; await page.getByRole('button', {name:'Export',exact:true}).click();
-    await page.getByRole('alert').filter({hasText:'Restart the Dreamatic server'}).waitFor();
+    await page.getByRole('alert').filter({hasText:'Restart the DreamaticArt server'}).waitFor();
     invalidExport = 'truncated'; await page.getByRole('button', {name:'Export',exact:true}).click();
     await page.getByRole('alert').filter({hasText:'invalid or incomplete'}).waitFor();
     assert.equal(invalidDownloads,0); page.off('download',onDownload);

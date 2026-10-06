@@ -22,7 +22,7 @@ export function dreamaticProviderFromEnv() {
   const providerId = "dreamatic-profile";
   const providerType = process.env.DREAMATIC_PROVIDER_TYPE?.trim().toLowerCase() ?? "openai-compatible";
   const api = providerType.includes("responses") ? "openai-responses" as const : "openai-completions" as const;
-  const displayName = process.env.DREAMATIC_PROVIDER_NAME?.trim() || "Dreamatic profile";
+  const displayName = process.env.DREAMATIC_PROVIDER_NAME?.trim() || "DreamaticArt profile";
   const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   const modelDescriptor = (id: string) => ({
     id,

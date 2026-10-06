@@ -37,6 +37,7 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "research_fetch",
   "research_fetch_batch",
   "research_asset_discover",
+  "user_asset_import",
   "research_asset_fetch",
   "research_asset_fetch_batch",
   "research_asset_validate",
@@ -68,7 +69,7 @@ export interface CreateDreamaticSessionOptions {
 
 /** Keep Pi's tools; explicitly expose installed local binaries to its normal resolver. */
 export function configureToolSearchPath(): void {
-  const configured = process.env.DREAMATIC_TOOL_PATH?.split(delimiter).filter(Boolean) ?? [];
+  const configured = [process.env.DREAMATIC_DESKTOP_TOOL_PATH, ...(process.env.DREAMATIC_TOOL_PATH?.split(delimiter) ?? [])].filter((path): path is string => Boolean(path));
   if (!configured.length) return;
   if (configured.some((path) => !isAbsolute(path))) throw new Error("DREAMATIC_TOOL_PATH entries must be absolute directories");
   const current = process.env.PATH?.split(delimiter).filter(Boolean) ?? [];
@@ -78,7 +79,7 @@ export function configureToolSearchPath(): void {
 export async function createDreamaticSession(options: CreateDreamaticSessionOptions) {
   await validateDreamaticPersonaContracts(options.repoRoot);
   try {
-    loadEnvFile(join(options.repoRoot, ".env"));
+    loadEnvFile(join(process.env.DREAMATIC_CONFIG_DIR || options.repoRoot, ".env"));
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
@@ -97,7 +98,7 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
     agentDir: getAgentDir(),
     appendSystemPromptOverride: (base) => [
       ...base,
-      dreamaticPersonaPromptBlock(`# Active Dreamatic persona: ${persona}\n\n${personaPrompt}`),
+      dreamaticPersonaPromptBlock(`# Active DreamaticArt persona: ${persona}\n\n${personaPrompt}`),
     ],
     extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, personaPath, get projectId() { return options.getProjectId?.() ?? options.projectId; } })],
   });

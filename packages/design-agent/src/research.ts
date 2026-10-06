@@ -178,7 +178,7 @@ async function boundedFetch(
   try {
     return await withRetry(async () => {
       const headers = new Headers({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Dreamatic/0.1",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 DreamaticArt/0.1",
         Accept: accept,
         "Accept-Language": "en-US,en;q=0.9",
       });

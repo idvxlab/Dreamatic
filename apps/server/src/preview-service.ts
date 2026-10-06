@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { basename, extname, join } from "node:path";
 import { HTML_PREVIEW_CSP, HTML_CONTENT_TYPES, physicalRunFile } from "@dreamatic/design-agent";
 
 interface PreviewGrant { runDir: string; manifestHash: string; files: Map<string, string>; entry: string }
@@ -59,7 +59,8 @@ export class PreviewService {
         if (createHash("sha256").update(manifest).digest("hex") !== grant.manifestHash) throw new Error("Build changed");
         const bytes = await readFile(await physicalRunFile(grant.runDir, path));
         if (createHash("sha256").update(bytes).digest("hex") !== grant.files.get(path)) throw new Error("Output changed after build");
-        response.writeHead(200, { "Content-Type": HTML_CONTENT_TYPES[extname(path)] ?? "application/octet-stream", "Content-Length": bytes.length, "Content-Security-Policy": HTML_PREVIEW_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" });
+        const document = /\.(?:pdf|docx?|pptx?|xlsx?|txt|md|csv)$/iu.test(path);
+        response.writeHead(200, { ...(document ? { "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(basename(path))}` } : {}), "Content-Type": HTML_CONTENT_TYPES[extname(path)] ?? "application/octet-stream", "Content-Length": bytes.length, "Content-Security-Policy": HTML_PREVIEW_CSP, "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" });
         response.end(request.method === "HEAD" ? undefined : bytes);
       } catch { response.writeHead(404); response.end("Preview resource unavailable"); }
     });
