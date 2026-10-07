@@ -65,6 +65,8 @@ export function clarificationFromMessages(messages: readonly unknown[]): Clarifi
 export class SessionRegistry {
   readonly #repoRoot: string;
   readonly #workspaceDir: string;
+  readonly #prompting = new Set<string>();
+  get busy(): boolean { return this.#prompting.size > 0 || [...this.#sessions.values()].some(managed => managed.session.isStreaming); }
   readonly #sessions = new Map<string, ManagedSession>();
 
   constructor(repoRoot: string, workspaceDir: string) {
@@ -162,7 +164,13 @@ export class SessionRegistry {
     return this.get(id).session.subscribe(listener);
   }
 
-  async prompt(
+  async prompt(id: string, text: string, images: DreamaticPromptImage[], projectId?: string): Promise<void> {
+    this.#prompting.add(id);
+    try { await this.#prompt(id, text, images, projectId); }
+    finally { this.#prompting.delete(id); }
+  }
+
+  async #prompt(
     id: string,
     text: string,
     images: DreamaticPromptImage[],
@@ -220,6 +228,22 @@ export class SessionRegistry {
     managed.abortRequested = true;
     await managed.session.abort();
     return { id, interrupted: true };
+  }
+
+  async reloadConfiguration(): Promise<void> {
+    if (this.busy) throw new Error("Wait for the current task or publication to finish before saving configuration.");
+    const replacements = new Map<string, AgentSession>();
+    try {
+      for (const managed of this.#sessions.values()) {
+        const { session } = await createDreamaticSession({
+          repoRoot: this.#repoRoot, workspaceDir: this.#workspaceDir,
+          sessionManager: managed.session.sessionManager,
+          getProjectId: () => this.#sessions.get(managed.id)?.projectId,
+        });
+        replacements.set(managed.id, session);
+      }
+    } catch (error) { for (const session of replacements.values()) session.dispose(); throw error; }
+    for (const managed of this.#sessions.values()) { managed.session.dispose(); managed.session = replacements.get(managed.id)!; }
   }
 
   async dispose(): Promise<void> {

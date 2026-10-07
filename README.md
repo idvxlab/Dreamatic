@@ -48,6 +48,7 @@ Designer selectively references researched material. When you explicitly request
 ### A persistent design workspace
 
 - **Projects:** reopen, rename, revise, or move projects to recoverable local trash.
+- **Live run status:** a fixed conversation panel shows the active Agent/action, elapsed time, latest status update, and stage milestones. Image batches report saved, failed, and pending items separately, with thumbnails appearing after successful saves.
 - **Canvas:** inspect and arrange references, notes, and generated outputs.
 - **Preview:** view image collections in a structured showcase or interact with the actual HTML delivery. Multi-page HTML projects retain a page selector.
 - **Export:** download a ZIP containing outputs, sources, assets, design plans, and research while excluding sessions and system credentials.
@@ -58,7 +59,7 @@ Designer selectively references researched material. When you explicitly request
 
 Publish eligible image designs to the [official Gallery](https://www.dreamatic.art/gallery) directly from Preview. Publication includes creator attribution, upload progress, and confirmed replacement of an earlier version at the same URL.
 
-**HTML UX/UI projects, including mixed projects containing HTML deliverables, are temporarily ineligible for Publish.** HTML showcase pages for image collections remain eligible. Preview and Export remain available for HTML projects.
+**Pure HTML UX/UI projects are temporarily ineligible for Publish. Mixed projects with delivered design images can be published.** HTML showcase pages for image collections remain eligible. Preview and Export remain available for HTML projects.
 
 ## Design workflow
 
@@ -93,7 +94,7 @@ For **Apple Silicon Macs (arm64)**:
 
 1. Download the installer from the [official website](https://www.dreamatic.art/#download).
 2. Open the DMG and drag the app into **Applications**.
-3. Launch the app and open **Designer → Settings** to configure your model providers.
+3. Launch the app and open **DreamaticArt → Settings** to configure your model providers.
 4. Click **New project** to begin.
 
 The desktop app bundles its runtime; a separate Node.js installation is unnecessary. Model and search calls still require internet access, and model calls use your configured API keys.
@@ -170,9 +171,11 @@ Web and CLI use the repository's `workspace/` by default. Relative `DREAMATIC_WO
 
 ### 1. Configure providers and create a project
 
-Open **Designer → Settings**. Configuration is grouped into search, reasoning models, image models, and system parameters. Agent-specific reasoning models override the default model when configured.
+Open **DreamaticArt → Settings**. Configuration is grouped into search, reasoning models, image models, and system parameters. The toolbar shows the current project’s publication status; Preview, Share and Publish use the same live status.
 
-Only modified fields are saved. Leaving a key input blank preserves the existing secret. Port and workspace changes require a restart.
+Optional reasoning settings, including Agent-specific models and thinking levels, are available under **Advanced**. Agent-specific models override the default model when configured. Image endpoint overrides and response format, plus system ports, retries, concurrency, timeouts and validation controls, are also available under **Advanced**.
+
+Only modified fields are saved. Leaving a key input blank preserves the existing secret. Saved configuration applies automatically to existing conversations and subsequent tasks. The app reloads when the workspace changes; the browser reconnects when the server port changes. The macOS app manages its own local port. Wait for an active task or publication to finish before saving.
 
 **An empty workspace does not automatically create a project.** Conversation input, attachments, and sending remain disabled until you click **New project**. Deleting the last project disables them again.
 
@@ -194,7 +197,8 @@ Follow progress in the conversation and inspect project materials on Canvas. Aft
 | --- | --- |
 | **Open** | Open the delivered presentation separately; the desktop app uses a preview window |
 | **Export** | Save the complete project ZIP; the desktop app uses a native save dialog |
-| **Publish** | Upload eligible image projects to the official Gallery |
+| **Publish** | Upload eligible image or mixed projects to the official Gallery |
+| **Share** | After successful publication, copy the official project link; the confirmation fades after four seconds |
 
 Extract an exported ZIP before opening its `index.html` launcher. Continue in the same project to request revisions; revised specifications are designed and reviewed before execution.
 
@@ -288,7 +292,16 @@ On an Apple Silicon Mac:
 npm run release:mac
 ```
 
-The release branch must be named `v<major>.<minor>.<patch>`, such as `v2.0.3`. The script builds, checks, runs regression and desktop validation, and produces `release/DreamaticArt-<version>-mac-arm64.dmg` with a SHA256 file.
+The script works on the current branch. Version selection uses `--version X.Y.Z` first, then a version-named branch such as `v2.0.3`, then `package.json`. The script builds, checks, runs regression and desktop validation, and produces `release/DreamaticArt-<version>-mac-arm64.dmg` with a SHA256 file.
+
+To set an explicit version or reuse installed dependencies:
+
+```bash
+npm run release:mac -- --version 2.0.3
+npm run release:mac -- --skip-install
+```
+
+Release logs are saved under `release/logs/`. The previous DMG is replaced only after verification succeeds. Signing is ad-hoc; Developer ID signing and notarization require separate Apple credentials.
 
 Use `npm run desktop` for desktop development.
 

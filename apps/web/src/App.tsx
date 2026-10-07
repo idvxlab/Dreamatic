@@ -1,5 +1,6 @@
+import { usePublication } from "./publication-state";
 import { useI18n, LanguageToggle } from "./i18n";
-import { Cloud, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
+import { Upload, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, getRun, listRunAssets, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
@@ -76,6 +77,8 @@ export function App() {
 
   const active = useMemo(() => sessions.find((session) => session.id === activeId), [sessions, activeId]);
   const activeRun = useMemo(() => runs.find((run) => run.id === activeRunId), [runs, activeRunId]);
+  const publication = usePublication(activeRun?.id);
+  const publicationLabel = !activeRun ? "No project" : publication.error ? "Publication status unavailable" : !publication.status ? "Checking publication…" : publication.status.inProgress ? "Publishing…" : publication.status.published ? "Published" : publication.status.mayExist ? "Publication unconfirmed" : "Not published";
   const agentRunning = running || Boolean(active?.running);
   const pendingClarification = liveClarification && liveClarification.sessionId === activeId ? liveClarification.request : active?.pendingClarification;
   const visibleClarification = pendingClarification?.id === answeredClarificationId ? undefined : pendingClarification;
@@ -159,7 +162,7 @@ export function App() {
             awaitingRun.current = false;
           }
         }
-      } catch { /* Existing state remains visible during reconnection. */ }
+      } catch (error) { if (!disposed) setConnectionError(error instanceof Error ? error.message : String(error)); }
       finally {
         fetching = false;
         if (!disposed) timer = setTimeout(() => void refresh(), document.hidden ? 60_000 : agentRunning ? 3_000 : 15_000);
@@ -270,12 +273,6 @@ export function App() {
     }
   }
 
-  async function shareWorkspace() {
-    await navigator.clipboard.writeText(window.location.href);
-    setNotice("Local workspace link copied");
-    window.setTimeout(() => setNotice(undefined), 2200);
-  }
-
   async function openSettings() {
     try {
       setRuntimeConfig(await getRuntimeConfig());
@@ -289,11 +286,16 @@ export function App() {
   async function saveSettings(config: RuntimeConfig & { textApiKey?: string; searchApiKey?: string; imageApiKey?: string }) {
     const saved = await saveRuntimeConfig(config);
     setRuntimeConfig(saved);
+    if (saved.applied?.portChanged) {
+      const target = new URL(window.location.href); target.port = String(saved.applied.port);
+      window.location.assign(target.href); return;
+    }
+    if (saved.applied?.workspaceChanged) { window.location.reload(); return; }
     setHealth(await getHealth());
+    void publication.refresh();
     setSettingsOpen(false);
-    const requiresRestart = config.fields.some((field) => field.restartRequired && Object.hasOwn(config.values, field.key));
-    setNotice(requiresRestart ? "Settings saved · Restart server to apply port or workspace changes" : "Settings saved");
-    window.setTimeout(() => setNotice(undefined), requiresRestart ? 5000 : 2200);
+    setNotice("Settings saved and applied");
+    window.setTimeout(() => setNotice(undefined), 2200);
   }
 
   function receive(item: PromptEvent) {
@@ -435,7 +437,7 @@ export function App() {
       <section className="workspace">
         <header className="workspace-header">
           <div><button className="navigation-trigger" aria-label={t("Open project navigation")} aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">{t("Project")}</span><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2></div>
-          <div className="header-actions"><LanguageToggle /><span className="saved"><Cloud size={14} /> {t("Saved locally")}</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><button onClick={() => void shareWorkspace()}><Share2 size={15} /> {t("Share")}</button><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
+          <div className="header-actions"><span className="saved publication-status" role="status" title={t(publicationLabel)}><Upload size={14} /> {t(publicationLabel)}</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><LanguageToggle /><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
         </header>
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
         {assetsOpen && (
@@ -445,7 +447,7 @@ export function App() {
           </aside>
         )}
       </section>
-      {panelOpen && <AgentPanel disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
+      {panelOpen && <AgentPanel connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
       {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label={t("Close agent panel")} onClick={() => setPanelOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}

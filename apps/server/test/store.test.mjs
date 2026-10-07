@@ -42,7 +42,7 @@ test("persisted and streamed retries settle on success, failure and legacy compl
     await mkdir(runDir, { recursive: true });
     const source = await readFile(new URL("../../web/src/workflow-live.ts", import.meta.url), "utf8");
     const helperUrl = new URL("../../../packages/design-agent/dist/workflow-retries.js", import.meta.url).href;
-    const compiled = ts.transpileModule(source.replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const compiled = ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL("../../../packages/design-agent/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
     const events = [
       { type: "agent_started", invocationId: "builder-1", agent: "builder", at: "2026-01-01T00:00:00Z" },
@@ -315,7 +315,7 @@ test("actual classification appears as a top-level conversation message in live 
     assert.match(message.detail, /判断依据：Physical hardware was requested/);
     const source = await readFile(new URL('../../web/src/workflow-live.ts', import.meta.url), 'utf8');
     const helperUrl = new URL('../../../packages/design-agent/dist/workflow-retries.js', import.meta.url).href;
-    const compiled = ts.transpileModule(source.replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const compiled = ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL("../../../packages/design-agent/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
     let live = applyWorkflowStreamEvent([], { type: 'agent_started', invocationId: 'designer', agent: 'designer', at: event.at });
     live = applyWorkflowStreamEvent(live, event);
@@ -353,7 +353,7 @@ test('running image progress is visible inside its tool in server snapshots and 
   try {
     const helperUrl=new URL('../../../packages/design-agent/dist/workflow-retries.js',import.meta.url).href;
     const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
-    const compiled=ts.transpileModule(source.replace('"../../../packages/design-agent/src/workflow-retries"',JSON.stringify(helperUrl)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+    const compiled=ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL("../../../packages/design-agent/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"',JSON.stringify(helperUrl)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
     const live=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
     const runDir=join(workspace,'runs/image-progress');await mkdir(runDir,{recursive:true});
     const base={invocationId:'builder-1',agent:'builder'};
@@ -361,6 +361,8 @@ test('running image progress is visible inside its tool in server snapshots and 
       {...base,type:'agent_started',at:'2026-10-05T13:00:00Z'},
       {...base,type:'tool_started',toolCallId:'batch',toolName:'image_generate_batch',at:'2026-10-05T13:00:01Z'},
       {...base,type:'agent_progress',toolCallId:'batch',output:'Image IMG-02: receiving response · attempt 1 · 30s · 123 KiB',at:'2026-10-05T13:00:30Z'},
+      {...base,type:'agent_progress',toolCallId:'batch',output:'Image IMG-01: saved · 1/3',imageId:'IMG-01',total:3,result:{ok:true,path:'runs/image-progress/artifacts/hero.png'},at:'2026-10-05T13:00:31Z'},
+      {...base,type:'agent_progress',toolCallId:'batch',output:'Image IMG-02: receiving response · attempt 1 · 30s · 123 KiB',at:'2026-10-05T13:00:32Z'},
     ];
     await writeFile(join(runDir,'bus.jsonl'),records.map(JSON.stringify).join('\n')+'\n');
     const snapshot=await workflowInventory(workspace,'image-progress');
@@ -368,7 +370,7 @@ test('running image progress is visible inside its tool in server snapshots and 
     assert.equal(fromBus.status,'running');assert.match(fromBus.output,/IMG-02.*123 KiB/);
     let workflow=[];for(const event of records)workflow=live.applyWorkflowStreamEvent(workflow,event);
     const tool=()=>workflow.find(e=>e.id==='builder-1').children.find(e=>e.id==='batch');
-    assert.equal(tool().output,fromBus.output);
+    assert.equal(tool().output,fromBus.output);assert.deepEqual(tool().imageProgress,fromBus.imageProgress);assert.equal(tool().imageProgress.items['IMG-01'].path,'runs/image-progress/artifacts/hero.png');assert.equal(tool().updatedAt,fromBus.updatedAt);
     workflow=live.applyWorkflowStreamEvent(workflow,{...base,type:'tool_finished',toolCallId:'batch',output:'Batch completed',at:'2026-10-05T13:01:00Z'});
     workflow=live.applyWorkflowStreamEvent(workflow,{...base,type:'agent_progress',toolCallId:'batch',output:'Late progress',at:'2026-10-05T13:01:01Z'});
     assert.equal(tool().output,'Batch completed');assert.equal(tool().status,'completed');

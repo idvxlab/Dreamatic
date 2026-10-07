@@ -1,3 +1,4 @@
+import { imageProgress } from "@dreamatic/design-agent/workflow-progress";
 import type { WorkflowEvent } from "./types";
 import { settleWorkflowRetries } from "../../../packages/design-agent/src/workflow-retries";
 
@@ -97,8 +98,8 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
     return updateAgent(workflow, invocationId, (agent) => ({ ...agent, status: "running", detail: text(event.task) ?? agent.detail, at }), event);
   }
   if (invocationId && type === "agent_progress") {
-    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, output: text(event.output) ?? agent.output,
-      children: (agent.children ?? []).map((child) => child.id === event.toolCallId && child.status === "running" ? { ...child, output: text(event.output) ?? child.output } : child),
+    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, updatedAt: at, output: text(event.output) ?? agent.output,
+      children: (agent.children ?? []).map((child) => child.id === event.toolCallId && child.status === "running" ? { ...child, updatedAt: at, imageProgress: imageProgress(child.imageProgress, event), output: text(event.output) ?? child.output } : child),
     }), event);
   }
   if (invocationId && type === "tool_started") {

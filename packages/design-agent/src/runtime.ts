@@ -63,17 +63,20 @@ export interface CreateDreamaticSessionOptions {
   persona?: string;
   sessionDir?: string;
   sessionFile?: string;
+  sessionManager?: SessionManager;
   inMemory?: boolean;
   projectId?: string;
   getProjectId?: () => string | undefined;
 }
 
+let addedToolPaths = new Set<string>();
+
 /** Keep Pi's tools; explicitly expose installed local binaries to its normal resolver. */
 export function configureToolSearchPath(): void {
   const configured = [process.env.DREAMATIC_DESKTOP_TOOL_PATH, ...(process.env.DREAMATIC_TOOL_PATH?.split(delimiter) ?? [])].filter((path): path is string => Boolean(path));
-  if (!configured.length) return;
   if (configured.some((path) => !isAbsolute(path))) throw new Error("DREAMATIC_TOOL_PATH entries must be absolute directories");
-  const current = process.env.PATH?.split(delimiter).filter(Boolean) ?? [];
+  const current = process.env.PATH?.split(delimiter).filter(path => Boolean(path) && !addedToolPaths.has(path)) ?? [];
+  addedToolPaths = new Set(configured.filter(path => !current.includes(path)));
   process.env.PATH = [...new Set([...configured, ...current])].join(delimiter);
 }
 
@@ -106,16 +109,18 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
   await resourceLoader.reload();
   const thinkingLevel = dreamaticThinkingLevel(persona);
 
-  return createAgentSession({
+  const result = await createAgentSession({
     cwd: options.repoRoot,
     resourceLoader,
-    sessionManager: options.sessionFile
+    sessionManager: options.sessionManager ?? (options.sessionFile
       ? SessionManager.open(options.sessionFile, sessionDir, options.repoRoot)
       : options.inMemory
       ? SessionManager.inMemory(options.repoRoot)
-      : SessionManager.create(options.repoRoot, sessionDir),
+      : SessionManager.create(options.repoRoot, sessionDir)),
     tools,
     ...(profile ? { model: profile.modelForPersona(persona) } : {}),
     ...(thinkingLevel ? { thinkingLevel } : {}),
   });
+  if (options.sessionManager) result.session.setThinkingLevel(thinkingLevel ?? result.session.settingsManager.getDefaultThinkingLevel() ?? "medium");
+  return result;
 }

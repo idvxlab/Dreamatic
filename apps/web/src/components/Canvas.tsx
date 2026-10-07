@@ -1,7 +1,8 @@
 import { useI18n } from "../i18n";
-import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, Upload, ZoomIn } from "lucide-react";
+import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, Share2, Upload, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadProject, getCanvasState, getHtmlPreview, saveCanvasState } from "../api";
+import { usePublication } from "../publication-state";
 import { PublishDialog } from "./PublishDialog";
 import { assetUrl } from "../asset-url";
 import type { Asset, CanvasElementState, CanvasState, RunView } from "../types";
@@ -119,7 +120,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   const gesture = useRef<Gesture | undefined>(undefined);
   const loadedRun = useRef<string | undefined>(undefined);
   const [mode, setMode] = useState<"canvas" | "showcase">("canvas");
-  const [tool, setTool] = useState<"select" | "hand">("select");
+  const [tool, setTool] = useState<"select" | "hand">("hand");
   const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
   const [elements, setElements] = useState<CanvasElementState[]>([]);
   const [saving, setSaving] = useState(false);
@@ -129,6 +130,26 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   const [previewMode, setPreviewMode] = useState(false);
   const [previewPages, setPreviewPages] = useState<Array<{ path: string; url: string }>>([]);
   const [publishOpen, setPublishOpen] = useState(false);
+  const publication = usePublication(run?.id);
+  const publishedLink = !publication.error && publication.status?.published && !publication.status.inProgress ? publication.status.receipt?.previewUrl : undefined;
+  const [shareMessage, setShareMessage] = useState<string>();
+  const [shareMessageFading, setShareMessageFading] = useState(false);
+  const [shareNotice, setShareNotice] = useState(0);
+  useEffect(() => {
+    if (!shareMessage) return;
+    setShareMessageFading(false);
+    const fade = setTimeout(() => setShareMessageFading(true), 4000);
+    const dismiss = setTimeout(() => setShareMessage(undefined), 4400);
+    return () => { clearTimeout(fade); clearTimeout(dismiss); };
+  }, [shareMessage, shareNotice]);
+  useEffect(() => { setShareMessage(undefined); }, [run?.id, mode, publishOpen]);
+  async function shareProject() {
+    if (!publishedLink) return;
+    setShareMessageFading(false); setShareNotice(value => value + 1);
+    try { await navigator.clipboard.writeText(publishedLink); setShareMessage("Published project link copied"); }
+    catch { setShareMessage("Could not copy the link. Please try again."); }
+  }
+
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string>();
   useEffect(() => {
@@ -284,6 +305,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
     finally { setExporting(false); }
   }
   function openShowcase() {
+    void publication.refresh();
     setExportError(undefined);
     if (run?.presentation?.mode === "html") { void openHtml(run.presentation.entry); return; }
     previewRequest.current++;
@@ -292,7 +314,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   }
   const showcaseAvailable = run?.presentation?.mode === "html" ? run.stages.build === "completed" : Boolean(run?.showcasePath);
 
-  const htmlPublicationBlocked = run?.presentation?.mode === "html" || Boolean(run?.htmlEntries?.length);
+  const htmlPublicationBlocked = !run?.hasImageDeliverables && (run?.presentation?.mode === "html" || Boolean(run?.htmlEntries?.length));
   const interactive = run?.presentation?.mode === "html" || previewMode;
   const showcaseUrl = interactive ? previewUrl : run?.showcasePath ? assetUrl(run.showcasePath) : undefined;
 
@@ -306,9 +328,10 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
         <section className="showcase-view">
           {interactive && previewPages.length > 1 && <div className="preview-pages"><label>{t("Page")} <select aria-label={t("Prototype page")} value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
           {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "DreamaticArt"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "DreamaticArt"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? t("Preparing interactive preview…")}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>{t("Retry preview")}</button>}</div>}
-          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button title={htmlPublicationBlocked ? t("HTML UX/UI projects cannot currently be published to the official Gallery") : undefined} disabled={htmlPublicationBlocked || exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button></div>}
+          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button title={htmlPublicationBlocked ? t("HTML UX/UI projects cannot currently be published to the official Gallery") : undefined} disabled={htmlPublicationBlocked || exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button><button disabled={!publishedLink || exporting} title={!publishedLink ? t("Publish this project before sharing") : t("Copy published project link")} onClick={() => void shareProject()}><Share2 size={14} /> {t("Share")}</button></div>}
           {htmlPublicationBlocked && <small className="preview-model-credit">{t("HTML UX/UI projects cannot currently be published to the official Gallery")}</small>}
           <small className="preview-model-credit">{t("Reasoning models")}: {[...new Set(run?.modelUsage?.reasoning.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}<br />{t("Generation models")}: {[...new Set(run?.modelUsage?.generation.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}</small>
+          {shareMessage && <p className={`preview-share-message${shareMessageFading ? " fading" : ""}`} role="status">{t(shareMessage)}</p>}
           {exportError && <p className="preview-export-error" role="alert">{exportError}</p>}
         </section>
       ) : (

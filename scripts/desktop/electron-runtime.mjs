@@ -16,7 +16,7 @@ async function installed() {
 }
 async function run(bin, args) {
   await new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: 'inherit', timeout: 150000 });
+    const child = spawn(bin, args, { stdio: 'inherit', timeout: 960000 });
     child.once('error', reject); child.once('close', (code, signal) => code === 0 ? resolve() : reject(new Error(`${bin} failed (${signal || code})`)));
   });
 }
@@ -31,13 +31,13 @@ if (!await installed()) {
   const valid = async () => { try { return createHash('sha256').update(await readFile(archive)).digest('hex') === expected; } catch { return false; } };
   if (!await valid()) {
     const sources = [
-      `https://github.com/electron/electron/releases/download/v${version}/${file}`,
       `https://npmmirror.com/mirrors/electron/${version}/${file}`,
+      `https://github.com/electron/electron/releases/download/v${version}/${file}`,
     ];
     for (const source of sources) {
       console.log(`Downloading Electron ${version} from ${new URL(source).hostname}`);
       try {
-        await run('/usr/bin/curl', ['--location', '--fail', '--connect-timeout', '15', '--max-time', '120', '--output', archive, source]);
+        await run('/usr/bin/curl', ['--location', '--fail', '--connect-timeout', '15', '--max-time', '900', '--output', archive, source]);
         if (!await valid()) throw new Error('Electron SHA256 differs from the official package');
         break;
       } catch (error) { console.warn(error.message); await rm(archive, { force: true }); }

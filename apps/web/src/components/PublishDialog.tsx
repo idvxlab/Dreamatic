@@ -1,14 +1,17 @@
+import { usePublication, setPublicationPosting } from "../publication-state";
 import { useI18n } from "../i18n";
 import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { getPublicationStatus, publishProject, type PublicationStatus, type PublishProgress, type PublishCreator } from "../api";
+import { publishProject, type PublishProgress, type PublishCreator } from "../api";
 
 export function PublishDialog({ runId, title, onClose }: { runId: string; title: string; onClose: () => void }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
   const submitting = useRef(false);
-  const [status, setStatus] = useState<PublicationStatus>();
-  const [creator, setCreator] = useState<PublishCreator>({ name: "", affiliation: "", website: "" });
+  const creatorLoaded = useRef(false);
+  const publication = usePublication(runId);
+  const status = publication.status;
+  const [creator, setCreator] = useState<PublishCreator>(status?.creator ?? { name: "", affiliation: "", website: "" });
   const [confirmed, setConfirmed] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [progress, setProgress] = useState<PublishProgress>();
@@ -17,47 +20,35 @@ export function PublishDialog({ runId, title, onClose }: { runId: string; title:
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null;
     dialog.current?.showModal();
-    let active = true;
-    void getPublicationStatus(runId).then(value => {
-      if (!active) return;
-      setStatus(value); if (value.creator) setCreator(value.creator);
-      if (value.inProgress) { setPublishing(true); setProgress(value.progress); }
-    }).catch(reason => { if (active) setError(String(reason)); });
-    return () => { active = false; previousFocus?.focus(); };
+    return () => { previousFocus?.focus(); };
   }, [runId]);
   useEffect(() => {
+    if (status && !creatorLoaded.current) { creatorLoaded.current = true; if (status.creator) setCreator(status.creator); }
+    if (!submitting.current) {
+      setPublishing(Boolean(status?.inProgress));
+      if (publishing && status?.progress?.phase === "completed" && status.receipt) setResult(status.receipt);
+      else if (status?.progress?.phase === "failed") setError(status.progress.error);
+    }
+    if (status?.inProgress) setProgress(status.progress);
+  }, [status]);
+  useEffect(() => {
     if (!publishing) return;
-    let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const value = await getPublicationStatus(runId);
-        if (!active) return;
-        setProgress(value.progress);
-        if (!submitting.current && !value.inProgress) {
-          setPublishing(false); setStatus(value);
-          if (value.progress?.phase === "completed" && value.receipt) setResult(value.receipt);
-          else if (value.progress?.phase === "failed") setError(value.progress.error);
-        }
-      } catch { /* Keep the operation locked while its POST is pending. */ }
-      if (active) timer = setTimeout(() => void poll(), 750);
-    };
-    void poll();
     const preventLeave = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", preventLeave);
-    return () => { active = false; clearTimeout(timer); window.removeEventListener("beforeunload", preventLeave); };
-  }, [publishing, runId]);
+    return () => window.removeEventListener("beforeunload", preventLeave);
+  }, [publishing]);
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!confirmed || publishing || submitting.current || !status || status.inProgress) return;
     submitting.current = true; setPublishing(true); setError(undefined); setProgress({ phase: "packaging", uploadedBytes: 0, totalBytes: 0 });
+    setPublicationPosting(runId, true);
     let continues = false;
     try { setResult(await publishProject(runId, creator, status.mayExist)); }
     catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setConfirmed(false);
-      try { const value = await getPublicationStatus(runId); setStatus(value); continues = value.inProgress; } catch { setStatus(undefined); }
-    } finally { submitting.current = false; setPublishing(continues); }
+      const value = await publication.refresh(); continues = Boolean(value?.inProgress);
+    } finally { submitting.current = false; setPublicationPosting(runId, false); setPublishing(continues); void publication.refresh(); }
   }
   const percent = progress?.totalBytes ? Math.min(100, Math.floor(progress.uploadedBytes / progress.totalBytes * 100)) : 0;
   const phase = progress?.phase ?? "packaging";
@@ -78,8 +69,8 @@ export function PublishDialog({ runId, title, onClose }: { runId: string; title:
         <label className="publish-consent"><input type="checkbox" disabled={publishing || !status} checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />{t(status?.mayExist ? "I confirm publication and replacement of this project's previous published contents." : "I confirm that I want to publish this project and may publicly share its contents.")}</label>
       </>}
       {publishing && <section className="publish-progress" role="status" aria-live="polite"><span><LoaderCircle size={15} className="spin" />{t(label)}{phase === "uploading" ? ` ${percent}%` : ""}</span><progress aria-label={t("Publication progress")} max={100} value={phase === "packaging" ? undefined : percent} /><small>{t("Please wait. Keep this window open until publication finishes.")}</small></section>}
-      {error && <p role="alert">{error}</p>}
-      {!status && error && <button type="button" onClick={() => { setError(undefined); void getPublicationStatus(runId).then(setStatus).catch(reason => setError(String(reason))); }}>{t("Retry")}</button>}
+      {(error || publication.error) && <p role="alert">{error || publication.error}</p>}
+      {!status && publication.error && <button type="button" onClick={() => void publication.refresh()}>{t("Retry")}</button>}
       <footer><button type="button" disabled={publishing} onClick={onClose}>{result ? t("Done") : t("Cancel")}</button>{!result && <button type="submit" className="primary" disabled={!confirmed || publishing || !status}>{publishing ? t("Publishing…") : t(status?.mayExist ? "Confirm & Replace" : "Confirm & Publish")}</button>}</footer>
     </form>
   </dialog>;

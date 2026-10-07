@@ -57,6 +57,9 @@ async function saveRecords(path: string, value: Record<string, SavedPublication>
   await writeFile(temporary, JSON.stringify(value, null, 2), { mode: 0o600 });
   await rename(temporary, path);
 }
+export function publicationInProgress(): boolean {
+  return [...active.values()].some(progress => !["completed", "failed"].includes(progress.phase));
+}
 export async function publicationStatus(workspaceDir: string, runId: string, site: string) {
   const endpoint = publicationEndpoint(site), path = await publicationFile(workspaceDir, runId);
   const ledger = await records(path);
@@ -88,7 +91,9 @@ export async function publishProject(workspaceDir: string, runId: string, input:
   let archive: Awaited<ReturnType<typeof prepareProjectExport>> | undefined;
   try {
     const manifest = JSON.parse(await readFile(join(dirname(dirname(path)), "artifacts/artifact-manifest.json"), "utf8"));
-    if (manifest.presentation?.mode === "html" || manifest.htmlEntries?.length || manifest.artifacts?.some((item: { method?: string }) => item.method === "html_generate")) {
+    const imageDeliverables = Array.isArray(manifest.artifacts) ? manifest.artifacts.filter((item: { method?: string; path?: string }) => ["image_generate", "image_edit"].includes(item.method ?? "") && typeof item.path === "string" && /^artifacts\/(?!.*(?:^|\/)\.\.(?:\/|$)).+\.(png|jpe?g|webp|gif)$/i.test(item.path)) : [];
+    const hasImages = (await Promise.all(imageDeliverables.map((item: { path: string }) => stat(join(dirname(dirname(path)), item.path)).then(info => info.isFile() && info.size > 0).catch(() => false)))).some(Boolean);
+    if (!hasImages && (manifest.presentation?.mode === "html" || manifest.htmlEntries?.length || manifest.artifacts?.some((item: { method?: string }) => item.method === "html_generate"))) {
       throw new Error("HTML UX/UI projects cannot currently be published to the official Gallery");
     }
     const saved = await records(path);

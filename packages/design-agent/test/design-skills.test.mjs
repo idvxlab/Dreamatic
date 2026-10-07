@@ -535,6 +535,8 @@ test('explicit tool directories expose installed ripgrep through Pi without repl
     assert.equal(process.env.PATH.split((await import('node:path')).delimiter).filter((path) => path === bin).length, 1);
     const result = await createGrepTool(workspace).execute('search', { pattern: 'needle', path: join(workspace, 'sample.txt') }, undefined, undefined, { cwd: workspace });
     assert.match(result.content[0].text, /needle/);
+    delete process.env.DREAMATIC_TOOL_PATH; configureToolSearchPath();
+    assert.equal(process.env.PATH.split((await import('node:path')).delimiter).includes(bin), false);
   } finally {
     if (oldPath === undefined) delete process.env.PATH; else process.env.PATH = oldPath;
     if (oldConfigured === undefined) delete process.env.DREAMATIC_TOOL_PATH; else process.env.DREAMATIC_TOOL_PATH = oldConfigured;

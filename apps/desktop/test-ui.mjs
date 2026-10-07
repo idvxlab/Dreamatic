@@ -19,12 +19,24 @@ try {
   const page = await app.firstWindow();
   await page.waitForLoadState();
   await page.bringToFront();
-  await page.getByRole('button', { name: 'User menu' }).click();
+  await page.getByRole('button', { name: 'DreamaticArt menu', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Settings' }).click();
   await page.getByRole('dialog').waitFor();
   await page.screenshot({ path: '/private/tmp/dreamatic-desktop-settings.png' });
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
-  await page.keyboard.press('Escape');
+  await page.getByRole('tab', { name: 'Image model', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Image model', exact: true }).fill('desktop-image-model');
+  await page.getByRole('button', { name: 'Save configuration', exact: true }).click();
+  await page.getByText('Settings saved and applied', { exact: true }).waitFor();
+  assert.equal((await page.evaluate(() => fetch('/api/health').then(response => response.json()))).imageModel, 'desktop-image-model');
+  await page.getByRole('button', { name: 'DreamaticArt menu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
+  await page.getByRole('tab', { name: 'System parameters', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Workspace directory', exact: true }).fill('./new-workspace');
+  await page.getByRole('button', { name: 'Save configuration', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('.settings-modal') && document.body.innerText.includes('New project'));
+  assert.equal((await page.evaluate(() => fetch('/api/health').then(response => response.json()))).workspaceDir, join(dataDir, 'new-workspace'));
+
   const nextWindow = app.waitForEvent('window');
   await page.evaluate(url => window.open(url, '_blank'), previewUrl);
   const preview = await nextWindow;

@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, watch } from "node:fs";
-import { mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
@@ -15,7 +15,7 @@ import { SessionRegistry } from "./session-registry.js";
 import { PreviewService } from "./preview-service.js";
 import { readRuntimeConfig, saveRuntimeConfig } from "./config-store.js";
 import { prepareProjectExport } from "./project-export.js";
-import { DEFAULT_SITE_URL, publicationStatus, publishProject } from "./project-publish.js";
+import { DEFAULT_SITE_URL, publicationStatus, publicationInProgress, publishProject } from "./project-publish.js";
 import { pipeline } from "node:stream/promises";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -25,7 +25,7 @@ try { loadEnvFile(join(configRoot, ".env")); } catch { /* The diagnostics endpoi
 const configuredWorkspace = process.env.DREAMATIC_WORKSPACE?.trim();
 // Relative workspace paths are project settings, not process-working-directory settings.
 // npm workspaces launch this package from apps/server, so resolve them from the repo root.
-const workspaceDir = configuredWorkspace
+let workspaceDir = configuredWorkspace
   ? resolve(configRoot, configuredWorkspace)
   : join(configRoot, "workspace");
 const webDist = join(repoRoot, "apps", "web", "dist");
@@ -33,8 +33,8 @@ const port = desktop ? 0 : Number(process.env.PORT ?? 4310);
 await validateDreamaticPersonaContracts(repoRoot);
 await mkdir(workspaceDir, { recursive: true });
 
-const registry = new SessionRegistry(repoRoot, workspaceDir);
-const previews = new PreviewService(workspaceDir);
+let registry = new SessionRegistry(repoRoot, workspaceDir);
+let previews = new PreviewService(workspaceDir);
 await registry.initialize();
 
 const CONTENT_TYPES = new Map([
@@ -162,7 +162,8 @@ function resolveAsset(path: string): string {
   return candidate;
 }
 
-const server = createServer(async (request, response) => {
+let applyingConfiguration = false;
+async function handleRequest(request: IncomingMessage, response: ServerResponse) {
   const requestAt = performance.now();
   response.once("finish", () => { recordRequest(request.method ?? "GET", (request.url ?? "/").split("?")[0]!, response.statusCode, performance.now() - requestAt); });
   if (desktop) {
@@ -179,6 +180,7 @@ const server = createServer(async (request, response) => {
   }
 
   try {
+    if (applyingConfiguration) { json(response, 503, { error: "Configuration is being applied. Please wait." }); return; }
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
     if (request.method === "GET" && url.pathname === "/api/performance") {
       json(response, 200, serverPerformance()); return;
@@ -208,7 +210,61 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "PUT" && url.pathname === "/api/config") {
-      json(response, 200, await saveRuntimeConfig(configRoot, record(await body(request))));
+      if (registry.busy || publicationInProgress()) { json(response, 409, { error: "Wait for the current task or publication to finish before saving configuration." }); return; }
+      applyingConfiguration = true;
+      let replacement: ReturnType<typeof createServer> | undefined;
+      const envPath = join(configRoot, ".env");
+      const previousEnv = { ...process.env };
+      let previousText: string | undefined;
+      let previousMode = 0o600;
+      let savedConfiguration = false;
+      let applied = false;
+      try {
+        previousText = await readFile(envPath, "utf8").catch(error => { if (error.code === "ENOENT") return undefined; throw error; });
+        previousMode = await stat(envPath).then(value => value.mode & 0o777).catch(() => 0o600);
+        const saved = await saveRuntimeConfig(configRoot, record(await body(request)));
+        savedConfiguration = true;
+        const nextWorkspace = resolve(configRoot, process.env.DREAMATIC_WORKSPACE?.trim() || "workspace");
+        const workspaceChanged = nextWorkspace !== workspaceDir;
+        const previousAddress = server.address();
+        const previousPort = typeof previousAddress === "object" && previousAddress ? previousAddress.port : port;
+        const configuredPort = Number(process.env.PORT ?? 4310);
+        const nextPort = desktop || configuredPort === 0 ? previousPort : configuredPort;
+        if (nextPort !== previousPort) {
+          replacement = createServer(handleRequest);
+          await new Promise<void>((resolveListen, rejectListen) => {
+            replacement!.once("error", rejectListen);
+            replacement!.listen(nextPort, () => { replacement!.off("error", rejectListen); resolveListen(); });
+          });
+        }
+        await mkdir(nextWorkspace, { recursive: true });
+        if (workspaceChanged) {
+          const nextRegistry = new SessionRegistry(repoRoot, nextWorkspace);
+          await nextRegistry.initialize();
+          await previews.close();
+          const previousRegistry = registry;
+          registry = nextRegistry; previews = new PreviewService(nextWorkspace); workspaceDir = nextWorkspace;
+          await previousRegistry.dispose();
+        } else { await registry.reloadConfiguration(); }
+        if (replacement) {
+          const previousServer = server; server = replacement; replacement = undefined;
+          response.once("finish", () => { previousServer.close(); previousServer.closeIdleConnections(); setTimeout(() => previousServer.closeAllConnections(), 1000).unref(); });
+        }
+        applied = true;
+        json(response, 200, { ...saved, applied: { workspaceChanged, portChanged: nextPort !== previousPort, port: nextPort } });
+      } catch (error) {
+        if (savedConfiguration && !applied) {
+          if (previousText === undefined) await rm(envPath, { force: true });
+          else {
+            const rollbackPath = `${envPath}.${randomUUID()}.tmp`;
+            try { await writeFile(rollbackPath, previousText, { mode: previousMode }); await rename(rollbackPath, envPath); }
+            finally { await rm(rollbackPath, { force: true }); }
+          }
+          for (const key of Object.keys(process.env)) if (!(key in previousEnv)) delete process.env[key];
+          Object.assign(process.env, previousEnv);
+        }
+        throw error;
+      } finally { applyingConfiguration = false; replacement?.close(); }
       return;
     }
     if (request.method === "GET" && url.pathname === "/api/sessions") {
@@ -248,6 +304,7 @@ const server = createServer(async (request, response) => {
               : [];
           })
         : [];
+      if (applyingConfiguration) { json(response, 503, { error: "Configuration is being applied. Please wait." }); return; }
       response.writeHead(200, {
         "Content-Type": "application/x-ndjson; charset=utf-8",
         "Cache-Control": "no-cache",
@@ -391,7 +448,8 @@ const server = createServer(async (request, response) => {
     if (response.headersSent) { response.destroy(); return; }
     json(response, 400, { error: error instanceof Error ? error.message : String(error) });
   }
-});
+}
+let server = createServer(handleRequest);
 
 server.once("error", async (error: NodeJS.ErrnoException) => {
   if (error.code === "EADDRINUSE") console.error(`DreamaticArt cannot start because port ${port} is already in use. Stop the previous DreamaticArt dev process, then try again.`);

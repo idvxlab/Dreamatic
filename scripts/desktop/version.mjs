@@ -13,7 +13,16 @@ export function branchVersion(root) {
 }
 
 export async function syncReleaseVersion(root) {
-  const version = branchVersion(root);
+  let version = process.env.DREAMATIC_RELEASE_VERSION;
+  let origin = "explicit release version";
+  if (!version) {
+    let branch = "";
+    try { branch = execFileSync('git', ['branch', '--show-current'], { cwd: root, encoding: 'utf8' }).trim(); } catch { /* Source archives have no Git metadata. */ }
+    if (/^v\d+\.\d+\.\d+$/.test(branch)) { version = versionFromBranch(branch); origin = "Git branch"; }
+    else { version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version; origin = "package.json"; }
+  }
+  version = versionFromBranch(`v${version}`);
+
   for (const path of ['package.json', 'apps/desktop/package.json', 'package-lock.json']) {
     const file = join(root, path);
     const manifest = JSON.parse(await readFile(file, 'utf8'));
@@ -24,6 +33,6 @@ export async function syncReleaseVersion(root) {
     }
     await writeFile(file, `${JSON.stringify(manifest, null, 2)}\n`);
   }
-  console.log(`Release version: v${version} (from Git branch)`);
+  console.log(`Release version: v${version} (from ${origin})`);
   return version;
 }

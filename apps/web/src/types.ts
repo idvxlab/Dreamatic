@@ -57,6 +57,7 @@ export interface RunView {
   showcasePath?: string;
   presentation?: { mode: "gallery" | "html"; entry: string };
   htmlEntries?: string[];
+  hasImageDeliverables?: boolean;
   sessionId?: string;
 }
 
@@ -115,6 +116,8 @@ export interface WorkflowEvent {
   artifactRefs?: string[];
   assets?: Array<{ path: string; label: string }>;
   children?: WorkflowEvent[];
+  updatedAt?: string;
+  imageProgress?: import("@dreamatic/design-agent/workflow-progress").ImageProgress;
   actionCount?: number;
   agent?: string;
 }

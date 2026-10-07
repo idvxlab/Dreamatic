@@ -1,3 +1,4 @@
+import { RunStatus } from "./RunStatus";
 import { useI18n } from "../i18n";
 import { ArrowUp, Bot, Check, ChevronDown, Circle, ExternalLink, ImagePlus, LoaderCircle, Paperclip, Square, WandSparkles, Wrench, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -12,6 +13,7 @@ export interface PendingImage {
 
 interface AgentPanelProps {
   disabled?: boolean;
+  connected?: boolean;
   timeline: TimelineItem[];
   workflow?: WorkflowEvent[];
   streamingText: string;
@@ -126,7 +128,7 @@ function ClarificationCard({ request, disabled, onSubmit, onDismiss }: { request
   </section>;
 }
 
-export function AgentPanel({ disabled = false, timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
+export function AgentPanel({ disabled = false, connected = false, timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
   const { t } = useI18n();
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -178,11 +180,12 @@ export function AgentPanel({ disabled = false, timeline, workflow = [], streamin
   return (
     <aside className="agent-panel">
       <header className="agent-header">
-        <div><span className="agent-sigil"><WandSparkles size={16} /></span><span><strong>{t("Design agent")}</strong><small><i /> {t("Pi runtime connected")}</small></span></div>
+        <div><span className="agent-sigil"><WandSparkles size={16} /></span><span><strong>{t("Design agent")}</strong><small><i /> {t(connected ? "Local service available" : "Connecting to local service…")}</small></span></div>
         {running
           ? <button className="agent-stop" type="button" onClick={onStop} disabled={stopping} title={t("Stop the current run")}><Square size={10} fill="currentColor" /> {stopping ? t("Stopping…") : t("Stop")}</button>
           : <span className="agent-mode">{t("Auto workflow")}</span>}
       </header>
+      <RunStatus workflow={workflow} running={running} pending={pendingAgentStatus} />
       <div className="agent-scroll" ref={scrollRef} onScroll={(event) => {
         const element = event.currentTarget;
         followOutputRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
