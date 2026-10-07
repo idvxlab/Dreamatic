@@ -292,6 +292,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   }
   const showcaseAvailable = run?.presentation?.mode === "html" ? run.stages.build === "completed" : Boolean(run?.showcasePath);
 
+  const htmlPublicationBlocked = run?.presentation?.mode === "html" || Boolean(run?.htmlEntries?.length);
   const interactive = run?.presentation?.mode === "html" || previewMode;
   const showcaseUrl = interactive ? previewUrl : run?.showcasePath ? assetUrl(run.showcasePath) : undefined;
 
@@ -305,7 +306,8 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
         <section className="showcase-view">
           {interactive && previewPages.length > 1 && <div className="preview-pages"><label>{t("Page")} <select aria-label={t("Prototype page")} value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
           {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "DreamaticArt"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "DreamaticArt"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? t("Preparing interactive preview…")}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>{t("Retry preview")}</button>}</div>}
-          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button></div>}
+          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button title={htmlPublicationBlocked ? t("HTML UX/UI projects cannot currently be published to the official Gallery") : undefined} disabled={htmlPublicationBlocked || exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button></div>}
+          {htmlPublicationBlocked && <small className="preview-model-credit">{t("HTML UX/UI projects cannot currently be published to the official Gallery")}</small>}
           <small className="preview-model-credit">{t("Reasoning models")}: {[...new Set(run?.modelUsage?.reasoning.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}<br />{t("Generation models")}: {[...new Set(run?.modelUsage?.generation.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}</small>
           {exportError && <p className="preview-export-error" role="alert">{exportError}</p>}
         </section>
@@ -366,7 +368,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
           {saving && <span className="canvas-saving">{t("Saving…")}</span>}
         </div>
       )}
-      {publishOpen && run && <PublishDialog key={run.id} runId={run.id} title={run.title} onClose={() => setPublishOpen(false)} />}
+      {publishOpen && run && !htmlPublicationBlocked && <PublishDialog key={run.id} runId={run.id} title={run.title} onClose={() => setPublishOpen(false)} />}
     </main>
   );
 }

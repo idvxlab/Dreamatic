@@ -231,6 +231,11 @@ export async function downloadProject(runId: string): Promise<void> {
 
 
 export interface PublishCreator { name: string; affiliation: string; website: string }
-export async function publishProject(runId: string, creator: PublishCreator, publicationId: string): Promise<{ projectId: string; previewUrl: string; galleryUrl: string }> {
-  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmed: true, creator, publicationId }) }));
+export interface PublishProgress { phase: "packaging" | "uploading" | "deploying" | "completed" | "failed"; uploadedBytes: number; totalBytes: number; error?: string }
+export interface PublicationStatus { site: string; published: boolean; mayExist: boolean; inProgress: boolean; creator?: PublishCreator; receipt?: { projectId: string; previewUrl: string; galleryUrl: string }; progress?: PublishProgress }
+export async function getPublicationStatus(runId: string): Promise<PublicationStatus> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/publish`, { cache: "no-store" }));
+}
+export async function publishProject(runId: string, creator: PublishCreator, overwriteConfirmed: boolean): Promise<{ projectId: string; previewUrl: string; galleryUrl: string }> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmed: true, creator, overwriteConfirmed }) }));
 }

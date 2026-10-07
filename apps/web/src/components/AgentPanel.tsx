@@ -11,6 +11,7 @@ export interface PendingImage {
 }
 
 interface AgentPanelProps {
+  disabled?: boolean;
   timeline: TimelineItem[];
   workflow?: WorkflowEvent[];
   streamingText: string;
@@ -125,7 +126,7 @@ function ClarificationCard({ request, disabled, onSubmit, onDismiss }: { request
   </section>;
 }
 
-export function AgentPanel({ timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
+export function AgentPanel({ disabled = false, timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
   const { t } = useI18n();
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -153,7 +154,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
   }, [running]);
 
   async function addFiles(files: FileList | null) {
-    if (!files) return;
+    if (!files || disabled) return;
     const next = await Promise.all([...files].map(async (file) => ({
       name: file.name,
       mimeType: file.type || ({ md: "text/markdown", csv: "text/csv", txt: "text/plain" }[file.name.split(".").at(-1)?.toLowerCase() ?? ""] ?? "application/octet-stream"),
@@ -168,7 +169,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
   }
 
   function submit() {
-    if ((!text.trim() && images.length === 0) || running) return;
+    if ((!text.trim() && images.length === 0) || running || disabled) return;
     onSend(text.trim() || "请分析这些上传资料，并开始设计。", images);
     setText("");
     setImages([]);
@@ -191,7 +192,7 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
             <p className="eyebrow">{t("Start with an outcome")}</p>
             <h2>{t("What should we design?")}</h2>
             <p>{t("Describe the audience, context, deliverables, and constraints. The agent will load the matching design workflow.")}</p>
-            <div className="suggestions">{SUGGESTIONS.map((item) => <button key={item} onClick={() => setText(t(item))}>{t(item)}</button>)}</div>
+            <div className="suggestions">{SUGGESTIONS.map((item) => <button disabled={disabled} key={item} onClick={() => setText(t(item))}>{t(item)}</button>)}</div>
           </div>
         ) : (
           <div>
@@ -208,15 +209,15 @@ export function AgentPanel({ timeline, workflow = [], streamingText, running, st
         )}
       </div>
       <div className="composer-wrap">
-        {clarification ? <ClarificationCard request={clarification} disabled={running} onSubmit={onAnswerClarification} onDismiss={onDismissClarification} /> : <>
+        {clarification ? <ClarificationCard request={clarification} disabled={running || disabled} onSubmit={onAnswerClarification} onDismiss={onDismissClarification} /> : <>
         {images.length > 0 && <div className="attachment-row">{images.map((image, index) => <span key={`${image.name}-${index}`}><ImagePlus size={13} />{image.name}<button onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={11} /></button></span>)}</div>}
         <div className="composer">
-          <textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={t("Describe the design outcome…")} rows={3} />
+          <textarea disabled={disabled} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={t(disabled ? "Create a project to start chatting" : "Describe the design outcome…")} rows={3} />
           <div>
-            <button className="attach" onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
-            <input ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.html,.htm" multiple onChange={(event) => addFiles(event.target.files)} />
+            <button disabled={disabled} className="attach" onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
+            <input disabled={disabled} ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.html,.htm" multiple onChange={(event) => addFiles(event.target.files)} />
             <span>{t("Enter to send")}</span>
-            <button className="send" disabled={running || (!text.trim() && images.length === 0)} onClick={submit}>{running ? <LoaderCircle className="spin" size={17} /> : <ArrowUp size={17} />}</button>
+            <button className="send" disabled={disabled || running || (!text.trim() && images.length === 0)} onClick={submit}>{running ? <LoaderCircle className="spin" size={17} /> : <ArrowUp size={17} />}</button>
           </div>
         </div>
         </>}

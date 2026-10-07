@@ -17,10 +17,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   return <Locale.Provider value={{ language, setLanguage, t: text => translate(text, language) }}>{children}</Locale.Provider>;
 }
 export const useI18n = () => useContext(Locale);
-export function LanguageToggle() {
+export function LanguageToggle({ disabled = false }: { disabled?: boolean }) {
   const { language, setLanguage } = useI18n();
   return <div className="language-toggle" role="group" aria-label={language === "zh" ? "界面语言" : "Interface language"}>
-    <button type="button" aria-pressed={language === "zh"} onClick={() => setLanguage("zh")}>中文</button>
-    <button type="button" aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
+    <button type="button" disabled={disabled} aria-pressed={language === "zh"} onClick={() => setLanguage("zh")}>中文</button>
+    <button type="button" disabled={disabled} aria-pressed={language === "en"} onClick={() => setLanguage("en")}>EN</button>
   </div>;
 }

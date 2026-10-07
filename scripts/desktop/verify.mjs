@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, access, readdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -19,6 +20,13 @@ try {
   await run('/usr/bin/hdiutil', ['attach', image, '-readonly', '-nobrowse', '-mountpoint', mount]); mounted = true;
   const app = join(mount, 'DreamaticArt.app');
   await run('/usr/bin/codesign', ['--verify', '--deep', '--strict', app]);
+  const expectedVersion = process.argv[3];
+  if (!expectedVersion) throw new Error('Expected release version is required');
+  for (const key of ['CFBundleShortVersionString', 'CFBundleVersion']) {
+    const actual = execFileSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, join(app, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
+    if (actual !== expectedVersion) throw new Error(`${key}: expected ${expectedVersion}, got ${actual}`);
+  }
+  console.log(`PACKAGED_VERSION_OK: v${expectedVersion}`);
   const runtime = join(app, 'Contents/Resources/runtime');
   await access(join(runtime, 'node_modules/playwright-core/index.mjs'));
   await access(join(runtime, 'node_modules/@dreamatic/design-agent/dist/index.js'));

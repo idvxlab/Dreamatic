@@ -1,3 +1,4 @@
+import { syncReleaseVersion } from './version.mjs';
 import { cp, mkdir, readFile, writeFile, rm, chmod, access } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +10,7 @@ if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('
 async function run(bin, args, env = {}) {
   await new Promise((res, rej) => { const p = spawn(bin, args, { cwd: stage, env: { ...process.env, ...env }, stdio: 'inherit', timeout: 300000 }); p.once('error', rej); p.once('exit', code => code === 0 ? res() : rej(new Error(`${bin} exited ${code}`))); });
 }
+await syncReleaseVersion(root);
 await mkdir(stage, { recursive: true });
 await run(process.execPath, [join(root, 'scripts/desktop/electron-runtime.mjs')]);
 // Only approved source resources: never package developer secrets, runs, sessions or caches.

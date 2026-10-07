@@ -1,3 +1,4 @@
+import { annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/design-agent";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
@@ -8,7 +9,7 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 
 /** Download-only snapshot. Never alter a Run or start an agent/export workflow. */
-export async function prepareProjectExport(workspaceDir: string, runId: string, options: { publication?: Record<string, unknown> } = {}): Promise<{ path: string; filename: string; cleanup: () => Promise<void> }> {
+export async function prepareProjectExport(workspaceDir: string, runId: string, options: { publication?: Record<string, unknown>; modelFallback?: ModelUsage } = {}): Promise<{ path: string; filename: string; cleanup: () => Promise<void> }> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(runId)) throw new Error("Invalid run id");
   const runsRoot = await realpath(join(workspaceDir, "runs"));
   const runDir = await realpath(join(runsRoot, runId));
@@ -31,7 +32,11 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
       if (info.isSymbolicLink()) throw new Error(`Cannot export symbolic link: ${path}`);
       if (info.isDirectory()) {
         await mkdir(join(packageDir, path), { recursive: true });
-        for (const name of (await readdir(source)).sort()) await copy(`${path}/${name}`);
+        for (const name of (await readdir(source)).sort()) {
+          // Finder metadata, caches and private dotfiles are not deliverables.
+          if (name.startsWith(".") || name === "__MACOSX") continue;
+          await copy(`${path}/${name}`);
+        }
       } else if (info.isFile()) {
         await copyFile(source, join(packageDir, path));
         if (path.startsWith("artifacts/") && typeof receipt?.[path] === "string") {
@@ -56,6 +61,26 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
     const entry = manifest.presentation?.entry ?? "artifacts/00-gallery.html";
     if (typeof entry !== "string" || !files.includes(entry) || !entry.endsWith(".html")) throw new Error("Completed project presentation is missing");
     if (receipt && typeof receipt["artifacts/artifact-manifest.json"] !== "string") throw new Error("Build manifest has no approval receipt");
+    if (options.modelFallback) {
+      const actual = await collectModelUsage(runDir, Array.isArray(manifest.artifacts) ? manifest.artifacts : []);
+      const valid = (items: unknown): ModelUsage["reasoning"] => Array.isArray(items) ? items.filter(item => item && typeof item.model === "string" && item.model.trim()) : [];
+      const usage: ModelUsage = { schemaVersion: 1, reasoning: [], generation: [] };
+      for (const group of ["reasoning", "generation"] as const) {
+        const existing = valid(manifest.modelUsage?.[group]);
+        usage[group] = existing.length ? existing : valid(actual[group]);
+        if (!usage[group].length) usage[group] = options.modelFallback[group];
+      }
+      manifest.modelUsage = usage;
+      await writeFile(join(packageDir, "artifacts/artifact-manifest.json"), JSON.stringify(manifest, null, 2));
+      for (const file of ["artifacts/model-usage.json", "plan/model-usage.json"]) {
+        await mkdir(join(packageDir, file.split("/")[0]!), { recursive: true });
+        await writeFile(join(packageDir, file), JSON.stringify(usage, null, 2));
+        if (!files.includes(file)) files.push(file);
+      }
+      // Publication metadata is applied after checking approved source integrity.
+      // Only the export snapshot changes, never the committed Run.
+      await writeFile(join(packageDir, entry), annotateModelUsage(await readFile(join(packageDir, entry), "utf8"), usage).replace("</aside>", [...usage.reasoning, ...usage.generation].some(item => item.source === "publication_config_fallback") ? "<br><small>Missing historical records supplemented from settings at publication / 缺失的历史模型记录按发布时配置补录</small></aside>" : "</aside>"));
+    }
     const previewEntry = typeof manifest.modelPreviewEntry === "string" && files.includes(manifest.modelPreviewEntry) ? manifest.modelPreviewEntry : entry;
     const entryUrl = previewEntry.split("/").map(encodeURIComponent).join("/");
     // A portable launcher; the approved page itself is copied byte-for-byte.

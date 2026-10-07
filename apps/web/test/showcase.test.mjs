@@ -26,14 +26,18 @@ window.setRun(window.initialRun);`;
   const ux = { ...baseRun, modelUsage: {schemaVersion:1, reasoning:[{model:'reason-fixture',provider:'test'}],generation:[{model:'image-fixture',provider:'test'}]}, presentation: { mode: 'html', entry: 'artifacts/academic/index.html' }, showcasePath: 'runs/ux/final/artifacts/academic/index.html' };
   let calls = 0, failNext = false, exportCalls = 0, failExport = false, invalidExport = undefined, publishCalls = 0;
   const entries = [];
+  let publishProgress, releasePublish, holdPublish = false;
+  const receipt = {projectId:'published-ui',previewUrl:'https://www.dreamatic.art/gallery-assets/published-ui/artifacts/index.html',galleryUrl:'https://www.dreamatic.art/#gallery'};
   const server = createServer(async (req, res) => {
     if (req.url === '/bundle.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(js); return; }
     if (req.url.endsWith('/canvas')) { res.setHeader('Content-Type', 'application/json'); res.end('null'); return; }
     if (req.url === '/api/config') { res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({values:{DREAMATIC_SITE_URL:'https://www.dreamatic.art/'}})); return; }
     if (req.url.endsWith('/publish')) {
-      publishCalls++; let body = ''; for await (const chunk of req) body += chunk;
-      const input=JSON.parse(body); assert.equal(input.confirmed,true); assert.equal(input.creator.name,'Test creator');
-      res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({projectId:'published-ui',previewUrl:'https://www.dreamatic.art/gallery-assets/published-ui/artifacts/index.html',galleryUrl:'https://www.dreamatic.art/#gallery'})); return;
+      res.setHeader('Content-Type','application/json');
+      if(req.method==='GET'){res.end(JSON.stringify({site:'https://www.dreamatic.art',published:publishCalls>0,mayExist:publishCalls>0,inProgress:Boolean(publishProgress),creator:publishCalls?{name:'Test creator',affiliation:'',website:''}:undefined,receipt:publishCalls?receipt:undefined,...(publishProgress?{progress:publishProgress}:{})}));return;}
+      publishCalls++;let body='';for await(const chunk of req)body+=chunk;const input=JSON.parse(body);assert.equal(input.confirmed,true);assert.equal(input.creator.name,'Test creator');assert.equal(input.overwriteConfirmed,publishCalls>1);
+      if(holdPublish){publishProgress={phase:'uploading',uploadedBytes:50,totalBytes:100};await new Promise(resolve=>{releasePublish=resolve});}
+      publishProgress=undefined;res.end(JSON.stringify(receipt));return;
     }
     if (req.url.endsWith('/preview')) {
       calls++; let body = ''; for await (const chunk of req) body += chunk;
@@ -68,23 +72,43 @@ window.setRun(window.initialRun);`;
     await showcase.click();
     const frame = page.frameLocator('iframe');
     await frame.getByRole('heading', { name: 'Designed academic homepage' }).waitFor();
-    assert.match(await page.locator('.preview-model-credit').textContent(), /reason-fixture/);
-    assert.match(await page.locator('.preview-model-credit').textContent(), /image-fixture/);
+    assert.match((await page.locator('.preview-model-credit').allTextContents()).join(' '), /reason-fixture/);
+    assert.match((await page.locator('.preview-model-credit').allTextContents()).join(' '), /image-fixture/);
     assert.deepEqual(entries, [ux.presentation.entry]);
     assert.equal(await frame.locator('h1').evaluate((node) => getComputedStyle(node).color), 'rgb(10, 20, 30)');
     await frame.locator('#language').click(); assert.equal(await frame.locator('#greeting').textContent(), 'Hello');
     assert.equal(await page.locator('iframe').getAttribute('sandbox'), 'allow-scripts allow-downloads');
     assert.equal(await page.getByRole('combobox', { name: 'Prototype viewport' }).count(), 0);
     assert.equal(await page.getByRole('link', {name:'Open',exact:true}).getAttribute('href'), `http://127.0.0.1:${server.address().port}/designed/index.html`);
+    assert.equal(await page.getByRole('button',{name:'Publish',exact:true}).isDisabled(),true);
+    await page.getByText('HTML UX/UI projects cannot currently be published to the official Gallery',{exact:true}).waitFor();
+    assert.equal(publishCalls,0);
+    await page.evaluate(run=>window.setRun(run),{...ux,presentation:{mode:'gallery',entry:'artifacts/00-gallery.html'}});
+    await page.getByRole('button',{name:'Preview',exact:true}).click();
     await page.getByRole('button', {name:'Publish',exact:true}).click();
     const publishDialog = page.getByRole('dialog', {name:'Publish to DreamaticSite'});
     await publishDialog.waitFor(); assert.equal(publishCalls,0);
+    assert.equal(await publishDialog.locator(".language-toggle").count(),0);
     assert.equal(await publishDialog.getByRole('button',{name:'Confirm & Publish'}).isDisabled(),true);
     await publishDialog.getByLabel('Name',{exact:true}).fill('Test creator');
     await publishDialog.getByRole('checkbox').check();
     await publishDialog.getByRole('button',{name:'Confirm & Publish'}).click();
     await publishDialog.getByRole('link',{name:'Open published design'}).waitFor();assert.equal(publishCalls,1);
     await publishDialog.getByRole('button',{name:'Done'}).click();
+    holdPublish=true;await page.getByRole('button',{name:'Publish',exact:true}).click();
+    await publishDialog.getByText('This project has already been published.',{exact:false}).waitFor();
+    assert.equal(await publishDialog.getByRole('button',{name:'Confirm & Replace'}).isDisabled(),true);
+    assert.equal(await publishDialog.getByLabel('Name',{exact:true}).inputValue(),'Test creator');
+    await publishDialog.getByRole('checkbox').check();await publishDialog.getByRole('button',{name:'Confirm & Replace'}).click();
+    await publishDialog.getByText('Uploading project… 50%',{exact:true}).waitFor();
+    assert.equal(await publishDialog.getByRole('button',{name:'Publishing…',exact:true}).isDisabled(),true);assert.equal(await publishDialog.getByRole('button',{name:'Cancel',exact:true}).isDisabled(),true);assert.equal(await publishDialog.getByLabel('Name',{exact:true}).isDisabled(),true);
+    await page.keyboard.press('Escape');assert.equal(await publishDialog.isVisible(),true);
+    await publishDialog.locator('form').evaluate(form=>form.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));assert.equal(publishCalls,2);
+    publishProgress={phase:'deploying',uploadedBytes:100,totalBytes:100};await publishDialog.getByText('Upload complete. Waiting for website deployment…',{exact:true}).waitFor();releasePublish();
+    await publishDialog.getByRole('link',{name:'Open published design'}).waitFor();await publishDialog.getByRole('button',{name:'Done'}).click();
+
+    await page.evaluate(run=>window.setRun(run),ux);
+    await page.getByRole('button',{name:'Preview',exact:true}).click();
     const downloadEvent = page.waitForEvent('download');
     await page.getByRole('button', {name:'Export',exact:true}).click();
     const download = await downloadEvent; assert.equal(download.suggestedFilename(), 'ux.zip');
@@ -105,7 +129,7 @@ window.setRun(window.initialRun);`;
     await page.getByRole('alert').waitFor();
     await page.getByRole('button', { name: 'Retry preview' }).click();
     await frame.getByRole('heading', { name: 'Designed academic homepage' }).waitFor();
-    assert.equal(calls, 3);
+    assert.equal(calls, 4);
     await page.evaluate((run) => window.setRun(run), { ...ux, id: 'pending', stages: { build: 'in_progress' } });
     await page.waitForFunction(() => document.querySelector('.canvas-view-switch button:last-child').disabled);
     await page.evaluate((run) => window.setRun(run), { ...baseRun, id: 'poster', showcasePath: 'runs/poster/artifacts/00-gallery.html', presentation: { mode: 'gallery', entry: 'artifacts/00-gallery.html' } });
@@ -118,7 +142,7 @@ window.setRun(window.initialRun);`;
     await page.getByRole('button', {name:'Export',exact:true}).click();
     assert.equal((await galleryDownload).suggestedFilename(), 'poster.zip');
     assert.equal(exportCalls, 5);
-    assert.equal(calls, 3); // Gallery never requests an HTML preview.
+    assert.equal(calls, 4); // Gallery never requests an HTML preview.
   } finally {
     await browser?.close(); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve));
   }

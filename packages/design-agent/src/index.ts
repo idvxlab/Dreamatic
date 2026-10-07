@@ -16,3 +16,6 @@ export { DESIGN_CAPABILITIES, deliveryContract, imagePlan, htmlTask, physicalRun
 export type { Presentation, DeliveryContract } from "./design-contract.js";
 export { HTML_PREVIEW_CSP, HTML_CONTENT_TYPES } from "./html-delivery.js";
 export { DESIGN_CATEGORIES, designScopes, briefDesignScopes, designClassificationMessage } from "./design-categories.js";
+
+export { annotateModelUsage, collectModelUsage } from "./model-usage.js";
+export type { ModelUsage, ModelRecord } from "./model-usage.js";

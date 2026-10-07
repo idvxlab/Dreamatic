@@ -100,9 +100,12 @@ SHA256 checksum. A failed release stops without replacing the previous DMG.
 | SHA256 checksum | `release/DreamaticArt-<version>-mac-arm64.dmg.sha256` |
 | Release log | `release/logs/<timestamp>.log` |
 
-The version is read from `apps/desktop/package.json`; update it yourself before
-releasing a new version. The script does not change versions, commit to Git,
-modify `.env` or overwrite existing user projects.
+The release version is taken from the current Git branch, which must be named
+`v<major>.<minor>.<patch>` (for example, `v2.0.3`). The scripts synchronize the
+root and desktop manifests and lockfile to `2.0.3`, and verify both macOS bundle
+version fields inside the DMG. macOS metadata uses the numeric version without
+the `v` prefix. The scripts do not commit to Git, modify `.env` or overwrite
+existing user projects.
 
 To reuse installed dependencies while retaining all release checks:
 
@@ -365,7 +368,11 @@ Further details:
 
 ## Publish a design to DreamaticSite
 
-After a completed build, open **Preview → Publish**. Review the project and
+HTML UX/UI deliveries are temporarily ineligible for publication, including mixed
+projects containing HTML deliverables. Preview and Export remain available. Image
+designs still use HTML showcase pages and remain eligible.
+
+After an eligible completed build, open **Preview → Publish**. Review the project and
 public destination, optionally enter your name, organization and website, and
 confirm publication. The complete project export is compressed and uploaded to
 `https://www.dreamatic.art/`; the site validates and deploys it into Gallery, then
@@ -380,3 +387,19 @@ Configure `DREAMATIC_SITE_URL` under **Settings → System parameters** to chang
 the site origin. HTTPS is required; HTTP localhost is supported for development.
 The website must run the matching DreamaticSite publishing API, allow 128 MiB
 uploads at its reverse proxy, and have write access to its Gallery directory.
+
+Repeat publication reuses a project-local publication id and replaces its previous
+website contents after explicit confirmation. The private update credential stays
+in `.performance/publications.json`, outside exported ZIPs. Creator fields are
+restored when reopening Publish. Packaging shows an indeterminate progress bar;
+upload progress reports streamed bytes, then waits for server deployment. Inputs,
+submission and closing are locked while publication is pending.
+
+Publications made by older versions have no saved update credential and cannot
+be automatically claimed for replacement. The DreamaticSite server must also be
+updated to enable replacement.
+
+For older projects, Publish preserves recorded model usage and fills missing
+reasoning/generation groups from current system settings in the publication ZIP.
+Supplemented records use `source: publication_config_fallback`; the online preview
+labels this provenance. Original Run files and approval receipts remain intact.

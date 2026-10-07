@@ -15,7 +15,7 @@ import { SessionRegistry } from "./session-registry.js";
 import { PreviewService } from "./preview-service.js";
 import { readRuntimeConfig, saveRuntimeConfig } from "./config-store.js";
 import { prepareProjectExport } from "./project-export.js";
-import { DEFAULT_SITE_URL, publishProject } from "./project-publish.js";
+import { DEFAULT_SITE_URL, publicationStatus, publishProject } from "./project-publish.js";
 import { pipeline } from "node:stream/promises";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -235,7 +235,11 @@ const server = createServer(async (request, response) => {
       const input = record(await body(request));
       if (typeof input.text !== "string") throw new Error("text is required");
       const projectId = typeof input.projectId === "string" ? input.projectId : undefined;
-      if (projectId) await primeDraftRun(workspaceDir, projectId, promptMatch[1], input.text);
+      if (!projectId || !(await runInventory(workspaceDir, { summary: true })).some(run => run.id === projectId)) {
+        json(response, 409, { error: "Create or select a project before sending a message" });
+        return;
+      }
+      await primeDraftRun(workspaceDir, projectId, promptMatch[1], input.text);
       const images = Array.isArray(input.images)
         ? input.images.flatMap((value) => {
             const item = record(value);
@@ -281,8 +285,12 @@ const server = createServer(async (request, response) => {
     }
     const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
     const publishMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/publish$/);
+    if (request.method === "GET" && publishMatch?.[1]) {
+      json(response, 200, await publicationStatus(workspaceDir, decodeURIComponent(publishMatch[1]), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL));
+      return;
+    }
     if (request.method === "POST" && publishMatch?.[1]) {
-      json(response, 201, await publishProject(workspaceDir, decodeURIComponent(publishMatch[1]), await body(request), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL));
+      json(response, 201, await publishProject(workspaceDir, decodeURIComponent(publishMatch[1]), await body(request), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL, (await readRuntimeConfig(configRoot)).values));
       return;
     }
     const exportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/export$/);

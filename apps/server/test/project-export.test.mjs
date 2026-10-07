@@ -87,3 +87,9 @@ test('export preserves model records and opens the attributed wrapper without ch
  const get=async path=>(await exec('unzip',['-p',archive.path,`${f.runId}/${path}`])).stdout;
  assert.match(await get('index.html'),/artifacts\/00-model-preview.html/);assert.deepEqual(JSON.parse(await get('plan/model-usage.json')),models);assert.equal(await get(f.entry),f.outputs[f.entry]);
 });
+
+test('export omits Finder metadata and private hidden files from public project folders',async t=>{
+ const f=await fixture(t,'gallery');
+ for(const file of ['artifacts/.DS_Store','research/.DS_Store','artifacts/.env','artifacts/__MACOSX/._image.jpg']){await mkdir(dirname(join(f.run,file)),{recursive:true});await writeFile(join(f.run,file),'private metadata')}
+ const archive=await prepareProjectExport(f.workspace,f.runId);try{const files=(await exec('unzip',['-Z1',archive.path])).stdout;assert.doesNotMatch(files,/DS_Store|\.env|__MACOSX/);assert.match(files,/00-gallery\.html/)}finally{await archive.cleanup()}
+});

@@ -267,5 +267,19 @@
   "info": "信息",
   "Researching": "调研中",
   "Designing": "设计中",
-  "Building": "构建中"
+  "Building": "构建中",
+  "This project has already been published. Publishing again will replace its previous contents at the same website address.": "此项目已发布。再次发布将覆盖官网上的上一版本，作品地址保持不变。",
+  "A previous publication attempt exists. If it reached the website, publishing again will replace that version.": "此项目有过发布尝试。如上次已上传到官网，再次发布将覆盖该版本。",
+  "I confirm publication and replacement of this project's previous published contents.": "我确认公开发布，并覆盖此项目之前发布的内容。",
+  "Confirm & Replace": "确认并覆盖",
+  "Packaging project…": "正在打包项目…",
+  "Uploading project…": "正在上传项目…",
+  "Upload complete. Waiting for website deployment…": "上传完成，等待官网解压与部署…",
+  "Publication complete": "发布完成",
+  "Publication progress": "发布进度",
+  "Please wait. Keep this window open until publication finishes.": "请等待发布完成，期间请保持此窗口打开。",
+  "Publishing…": "正在发布…",
+  "Retry": "重试",
+  "HTML UX/UI projects cannot currently be published to the official Gallery": "HTML 类型的 UX/UI 作品暂不支持发布至官网 Gallery",
+  "Create a project to start chatting": "请先创建项目，再开始对话"
 }

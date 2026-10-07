@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { syncReleaseVersion } from './desktop/version.mjs';
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { mkdir, readFile, readdir } from 'node:fs/promises';
@@ -8,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('Usage: npm run release:mac [-- --skip-install]\n\nBuild and verify the Apple Silicon macOS installer.\nRequires macOS arm64, Node >=22.19, npm, internet access and a logged-in desktop session.\n--skip-install reuses the already installed, locked development dependencies.\nVersion is read from apps/desktop/package.json; no Git or version changes are made.');
+  console.log('Usage: npm run release:mac [-- --skip-install]\n\nBuild and verify the Apple Silicon macOS installer.\nRequires macOS arm64, Node >=22.19, npm, internet access and a logged-in desktop session.\n--skip-install reuses the already installed, locked development dependencies.\nVersion is synchronized from the current v<major>.<minor>.<patch> Git branch.');
 } else {
   let log;
   try {
@@ -16,6 +17,7 @@ if (args.includes('--help')) {
     if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Run this release on an Apple Silicon Mac (macOS arm64).');
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (major < 22 || (major === 22 && minor < 19)) throw new Error('Node.js 22.19 or newer is required.');
+    await syncReleaseVersion(root);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const logDir = join(root, 'release', 'logs');
     await mkdir(logDir, { recursive: true });

@@ -90,14 +90,14 @@ export function App() {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       try {
         const [existing, loadedRuns, initialAssets, runtimeHealth] = await Promise.all([listSessions(), listRuns(), listAssets(), getHealth()]);
-        const next = existing.length > 0 ? existing : [await createSession()];
-        const existingRuns = existing.length > 0 ? loadedRuns : await listRuns();
+        const next = existing;
+        const existingRuns = loadedRuns;
         setSessions(next);
         setRuns(existingRuns);
         setActiveRunId((current) => current && existingRuns.some((run) => run.id === current) ? current : existingRuns[0]?.id);
         setActiveId((current) => current && next.some((session) => session.id === current)
           ? current
-          : next.find((session) => session.id === existingRuns[0]?.sessionId)?.id ?? next[0]?.id);
+          : existingRuns.length ? next.find((session) => session.id === existingRuns[0]?.sessionId)?.id ?? next[0]?.id : undefined);
         setAssets(initialAssets);
         setHealth(runtimeHealth);
         workspaceReady.current = true;
@@ -262,7 +262,7 @@ export function App() {
       const [nextRuns, nextAssets] = await Promise.all([listRuns(), listAssets()]);
       setRuns(nextRuns);
       setAssets(nextAssets);
-      if (activeRunId === runId) setActiveRunId(nextRuns[0]?.id);
+      if (activeRunId === runId) { setActiveRunId(nextRuns[0]?.id); setActiveId(nextRuns[0]?.sessionId); }
       setNotice("Project moved to local Trash");
       window.setTimeout(() => setNotice(undefined), 2600);
     } catch (error) {
@@ -348,7 +348,7 @@ export function App() {
   }
 
   async function send(text: string, images: PendingImage[], presentation?: { userText?: string; waitingLabel?: string }) {
-    if (!activeId) return;
+    if (!activeId || !activeRun) return;
     setRunning(true);
     awaitingRun.current = true;
     runIdsBeforePrompt.current = new Set(runs.map((run) => run.id));
@@ -445,7 +445,7 @@ export function App() {
           </aside>
         )}
       </section>
-      {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
+      {panelOpen && <AgentPanel disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
       {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label={t("Close agent panel")} onClick={() => setPanelOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}
