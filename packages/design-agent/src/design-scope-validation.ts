@@ -40,6 +40,8 @@ export async function validateDesignScopes(runDir: string, plan: Record<string, 
     const outputs = deliverables.filter((item) => item.scope_id === scope.id || contributions.get(item)?.some((entry) => entry.scope_id === scope.id));
     if (!outputs.length) issues.push(`Design scope ${scope.id} has no declared deliverables. Bind a contribution with contributing_scopes instead of inventing duplicate tasks or files.`);
     if (scope.category === "ux" && !outputs.some((item) => item.method === "html_generate")) issues.push(`UX scope ${scope.id} requires an HTML page design, not only screen-image prompts`);
+    const owned = outputs.filter(item => item.scope_id === scope.id);
+    if (scope.category !== "ux" && owned.length && !owned.some(item => ["image_generate", "image_edit"].includes(String(item.method)))) issues.push(`Non-UX scope ${scope.id} requires design imagery, not only an HTML showcase or manual document`);
   }
   for (const deliverable of deliverables) {
     const scope = scopes.find((item) => item.id === deliverable.scope_id);

@@ -92,7 +92,8 @@ async function fixture(workspaceDir, mixed = false, options = {}) {
   const originalBrowser = process.env.DREAMATIC_HTML_BROWSER;
   if (options.legacyApproval) process.env.DREAMATIC_HTML_BROWSER = 'off';
   try {
-  await invoke(designer, 'design_bus_post', { runId: 'demo', type: 'design_spec_ready', from_agent: 'designer', to: 'orchestrator', summary: 'Designed', ...(options.omitArtifactRefs ? {} : { artifactRefs: ['plan/design_plan.json'] }), requestedAction: options.requestedAction ?? 'Review' });
+  const publication = await invoke(designer, 'design_bus_post', { runId: 'demo', type: 'design_spec_ready', from_agent: 'designer', to: 'orchestrator', summary: 'Designed', ...(options.omitArtifactRefs ? {} : { artifactRefs: ['plan/design_plan.json'] }), requestedAction: options.requestedAction ?? 'Review' });
+  assert.equal(value(publication).ok, true, JSON.stringify(value(publication)));
   const { tools: reviewer } = harness(workspaceDir, 'reviewer');
   await jsonFile(runDir, 'review/design-review.json', { runId: 'demo', review_stage: 'design_context', verdict: 'pass', round: 1, summary: 'Ready', scores: {}, issues: [] });
   await writeFile(join(runDir, 'review/design-review.md'), 'Approved design');
@@ -322,7 +323,7 @@ test('verified missing professional knowledge allows a recorded gap but availabl
     const tools = harness(workspace, 'designer').tools;
     const runDir = join(workspace, 'runs/demo');
     const plan = { skill_selection: [], skill_gaps: [{ scope_id: 'product', reason: 'No suitable professional module installed' }] };
-    const manifest = { deliverables: [{ id: 'concept', scope_id: 'product', category: 'industrial', skill_refs: [], method: 'manual' }] };
+    const manifest = { deliverables: [{ id: 'concept', scope_id: 'product', category: 'industrial', skill_refs: [], method: 'image_generate' }] };
     await invoke(tools, 'list_skills', { scopeId: 'product' });
     await assert.rejects(validateDesignScopes(runDir, plan, manifest), /actually loaded primary/);
     const discovered = value(await invoke(tools, 'list_skills', { scopeId: 'product', refresh: true }, { cwd: workspace }));
@@ -1455,4 +1456,21 @@ test('image edits use one approval/execution contract and reject unchanged reuse
     image.changes = ['Retain original image without visual modification'];
     await assert.rejects(validateDeliveryContract(runDir, deliveryContract(plan, manifest)), /unchanged reuse/);
   } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('non-UX primary scopes cannot replace design imagery with a manual document or HTML showcase', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-domain-routing-'));
+  const old = process.env.DREAMATIC_HTML_BROWSER;
+  try {
+    process.env.DREAMATIC_HTML_BROWSER = 'off';
+    const { runDir, plan, manifest } = await fixture(workspace, true);
+    for (const method of ['manual', 'html_generate']) {
+      const changed = structuredClone(manifest);
+      changed.deliverables.find(item=>item.scope_id==='product').method = method;
+      await assert.rejects(validateDesignScopes(runDir, plan, changed), /Non-UX scope product requires design imagery/);
+    }
+  } finally {
+    if (old === undefined) delete process.env.DREAMATIC_HTML_BROWSER; else process.env.DREAMATIC_HTML_BROWSER = old;
+    await rm(workspace,{recursive:true,force:true});
+  }
 });

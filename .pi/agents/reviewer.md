@@ -82,6 +82,10 @@ Use remaining risks/future tests for ordinary concept uncertainty.
    A filename change, an existing reference file or a fallback is not evidence of
    an executable resource pipeline. Confirm source/interaction readiness before
    approval; Builder should not discover missing design work or audit it again.
+   Correction objectives must use the same resource contract: require trusted
+   imports/mappings for original content, not links to examples/research folders
+   or instructions to regenerate originals. Missing source content belongs to
+   Researcher; Designer repairs the plan. Do not prescribe unverified filenames.
 4. Score applicable dimensions, localize issues and issue the verdict.
 
 For open-ended tasks, inspect whether exploration is meaningfully different,
@@ -215,7 +219,7 @@ use patch_json with the latest sha256 instead of regenerating a complete JSON
 file. Do not repeat successful reads, writes, acquisition or generation.
 
 User-specified material exception: explicitly user-provided URLs and uploads may
-be reused unchanged. Orchestrator/Researcher/Designer calls user_asset_import
+be reused unchanged. Researcher/Designer calls user_asset_import
 before approval (sourcePageUrl only for an asset actually linked on the user's
 page). The tool returns a verified inputs/user-assets/<hash>.<ext> source. Designer
 maps it in resources to artifacts/<page>/assets/<file>; no image producer

@@ -15,6 +15,7 @@ import { SessionRegistry } from "./session-registry.js";
 import { PreviewService } from "./preview-service.js";
 import { readRuntimeConfig, saveRuntimeConfig } from "./config-store.js";
 import { prepareProjectExport } from "./project-export.js";
+import { DEFAULT_SITE_URL, publishProject } from "./project-publish.js";
 import { pipeline } from "node:stream/promises";
 
 const repoRoot = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -279,6 +280,11 @@ const server = createServer(async (request, response) => {
       return;
     }
     const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+    const publishMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/publish$/);
+    if (request.method === "POST" && publishMatch?.[1]) {
+      json(response, 201, await publishProject(workspaceDir, decodeURIComponent(publishMatch[1]), await body(request), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL));
+      return;
+    }
     const exportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
     if (request.method === "GET" && exportMatch?.[1]) {
       const archive = await prepareProjectExport(workspaceDir, decodeURIComponent(exportMatch[1]));

@@ -27,6 +27,7 @@ import { ResponseBodyTimeoutError, boundedResponseBytes, imageRequestScheduler, 
 import { dreamaticSessionFailure, stopAfterCommittedTurn } from "./session-status.js";
 import { isRetryableStatus, retryAfterMs, RetryableHttpError, withRetry, type RetryNotice } from "./retry.js";
 import { DESIGN_CAPABILITIES, approvedImageEdit, approvedImageAcceptance, designSpecificationProtocol, normalizeDraftPresentation, deliveryContract, designSourceFiles, fileHash, htmlTask, imagePlan, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
+import { extractUserMaterial } from "./user-material-extract.js";
 import { importUserAsset, recordUserMaterialSources, userMaterialInventory } from "./user-assets.js";
 import { lintHtmlSourceResources, materializeHtml } from "./html-delivery.js";
 import { encodeImageOutput, imageBytesMatchPath, imageOutputFormat, type ImageOutputMime } from "./image-output.js";
@@ -82,8 +83,8 @@ const STAGE_REQUIRED_FILES: Record<string, string[]> = {
 };
 
 export const DREAMATIC_PERSONA_TOOL_POLICY = {
-  orchestrator: ["user_asset_import", "read", "write", "write_json", "patch_json", "edit", "ls", "grep", "find", "ask_user", "todo_write", "run_init", "run_revision", "spawn_agent", "design_bus_post", "design_bus_read", "export_package"],
-  researcher: ["user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
+  orchestrator: ["read", "write", "write_json", "patch_json", "edit", "ls", "grep", "find", "ask_user", "todo_write", "run_init", "run_revision", "spawn_agent", "design_bus_post", "design_bus_read", "export_package"],
+  researcher: ["user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
   designer: ["user_asset_import", "read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
   reviewer: ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"],
   builder: ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"],
@@ -497,7 +498,7 @@ function referenceReviewCoverage(manifest: Record<string, unknown> | undefined, 
   const missingAssetIds = assets.filter((asset) => !decisions.some((decision) => decision.asset_id === asset.id)).map((asset) => asset.id);
   const unreviewedAdoptions = decisions.filter((decision) => ["adopt", "transform"].includes(String(decision.decision)) && (decision.review_status !== "viewed" || !Array.isArray(decision.extracted_features) || decision.extracted_features.length === 0)).map((decision) => decision.asset_id);
   const warnings: string[] = [];
-  if (missingAssetIds.length) warnings.push(`Reference library has ${assets.length} assets; missing per-asset dispositions: ${missingAssetIds.join(", ")}. Screen them with view_image(paths) or explicitly explain metadata-based rejection/deferral; do not silently ignore the library.`);
+
   if (unreviewedAdoptions.length) warnings.push(`Visual adoption requires inspection and observed features, not metadata alone: ${unreviewedAdoptions.join(", ")}.`);
   return { retainedAssets: assets.length, missingAssetIds, unreviewedAdoptions, warnings, evidenceScope: "Declared screening coverage, not proof of actual visual reasoning" };
 }
@@ -2053,6 +2054,19 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     });
 
     pi.registerTool({
+      name: "user_material_extract",
+      label: "Extract user page content",
+      description: "Extract text and concrete image links from user-provided webpages, GitHub repository READMEs, uploads or linked content. Keeps requested identity assets; selected imageUrls are imported unchanged with trusted receipts. This is user-content acquisition, not general reference research.",
+      parameters: Type.Object({ runId: Type.String(), source: Type.String(), sourcePageUrl: Type.Optional(Type.String()), imageUrls: Type.Optional(Type.Array(Type.String(), { maxItems: 24 })) }),
+      async execute(_id, params, signal) {
+        assertAssignedRun(params.runId, "user_material_extract");
+        const state = await readJsonRecord(resolveInside(workspaceDir, join("runs", safeRunId(params.runId))), "run-state.json");
+        if (state.status === "complete") throw new Error("Call run_revision before acquiring new material for a completed Run");
+        return textResult(await extractUserMaterial(workspaceDir, params, signal));
+      },
+    });
+
+    pi.registerTool({
       name: "user_asset_import",
       label: "Import user material",
       description: "Import exact user-provided image/video/document bytes into the assigned Run. source must be an explicit user URL or persisted upload; sourcePageUrl allows an asset actually linked by a user-provided page. Returns the trusted inputs/user-assets/... source for approved HTML resource copying.",
@@ -3087,7 +3101,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       async execute(_id, params) {
         assertAssignedRun(params.runId, "design_context_read");
         const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
-        const common = ["brief.json", "design-context.json"];
+        const common = ["brief.json", "design-context.json", ".performance/user-materials.json"];
         const byAudience = {
           researcher: RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")),
           designer: [...RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")), "review/design-review.json", ...STAGE_REQUIRED_FILES.designer!],

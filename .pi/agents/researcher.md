@@ -7,6 +7,7 @@ color: "#5AA9A4"
 default_approval_mode: ask
 can_spawn: false
 allowed_tools:
+  - user_material_extract
   - user_asset_import
   - read
   - write
@@ -104,6 +105,19 @@ classes rather than pad results. Judge expertise, accountable authorship, eviden
 dates and credits. Prefer original reporting; label vendor/sponsored claims.
 Syndicated copies are one origin. Preserve older foundations but check changing
 claims for freshness; record disagreements and access limits honestly.
+
+# User Content Comes First
+
+When the user asks to use content from uploads, conversation or a URL, extract
+that content before general reference research. Use `user_material_extract` for
+webpages, repository READMEs and supported documents; use `user_asset_import`
+for selected originals. Preserve requested copy, image URLs, provenance and
+returned `inputs/user-assets/` paths in evidence. Conversation text is already
+source content. Record access/format gaps; do not invent replacements or defer
+required images to deployment. User-source logos and Gallery images are content,
+not incidental research images; the exclusions below apply to general references.
+For GitHub tree URLs, the tool reads that directory's README. Follow relevant
+file links in the same repository/ref with the user's tree URL as sourcePageUrl.
 
 # Acquire Text and Images
 

@@ -5,6 +5,7 @@ import { parseEnv } from "node:util";
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export const CONFIG_FIELDS: ConfigField[] = [
+  { key: "DREAMATIC_SITE_URL", label: "DreamaticSite URL", module: "system", example: "https://www.dreamatic.art/", description: "Official website for Publish. Use HTTPS; localhost HTTP is allowed for development. No login is required.", type: "url", defaultValue: "https://www.dreamatic.art/" },
   {
     "key": "DREAMATIC_SEARCH_PROVIDER",
     "label": "Search provider",

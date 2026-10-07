@@ -21,6 +21,14 @@ The current **v2.0.3 development line** supports:
 - **Persistent Web and CLI workflows:** Both interfaces share the same agents,
   workspace, project state and recovery mechanism.
 
+User-requested page content is extracted by Researcher before design. The
+`user_material_extract` tool supports webpages, GitHub READMEs, HTML/Markdown/text
+uploads and modern Office text/images; selected originals are imported with
+verified source receipts. Designer maps reused originals directly into HTML
+resources and declares producers for new imagery. PDF/scanned and legacy Office
+extraction gaps are reported explicitly. See the [design pipeline audit](docs/DESIGN_PIPELINE_AUDIT_2026-10-07.md)
+for the failure evidence, changes and validation.
+
 ## Workflow and agents
 
 ```text
@@ -347,3 +355,21 @@ Further details:
 ## License
 
 [MIT](LICENSE)
+
+## Publish a design to DreamaticSite
+
+After a completed build, open **Preview → Publish**. Review the project and
+public destination, optionally enter your name, organization and website, and
+confirm publication. The complete project export is compressed and uploaded to
+`https://www.dreamatic.art/`; the site validates and deploys it into Gallery, then
+removes the uploaded ZIP. Leave your name blank to display **Anonymous**. These
+self-declared details do not use or activate the site's login system.
+
+The export includes design outputs, source files and reference material, without
+sessions or system credentials. Check the public-sharing confirmation before
+uploading. Published designs provide links to their online preview and Gallery.
+
+Configure `DREAMATIC_SITE_URL` under **Settings → System parameters** to change
+the site origin. HTTPS is required; HTTP localhost is supported for development.
+The website must run the matching DreamaticSite publishing API, allow 128 MiB
+uploads at its reverse proxy, and have write access to its Gallery directory.

@@ -1,6 +1,7 @@
-import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, ZoomIn } from "lucide-react";
+import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, Upload, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadProject, getCanvasState, getHtmlPreview, saveCanvasState } from "../api";
+import { PublishDialog } from "./PublishDialog";
 import { assetUrl } from "../asset-url";
 import type { Asset, CanvasElementState, CanvasState, RunView } from "../types";
 
@@ -125,11 +126,13 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   const [previewError, setPreviewError] = useState<string>();
   const [previewMode, setPreviewMode] = useState(false);
   const [previewPages, setPreviewPages] = useState<Array<{ path: string; url: string }>>([]);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string>();
   useEffect(() => {
     // Invalidate in-flight requests when switching projects or rebuilding.
     previewRequest.current++;
+    setPublishOpen(false);
     setPreviewUrl(undefined);
     setPreviewError(undefined);
     setPreviewPages([]);
@@ -300,7 +303,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
         <section className="showcase-view">
           {interactive && previewPages.length > 1 && <div className="preview-pages"><label>Page <select aria-label="Prototype page" value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
           {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "DreamaticArt"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "DreamaticArt"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? "Preparing interactive preview…"}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>Retry preview</button>}</div>}
-          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? "Exporting…" : "Export"}</button></div>}
+          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? "Exporting…" : "Export"}</button><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> Publish</button></div>}
           {exportError && <p className="preview-export-error" role="alert">{exportError}</p>}
         </section>
       ) : (
@@ -360,6 +363,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
           {saving && <span className="canvas-saving">Saving…</span>}
         </div>
       )}
+      {publishOpen && run && <PublishDialog key={run.id} runId={run.id} title={run.title} onClose={() => setPublishOpen(false)} />}
     </main>
   );
 }

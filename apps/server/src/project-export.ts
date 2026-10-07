@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 
 /** Download-only snapshot. Never alter a Run or start an agent/export workflow. */
-export async function prepareProjectExport(workspaceDir: string, runId: string): Promise<{ path: string; filename: string; cleanup: () => Promise<void> }> {
+export async function prepareProjectExport(workspaceDir: string, runId: string, options: { publication?: Record<string, unknown> } = {}): Promise<{ path: string; filename: string; cleanup: () => Promise<void> }> {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(runId)) throw new Error("Invalid run id");
   const runsRoot = await realpath(join(workspaceDir, "runs"));
   const runDir = await realpath(join(runsRoot, runId));
@@ -60,6 +60,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string):
     // A portable launcher; the approved page itself is copied byte-for-byte.
     await writeFile(join(packageDir, "index.html"), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${entryUrl}"><title>DreamaticArt Preview</title><a href="${entryUrl}">Open preview</a>\n`);
     await writeFile(join(packageDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), entry, files: [...files, "index.html", "package-manifest.json"] }, null, 2));
+    if (options.publication) await writeFile(join(packageDir, "publication.json"), JSON.stringify(options.publication, null, 2));
     const archive = join(temp, `${runId}.zip`);
     // Argument array (no shell); work on the snapshot so concurrent Run updates cannot enter the archive.
     await exec("zip", ["-q", "-r", archive, runId], { cwd: temp, timeout: 120_000 });

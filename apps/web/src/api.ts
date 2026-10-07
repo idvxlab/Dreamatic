@@ -228,3 +228,9 @@ export async function downloadProject(runId: string): Promise<void> {
   // Allow the browser to consume the blob before releasing it.
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
+
+
+export interface PublishCreator { name: string; affiliation: string; website: string }
+export async function publishProject(runId: string, creator: PublishCreator, publicationId: string): Promise<{ projectId: string; previewUrl: string; galleryUrl: string }> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmed: true, creator, publicationId }) }));
+}

@@ -496,7 +496,8 @@ test("reference inventory exposes legacy paths and flags missing or unreviewed d
     assert.deepEqual(initial.referenceInventory.map((asset) => asset.viewPath), [join(runDir, "research/assets/legacy.png"), join(runDir, "research/assets/modern.png")]);
     assert.deepEqual(initial.referenceReview.missingAssetIds, ["legacy", "modern"]);
     const warning = JSON.parse((await tools.get("write_json").execute("plan", { runId: "demo", path: "plan/design_plan.json", data: { image_generation_plan: [], reference_use_decisions: [{ asset_id: "legacy", decision: "transform", review_status: "metadata_only" }] } })).content[0].text);
-    assert.equal(warning.warnings.length, 2);
+    assert.equal(warning.warnings.length, 1);
+    assert.match(warning.warnings[0], /Visual adoption requires/);
     const reviewer = JSON.parse((await tools.get("design_context_read").execute("review", { runId: "demo", audience: "reviewer" })).content[0].text);
     assert.equal(reviewer.files.some((file) => file.path === "research/assets/manifest.json"), true);
     assert.deepEqual(reviewer.referenceReview.missingAssetIds, ["modern"]);
@@ -638,7 +639,8 @@ test("export_package rejects unapproved or unimplemented design context", async 
 });
 
 test("persona tool policies keep reasoning separate from execution", () => {
-  const researcher = dreamaticPersonaTools("researcher", ["user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
+  assert.throws(() => dreamaticPersonaTools("orchestrator", ["read", "user_asset_import", "user_material_extract", "websearch_batch", "html_generate", "image_generate"]), /disallowed: user_asset_import/);
+  const researcher = dreamaticPersonaTools("researcher", ["user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
   const designer = dreamaticPersonaTools("designer", ["user_asset_import", "read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
   const reviewer = dreamaticPersonaTools("reviewer", ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"]);
   const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"]);
@@ -1109,7 +1111,7 @@ test("review contract admits scoped creative hypotheses while retaining factual-
     assert.deepEqual(JSON.parse(await readFile(join(runDir, "review/design-review.json"), "utf8")).claim_review, review.claim_review);
     const blocked = { ...review, issues: [{ id: "unsafe-claim", severity: "blocking", status: "open", evidence: "Unverified claim of certified operational safety" }] };
     await tools.get("write_json").execute("blocking-review", { runId, path: "review/design-review.json", data: blocked });
-    await assert.rejects(() => tools.get("design_bus_post").execute("invalid-pass", { runId, type: "design_review_pass", from_agent: "reviewer", to: "orchestrator", summary: "Cannot approve the operational claim", artifactRefs: ["review/design-review.json"] }), /open blocking issue/);
+    await assert.rejects(() => tools.get("design_bus_post").execute("invalid-pass", { runId, type: "design_review_pass", from_agent: "reviewer", to: "orchestrator", summary: "Cannot approve the operational claim", artifactRefs: ["review/design-review.json"] }), /unresolved blocking issue/);
     await tools.get("write_json").execute("fail-review", { runId, path: "review/design-review.json", data: { ...blocked, verdict: "fail" } });
     await tools.get("design_bus_post").execute("fail", { runId, type: "design_review_fail", from_agent: "reviewer", to: "orchestrator", summary: "Correct the unsupported safety claim without prohibiting the concept", artifactRefs: ["review/design-review.json", "review/design-review.md"] });
     assert.equal(JSON.parse(await readFile(join(runDir, "design-context.json"), "utf8")).status, "needs_revision");

@@ -12,26 +12,26 @@ metadata:
 # Showcase Layout
 
 Use before Builder authors or revises `artifacts/00-gallery.html`. Present the
-approved work; do not redesign it, regenerate images or introduce a new visual
-style. This independent module needs no other Skill. User intent and the Agent
+approved work; design its presentation without redesigning or regenerating the
+delivered works. This independent module needs no other Skill. User intent and the Agent
 contract govern scope and completion; unavailable Skills never block delivery.
 
 ## Organize the story
 
 Read the approved plan, deliverable purposes and available `showcase` copy from
-the current Design Context. Map every delivered work to a meaningful theme and
-presentation weight before writing HTML. Respect explicit grouping/priority;
-otherwise infer them from approved purposes, not filenames alone or new research.
+the current Design Context. Respect explicit grouping, priorities and supplied
+copy. Otherwise choose meaningful themes and presentation weights from approved
+intent and deliverable purposes, and write faithful descriptions and a summary.
+Missing optional presentation instructions do not require another design approval.
 Do not omit supporting images to make a shorter page.
 
-Use this reading order: project title and overall work description; thematic
-sections; collection conclusion; compact reference library; bibliography.
-Themes may follow concepts, applications, scenarios, details or systems as the
-work warrants. Do not impose the same categories on every design discipline,
+Use this reading order: project title and overall work description; every delivered
+image with a distinct caption in thematic sections; collection conclusion; compact
+reference library; bibliography. Choose themes that clarify the approved work. Do not impose the same categories on every design discipline,
 split single works into artificial themes or create empty sections.
 
 Each theme has a semantic `<section>`, a visible `<h2>` and a separator rule.
-Use `<h3>` only for real subthemes, not every image. A short theme introduction
+Use `<h3>` only for real subthemes, not every image. A concise theme introduction
 can explain the relationship between works without revealing internal reasoning.
 Captions describe the design/view, distinguishing features and intended use;
 never substitute prompts, scoring, retry logs or unverified performance claims.

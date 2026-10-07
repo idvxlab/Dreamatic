@@ -37,6 +37,7 @@ export const DREAMATIC_ACTIVE_TOOLS = [
   "research_fetch",
   "research_fetch_batch",
   "research_asset_discover",
+  "user_material_extract",
   "user_asset_import",
   "research_asset_fetch",
   "research_asset_fetch_batch",

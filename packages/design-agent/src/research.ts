@@ -148,7 +148,7 @@ function focusedExcerpt(source: string, terms: string[], limit: number): { text:
   return { text: selected.sort((first, second) => first.start - second.start).map((entry) => source.slice(entry.start, entry.end)).join("\n[…]\n"), matchedTerms, method: "topic_passages" };
 }
 
-function rejectVerificationPage(title: string, text: string): void {
+export function rejectVerificationPage(title: string, text: string): void {
   const challengeTitle = /^(?:checking your browser|just a moment|attention required|access denied|robot verification|making sure you(?:'|’)re not a bot)/iu.test(title);
   const challengeText = text.length < 4_000 && /(?:verify that you(?:'|’)re not a robot|making sure you(?:'|’)re not a bot|checking your browser before accessing|javascript is disabled.{0,180}verify|enable javascript and cookies to continue)/iu.test(text);
   if (challengeTitle || challengeText) {

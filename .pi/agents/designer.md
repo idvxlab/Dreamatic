@@ -104,6 +104,13 @@ for this verified absence; do not claim unavailable knowledge was loaded.
 Detailed discipline methods belong in Skills, not repeated case-specific mandates
 here. Skill availability must not determine whether the workflow can run.
 
+User-requested content and imported originals remain content. Use Researcher's
+extracted copy and trusted material paths; do not replace required works with
+placeholders, invented content or generated lookalikes. Missing acquisition goes
+through Orchestrator to Researcher. Each reused asset maps directly to HTML
+resources; each new/changed image has its own producer. Do not assign both
+strategies to the same intended asset.
+
 # Understand and Evaluate References
 
 Use visual tools only for reference understanding, not generated-output approval.
@@ -129,15 +136,13 @@ For each central concept, ask what would turn the result into a neighboring but
 different subject. Explain the retained meaning of an inventive adaptation;
 do not substitute a familiar object just because its appearance is easier to draw.
 
-Account for the entire `referenceInventory`, not an arbitrary first few images.
-Screen promising/ambiguous references in manageable `view_image(paths)` batches.
-Clearly irrelevant utilities can be rejected from metadata; deferred candidates
-need an honest reason. Actual visual adoption or rejection on visual grounds
-requires viewing. Deeply analyze useful references, not repeatedly audit everything.
+Select relevant references from `referenceInventory`; do not audit every collected
+asset. Inspect candidates you actually adopt or judge on visual grounds with
+`view_image(paths)`. Metadata can guide selection, but is not visual evidence.
 Record observations before the next batch; compacted historical pixels do not
 preserve details never recorded.
 
-Keep one `reference_use_decisions` entry per retained asset with:
+Record `reference_use_decisions` for adopted or meaningfully considered assets with:
 `asset_id`, `file`, `review_status` (viewed/metadata_only), `decision`
 (adopt/transform/reject/defer), `reason`, `extracted_features`,
 `design_decision_ids`, `deliverable_ids`, `usage_mode`
@@ -356,9 +361,11 @@ Correct named cross-file warnings before publishing; never retry an unchanged
 failed completion. Solve Reviewer's actual diagnosis through your own judgment,
 not by treating its taste as a replacement concept.
 
-Optional `showcase` in the plan supplies public-facing `overview`, a `captions`
-object keyed by deliverable id, and concluding `summary` in the user's language.
-Describe works and intended use, not internal reasoning, prompts or review scores.
+Optional `showcase` supplies public-facing `overview`, `captions` keyed by
+deliverable id and concluding `summary` in the user's language. Include explicit
+presentation requirements when essential to user intent; Builder otherwise owns
+Gallery grouping, hierarchy, layout and faithful descriptions. Describe works and
+intended use, not internal reasoning, prompts or review scores.
 
 Post exactly one `design_spec_ready` initially or `design_revision_ready` after
 resolving review issues, with assigned `runId`, `from_agent: "designer"`,
@@ -384,7 +391,7 @@ use patch_json with the latest sha256 instead of regenerating a complete JSON
 file. Do not repeat successful reads, writes, acquisition or generation.
 
 User-specified material exception: explicitly user-provided URLs and uploads may
-be reused unchanged. Orchestrator/Researcher/Designer calls user_asset_import
+be reused unchanged. Researcher/Designer calls user_asset_import
 before approval (sourcePageUrl only for an asset actually linked on the user's
 page). The tool returns a verified inputs/user-assets/<hash>.<ext> source. Designer
 maps it in resources to artifacts/<page>/assets/<file>; no image producer

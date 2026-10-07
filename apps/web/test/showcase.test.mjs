@@ -24,11 +24,17 @@ window.setRun(window.initialRun);`;
   const js = bundle.output.find((item) => item.type === 'chunk').code;
   const baseRun = { id: 'ux', title: 'Academic homepage', status: 'complete', stages: { build: 'completed' }, notes: [], documents: [], activity: [], agentSessions: [], assetCount: 0 };
   const ux = { ...baseRun, presentation: { mode: 'html', entry: 'artifacts/academic/index.html' }, showcasePath: 'runs/ux/final/artifacts/academic/index.html' };
-  let calls = 0, failNext = false, exportCalls = 0, failExport = false, invalidExport = undefined;
+  let calls = 0, failNext = false, exportCalls = 0, failExport = false, invalidExport = undefined, publishCalls = 0;
   const entries = [];
   const server = createServer(async (req, res) => {
     if (req.url === '/bundle.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(js); return; }
     if (req.url.endsWith('/canvas')) { res.setHeader('Content-Type', 'application/json'); res.end('null'); return; }
+    if (req.url === '/api/config') { res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({values:{DREAMATIC_SITE_URL:'https://www.dreamatic.art/'}})); return; }
+    if (req.url.endsWith('/publish')) {
+      publishCalls++; let body = ''; for await (const chunk of req) body += chunk;
+      const input=JSON.parse(body); assert.equal(input.confirmed,true); assert.equal(input.creator.name,'Test creator');
+      res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({projectId:'published-ui',previewUrl:'https://www.dreamatic.art/gallery-assets/published-ui/artifacts/index.html',galleryUrl:'https://www.dreamatic.art/#gallery'})); return;
+    }
     if (req.url.endsWith('/preview')) {
       calls++; let body = ''; for await (const chunk of req) body += chunk;
       entries.push(JSON.parse(body).entry);
@@ -68,6 +74,15 @@ window.setRun(window.initialRun);`;
     assert.equal(await page.locator('iframe').getAttribute('sandbox'), 'allow-scripts allow-downloads');
     assert.equal(await page.getByRole('combobox', { name: 'Prototype viewport' }).count(), 0);
     assert.equal(await page.getByRole('link', {name:'Open',exact:true}).getAttribute('href'), `http://127.0.0.1:${server.address().port}/designed/index.html`);
+    await page.getByRole('button', {name:'Publish',exact:true}).click();
+    const publishDialog = page.getByRole('dialog', {name:'Publish to DreamaticSite'});
+    await publishDialog.waitFor(); assert.equal(publishCalls,0);
+    assert.equal(await publishDialog.getByRole('button',{name:'Confirm & Publish'}).isDisabled(),true);
+    await publishDialog.getByLabel('Name',{exact:true}).fill('Test creator');
+    await publishDialog.getByRole('checkbox').check();
+    await publishDialog.getByRole('button',{name:'Confirm & Publish'}).click();
+    await publishDialog.getByRole('link',{name:'Open published design'}).waitFor();assert.equal(publishCalls,1);
+    await publishDialog.getByRole('button',{name:'Done'}).click();
     const downloadEvent = page.waitForEvent('download');
     await page.getByRole('button', {name:'Export',exact:true}).click();
     const download = await downloadEvent; assert.equal(download.suggestedFilename(), 'ux.zip');

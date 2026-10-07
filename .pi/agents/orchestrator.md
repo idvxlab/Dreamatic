@@ -12,7 +12,6 @@ spawn_allowlist:
   - reviewer
   - builder
 allowed_tools:
-  - user_asset_import
   - read
   - write
   - write_json
@@ -81,6 +80,7 @@ has been answered. A failed tool call is not a published clarification.
 Distinguish uncertainty owners:
 - Personal intent, priority, scope and preference: ask the user.
 - External facts, unfamiliar terms and current developments: Researcher.
+- Missing requested source text/images or failed imports: Researcher.
 - Creative/craft choices within agreed scope: Designer.
 
 Record confirmed intent separately from hypotheses and reversible assumptions.
@@ -290,7 +290,7 @@ use patch_json with the latest sha256 instead of regenerating a complete JSON
 file. Do not repeat successful reads, writes, acquisition or generation.
 
 Explicit user URLs/uploads may supply reusable images, videos and documents.
-Use user_asset_import to persist selected originals before Designer/Reviewer
-approval; pass returned source paths to Designer. A user page URL allows only
+Delegate extraction and user_asset_import to Researcher before Designer/Reviewer
+approval; pass the resulting research files to Designer. A user page URL allows only
 materials actually linked on that page. Researcher-discovered URLs remain
 reference-only; do not claim they were specified by the user.

@@ -26,7 +26,7 @@ const IMAGE_EXTENSIONS = new Map([
   ["image/webp", ".webp"],
   ["image/gif", ".gif"],
   ["video/mp4", ".mp4"], ["video/webm", ".webm"], ["video/quicktime", ".mov"],
-  ["application/pdf", ".pdf"], ["text/plain", ".txt"], ["text/markdown", ".md"], ["text/csv", ".csv"],
+  ["text/html", ".html"], ["application/pdf", ".pdf"], ["text/plain", ".txt"], ["text/markdown", ".md"], ["text/csv", ".csv"],
   ["application/msword", ".doc"], ["application/vnd.ms-powerpoint", ".ppt"], ["application/vnd.ms-excel", ".xls"],
   ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".docx"],
   ["application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"],
@@ -51,7 +51,7 @@ export async function prepareDreamaticPrompt(options: {
   const references: PersistedReference[] = [];
 
   for (const [index, image] of options.images.entries()) {
-    const extension = IMAGE_EXTENSIONS.get(image.mimeType) ?? (image.mimeType === "application/octet-stream" && image.name ? ({ docx: ".docx", pptx: ".pptx", xlsx: ".xlsx", doc: ".doc", ppt: ".ppt", xls: ".xls", pdf: ".pdf", txt: ".txt", md: ".md", csv: ".csv", mp4: ".mp4", webm: ".webm", mov: ".mov" } as Record<string, string>)[image.name.split(".").at(-1)!.toLowerCase()] : undefined);
+    const extension = IMAGE_EXTENSIONS.get(image.mimeType) ?? (image.mimeType === "application/octet-stream" && image.name ? ({ docx: ".docx", pptx: ".pptx", xlsx: ".xlsx", doc: ".doc", ppt: ".ppt", xls: ".xls", html: ".html", htm: ".htm", pdf: ".pdf", txt: ".txt", md: ".md", csv: ".csv", mp4: ".mp4", webm: ".webm", mov: ".mov" } as Record<string, string>)[image.name.split(".").at(-1)!.toLowerCase()] : undefined);
     if (!extension) throw new Error(`Unsupported reference image type: ${image.mimeType}`);
     const bytes = Buffer.from(image.data, "base64");
     if (bytes.length === 0) throw new Error(`Reference image ${index + 1} is empty`);
