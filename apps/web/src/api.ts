@@ -240,3 +240,7 @@ export async function getPublicationStatus(runId: string): Promise<PublicationSt
 export async function publishProject(runId: string, creator: PublishCreator, overwriteConfirmed: boolean): Promise<{ projectId: string; previewUrl: string; galleryUrl: string }> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/publish`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmed: true, creator, overwriteConfirmed }) }));
 }
+
+export async function openProjectAssets(runId: string): Promise<void> {
+  await parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/assets/open`, { method: "POST" }));
+}

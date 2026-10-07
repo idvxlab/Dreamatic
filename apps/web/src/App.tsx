@@ -1,8 +1,8 @@
 import { usePublication } from "./publication-state";
 import { useI18n, LanguageToggle } from "./i18n";
-import { Upload, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw, X } from "lucide-react";
+import { Upload, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, getRun, listRunAssets, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
+import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, openProjectAssets, getWorkflow, getRun, listRunAssets, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
 import { Canvas } from "./components/Canvas";
 import { Sidebar } from "./components/Sidebar";
@@ -70,7 +70,7 @@ export function App() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [projectPanelOpen, setProjectPanelOpen] = useState(true);
   const [navigationOpen, setNavigationOpen] = useState(false);
-  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [openingAssets, setOpeningAssets] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>();
   const [notice, setNotice] = useState<string>();
@@ -283,6 +283,14 @@ export function App() {
     }
   }
 
+  async function openAssetsFolder() {
+    if (!activeRunId || openingAssets) return;
+    setOpeningAssets(true);
+    try { await openProjectAssets(activeRunId); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "Could not open project folder"); window.setTimeout(() => setNotice(undefined), 5000); }
+    finally { setOpeningAssets(false); }
+  }
+
   async function saveSettings(config: RuntimeConfig & { textApiKey?: string; searchApiKey?: string; imageApiKey?: string }) {
     const saved = await saveRuntimeConfig(config);
     setRuntimeConfig(saved);
@@ -437,15 +445,10 @@ export function App() {
       <section className="workspace">
         <header className="workspace-header">
           <div><button className="navigation-trigger" aria-label={t("Open project navigation")} aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">{t("Project")}</span><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2></div>
-          <div className="header-actions"><span className="saved publication-status" role="status" title={t(publicationLabel)}><Upload size={14} /> {t(publicationLabel)}</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><LanguageToggle /><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
+          <div className="header-actions"><span className="saved publication-status" role="status" title={t(publicationLabel)}><Upload size={14} /> {t(publicationLabel)}</span><button disabled={!activeRunId || openingAssets} title={t("Open project assets folder")} onClick={() => void openAssetsFolder()}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><LanguageToggle /><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
         </header>
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
-        {assetsOpen && (
-          <aside className="asset-drawer">
-            <header><div><Grid2X2 size={16} /><span><strong>{t("Project assets")}</strong><small>{visibleAssets.length} {t("files in this project")}</small></span></div><button title={t("Close assets")} onClick={() => setAssetsOpen(false)}><X size={15} /></button></header>
-            <div>{visibleAssets.length === 0 ? <p>{t("No generated assets yet. Start a design run to create them.")}</p> : visibleAssets.map((asset) => <button key={asset.path} onClick={() => { setSelectedAsset(asset.path); setAssetsOpen(false); }}><span>{asset.path.split("/").at(-1)}</span><small>{asset.kind.toUpperCase()} · {Math.max(1, Math.round(asset.size / 1024))} KB</small></button>)}</div>
-          </aside>
-        )}
+
       </section>
       {panelOpen && <AgentPanel connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
       {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}

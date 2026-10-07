@@ -1,3 +1,4 @@
+import { openProjectAssets, localFolderRequest } from "./open-assets.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, watch } from "node:fs";
 import { mkdir, open, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -341,6 +342,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
     const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+    const openAssetsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/assets\/open$/);
+    if (request.method === "POST" && openAssetsMatch?.[1]) {
+      if (!localFolderRequest(request.socket.remoteAddress, request.headers.host, request.headers.origin)) {
+        json(response, 403, { error: "Opening folders requires the desktop app or a locally hosted web app." }); return;
+      }
+      await openProjectAssets(workspaceDir, decodeURIComponent(openAssetsMatch[1]));
+      json(response, 200, { opened: true }); return;
+    }
     const publishMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/publish$/);
     if (request.method === "GET" && publishMatch?.[1]) {
       json(response, 200, await publicationStatus(workspaceDir, decodeURIComponent(publishMatch[1]), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL));

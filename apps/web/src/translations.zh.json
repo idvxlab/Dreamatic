@@ -321,5 +321,8 @@
   "Settings saved and applied": "配置已保存并生效",
   "Applied automatically after saving. The desktop app manages its local service port.": "保存后自动生效。桌面应用自动管理本地服务端口。",
   "Relative paths resolve from the configuration directory. Applied automatically after saving.": "相对路径以配置目录为基准，保存后自动生效。",
-  "Wait for the current task or publication to finish before saving configuration.": "请等待当前任务或发布完成后再保存配置。"
+  "Wait for the current task or publication to finish before saving configuration.": "请等待当前任务或发布完成后再保存配置。",
+  "Open project assets folder": "打开项目素材文件夹",
+  "Could not open project folder": "无法打开项目文件夹",
+  "Opening folders requires the desktop app or a locally hosted web app.": "打开文件夹需要使用桌面应用或在本机运行网页版。"
 }

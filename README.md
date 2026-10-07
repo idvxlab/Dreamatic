@@ -171,7 +171,7 @@ Web and CLI use the repository's `workspace/` by default. Relative `DREAMATIC_WO
 
 ### 1. Configure providers and create a project
 
-Open **DreamaticArt → Settings**. Configuration is grouped into search, reasoning models, image models, and system parameters. The toolbar shows the current project’s publication status; Preview, Share and Publish use the same live status.
+Open **DreamaticArt → Settings**. Configuration is grouped into search, reasoning models, image models, and system parameters. **Assets** opens the current project folder in the system file manager, showing original generated files and research materials. This requires the desktop app or a locally hosted web app. The toolbar shows the current project’s publication status; Preview, Share and Publish use the same live status.
 
 Optional reasoning settings, including Agent-specific models and thinking levels, are available under **Advanced**. Agent-specific models override the default model when configured. Image endpoint overrides and response format, plus system ports, retries, concurrency, timeouts and validation controls, are also available under **Advanced**.
 
