@@ -168,6 +168,7 @@ export interface RunView {
   notes: RunNoteView[];
   activity: TimelineView[];
   agentSessions: AgentSessionView[];
+  modelUsage?: { schemaVersion: 1; reasoning: Array<{ model: string; provider: string; role?: string }>; generation: Array<{ model: string; provider: string; method?: string; deliverableId?: string }> };
   showcasePath?: string;
   presentation?: { mode: "gallery" | "html"; entry: string };
   htmlEntries?: string[];
@@ -639,6 +640,7 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       notes: options.summary ? [] : await runNotes(runDir),
       activity,
       agentSessions: childSessions.map(agentSessionSummary),
+      ...(builtManifest?.modelUsage ? { modelUsage: builtManifest.modelUsage as NonNullable<RunView["modelUsage"]> } : {}),
       ...(path ? { showcasePath: relative(workspaceDir, path).replaceAll("\\", "/") } : {}),
       ...(builtManifest?.schemaVersion === 2 && ["html", "gallery"].includes(String(presentation.mode)) && typeof presentation.entry === "string" ? { presentation: { mode: presentation.mode as "html" | "gallery", entry: presentation.entry } } : {}),
       ...(Array.isArray(builtManifest?.htmlEntries) ? { htmlEntries: builtManifest.htmlEntries.filter((path): path is string => typeof path === "string" && path.startsWith("artifacts/") && path.endsWith(".html")) } : {}),

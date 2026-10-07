@@ -1,3 +1,4 @@
+import { recordReasoningModel, collectModelUsage, annotateModelUsage } from "./model-usage.js";
 import {
   createAgentSession,
   defineTool,
@@ -197,7 +198,7 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
   const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
   const path = resolveInside(runDir, target);
   const local = relative(runDir, path).replaceAll("\\", "/");
-  const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json"]);
+  const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json", "artifacts/model-usage.json", "plan/model-usage.json"]);
   const roots: Record<string, string> = { researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" };
   if (agent === "builder") {
     const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
@@ -1472,12 +1473,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
     const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
     const endpoint = process.env.DREAMATIC_IMAGE_GENERATION_ENDPOINT?.trim() || `${baseUrl}/images/generations`;
+    const generationModel = { model: process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1", provider: new URL(endpoint).hostname, source: "request" };
     const idempotencyKey = createHash("sha256").update(`${params.runId}\0${params.id}\0${params.prompt}`).digest("hex");
     const response = await resilientFetch(endpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
       body: JSON.stringify({
-        model: process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1",
+        model: generationModel.model,
         prompt: params.prompt,
         size,
         n: 1,
@@ -1495,6 +1497,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     if (!response.ok) throw new Error(`Image generation failed (${response.status}): ${await response.text()}`);
     const payload = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
     const saved = await saveImageResponse(workspaceDir, safeRunId(params.runId), safeRunId(params.id), params.prompt, "image_generate", payload, [], params.outputPath, {
+      generationModel,
       intent: params.intent,
       acceptanceCriteria: params.acceptanceCriteria,
       preserve: params.preserve ?? [],
@@ -1548,6 +1551,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     let activeRunId = options.parentInvocation?.runId;
     let workflowStopped = false;
     pi.on("agent_start", () => { workflowStopped = false; });
+    pi.on("message_end", async (event) => {
+      const message = event.message;
+      const runId = options.parentInvocation?.runId ?? options.projectId ?? requestAssignedRunId;
+      if (runId && message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
+        await recordReasoningModel(resolveInside(workspaceDir, join("runs", safeRunId(runId))), options.parentInvocation?.agent ?? "orchestrator", message.model, message.provider);
+      }
+    });
     const finishWorkflow = (value: unknown, enabled = true) => {
       if (enabled) workflowStopped = true;
       return { ...textResult(value), ...(enabled ? { terminate: true } : {}) };
@@ -3353,8 +3363,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         artifactOutputPath(workspaceDir, safeRunId(params.runId), safeRunId(params.id), "edits", params.outputPath);
         const apiKey = process.env.DREAMATIC_IMAGE_API_KEY?.trim() || process.env.DREAMATIC_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim();
         if (!apiKey) throw new Error("DREAMATIC_IMAGE_API_KEY, DREAMATIC_API_KEY, or OPENAI_API_KEY is not configured");
+        const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+        const endpoint = process.env.DREAMATIC_IMAGE_EDIT_ENDPOINT?.trim() || `${baseUrl}/images/edits`;
         const form = new FormData();
-        form.set("model", process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1");
+        const generationModel = { model: process.env.DREAMATIC_IMAGE_MODEL ?? "gpt-image-1", provider: new URL(endpoint).hostname, source: "request" };
+        form.set("model", generationModel.model);
         form.set("prompt", params.prompt);
         form.set("size", size);
         form.set("n", "1");
@@ -3366,8 +3379,6 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const bytes = await readFile(path);
           form.append("image", new Blob([Uint8Array.from(bytes)], { type: mimeType }), basename(path));
         }
-        const baseUrl = (process.env.DREAMATIC_IMAGE_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
-        const endpoint = process.env.DREAMATIC_IMAGE_EDIT_ENDPOINT?.trim() || `${baseUrl}/images/edits`;
         const idempotencyKey = createHash("sha256").update(`${params.runId}\0${params.id}\0${params.prompt}\0${params.referenceImagePaths.join("|")}`).digest("hex");
         const response = await resilientFetch(endpoint, {
           method: "POST",
@@ -3399,6 +3410,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           params.referenceImagePaths,
           params.outputPath,
           {
+            generationModel,
             intent: params.intent,
             diagnosis: params.diagnosis,
             changes: params.changes,
@@ -3819,6 +3831,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const runtimeOwnedFiles = new Set([
           "artifacts/artifact-manifest.json",
           "artifacts/lint-report.json",
+          "artifacts/model-usage.json",
           "artifacts/00-gallery.html",
         ]);
         const implementationDeliverables = requiredDeliverables.filter((deliverable) => {
@@ -3863,8 +3876,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         });
         if (!authoredGallery.trim()) throw new Error("Builder-authored artifacts/00-gallery.html is empty; write the Showcase before build_finalize");
         const artifactManifestPath = join(artifactsDir, "artifact-manifest.json");
-        await writeFile(artifactManifestPath, JSON.stringify({ runId, generatedAt: new Date().toISOString(), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "pending", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts }, null, 2), "utf8");
-        await writeFile(galleryPath, await appendShowcaseReferences(runDir, await annotateShowcasePrompts(runDir, authoredGallery)), "utf8");
+        const modelUsage = await collectModelUsage(runDir, artifacts);
+        await writeFile(join(runDir, "plan/model-usage.json"), JSON.stringify(modelUsage, null, 2));
+        await writeFile(join(artifactsDir, "model-usage.json"), JSON.stringify(modelUsage, null, 2));
+        await writeFile(artifactManifestPath, JSON.stringify({ modelUsage, runId, generatedAt: new Date().toISOString(), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "pending", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts }, null, 2), "utf8");
+        await writeFile(galleryPath, await appendShowcaseReferences(runDir, await annotateShowcasePrompts(runDir, annotateModelUsage(authoredGallery, modelUsage))), "utf8");
         const visualCount = implementationDeliverables.filter((deliverable) => /\.(png|jpe?g|webp)$/iu.test(String(deliverable.file ?? ""))).length;
         const lint = { runId, ...await lintArtifactDirectory(runDir, artifactsDir, visualCount, true) };
         const lintPath = join(artifactsDir, "lint-report.json");
@@ -3878,6 +3894,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           ...implementationDeliverables.map((deliverable) => requiredString(deliverable, "file", "deliverable")),
           "artifacts/artifact-manifest.json",
           "artifacts/lint-report.json",
+          "artifacts/model-usage.json",
           "artifacts/00-gallery.html",
         ];
         const commitReceipt = {

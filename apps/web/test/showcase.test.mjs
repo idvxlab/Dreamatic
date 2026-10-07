@@ -23,7 +23,7 @@ window.setRun(window.initialRun);`;
     } }], build: { write: false, rollupOptions: { input: entry }, minify: false } });
   const js = bundle.output.find((item) => item.type === 'chunk').code;
   const baseRun = { id: 'ux', title: 'Academic homepage', status: 'complete', stages: { build: 'completed' }, notes: [], documents: [], activity: [], agentSessions: [], assetCount: 0 };
-  const ux = { ...baseRun, presentation: { mode: 'html', entry: 'artifacts/academic/index.html' }, showcasePath: 'runs/ux/final/artifacts/academic/index.html' };
+  const ux = { ...baseRun, modelUsage: {schemaVersion:1, reasoning:[{model:'reason-fixture',provider:'test'}],generation:[{model:'image-fixture',provider:'test'}]}, presentation: { mode: 'html', entry: 'artifacts/academic/index.html' }, showcasePath: 'runs/ux/final/artifacts/academic/index.html' };
   let calls = 0, failNext = false, exportCalls = 0, failExport = false, invalidExport = undefined, publishCalls = 0;
   const entries = [];
   const server = createServer(async (req, res) => {
@@ -68,6 +68,8 @@ window.setRun(window.initialRun);`;
     await showcase.click();
     const frame = page.frameLocator('iframe');
     await frame.getByRole('heading', { name: 'Designed academic homepage' }).waitFor();
+    assert.match(await page.locator('.preview-model-credit').textContent(), /reason-fixture/);
+    assert.match(await page.locator('.preview-model-credit').textContent(), /image-fixture/);
     assert.deepEqual(entries, [ux.presentation.entry]);
     assert.equal(await frame.locator('h1').evaluate((node) => getComputedStyle(node).color), 'rgb(10, 20, 30)');
     await frame.locator('#language').click(); assert.equal(await frame.locator('#greeting').textContent(), 'Hello');

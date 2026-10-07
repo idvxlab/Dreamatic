@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import test from 'node:test';
+import {build} from 'vite';
+import {browserExecutable} from '../../../packages/design-agent/dist/html-delivery.js';
+import {CONFIG_FIELDS,CONFIG_MODULES} from '../../server/dist/config-store.js';
+
+test('UI language switches live, persists, translates settings and keeps configuration drafts unchanged',{timeout:60_000},async t=>{
+ const executablePath=await browserExecutable();if(!executablePath){t.skip('Chromium unavailable');return;}
+ const root=fileURLToPath(new URL('..',import.meta.url));const app=fileURLToPath(new URL('../src/App.tsx',import.meta.url));const locale=fileURLToPath(new URL('../src/i18n.tsx',import.meta.url));const entry='virtual:i18n-test';
+ const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return id;},load(id){if(id===entry)return `import React from 'react';import {createRoot} from 'react-dom/client';import {App} from ${JSON.stringify(app)};import {I18nProvider} from ${JSON.stringify(locale)};createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nProvider>);`;},transform(code,id){if(id===entry)return {code:code.replace('<I18nProvider><App/></I18nProvider>','React.createElement(I18nProvider,null,React.createElement(App))'),map:null};}}],build:{write:false,rollupOptions:{input:entry},minify:false}});
+ const js=bundle.output.find(item=>item.type==='chunk').code;const css=await readFile(new URL('../src/styles.css',import.meta.url),'utf8');
+ const config={envPath:'/fixture/.env',modules:CONFIG_MODULES,fields:CONFIG_FIELDS,values:Object.fromEntries(CONFIG_FIELDS.map(f=>[f.key,f.defaultValue])),secretConfigured:{}};
+ const server=createServer((req,res)=>{
+  if(req.url==='/bundle.js'){res.setHeader('Content-Type','text/javascript');res.end(js);return;}
+  if(req.url==='/style.css'){res.setHeader('Content-Type','text/css');res.end(css);return;}
+  if(req.url.startsWith('/api/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url==='/api/config'?config:req.url==='/api/health'?{ok:true}:req.url==='/api/sessions'?[{id:'s',title:'User project',running:false,messages:[]}]:[]));return;}
+  res.setHeader('Content-Type','text/html');res.end('<html><head><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>');
+ });await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>server.close(resolve)));
+ const {chromium}=await import('playwright-core');const browser=await chromium.launch({executablePath,headless:true});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1440,height:960},locale:'en-US'});const errors=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.goto(`http://127.0.0.1:${server.address().port}`);await page.getByRole('button',{name:'New project',exact:true}).waitFor();await page.getByRole('button',{name:'中文',exact:true}).click();await page.getByRole('button',{name:'新建项目',exact:true}).waitFor();assert.equal(await page.locator('html').getAttribute('lang'),'zh-CN');
+ await page.getByRole('textbox',{name:'搜索项目'}).fill('keep query');await page.getByRole('button',{name:'EN',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'Search projects'}).inputValue(),'keep query');
+ await page.getByRole('button',{name:'User menu: Designer'}).click();await page.getByRole('menuitem',{name:'Settings'}).click();await page.getByRole('tab',{name:'Reasoning models',exact:true}).click();await page.getByRole('textbox',{name:'Default reasoning model',exact:true}).fill('draft-model');
+ await page.locator('.settings-modal').getByRole('button',{name:'中文',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'默认推理模型',exact:true}).inputValue(),'draft-model');await page.getByRole('button',{name:'关闭设置',exact:true}).click();
+ await page.screenshot({path:'/tmp/dreamatic-ui-zh.png',fullPage:true});await page.reload();await page.getByRole('button',{name:'新建项目',exact:true}).waitFor();assert.equal(await page.evaluate(()=>localStorage.getItem('dreamatic-ui-language')),'zh');assert.deepEqual(errors,[]);
+ await page.getByRole('button',{name:'EN',exact:true}).click();await page.screenshot({path:'/tmp/dreamatic-ui-en.png',fullPage:true});
+});

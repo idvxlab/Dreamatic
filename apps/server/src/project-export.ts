@@ -56,7 +56,8 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
     const entry = manifest.presentation?.entry ?? "artifacts/00-gallery.html";
     if (typeof entry !== "string" || !files.includes(entry) || !entry.endsWith(".html")) throw new Error("Completed project presentation is missing");
     if (receipt && typeof receipt["artifacts/artifact-manifest.json"] !== "string") throw new Error("Build manifest has no approval receipt");
-    const entryUrl = entry.split("/").map(encodeURIComponent).join("/");
+    const previewEntry = typeof manifest.modelPreviewEntry === "string" && files.includes(manifest.modelPreviewEntry) ? manifest.modelPreviewEntry : entry;
+    const entryUrl = previewEntry.split("/").map(encodeURIComponent).join("/");
     // A portable launcher; the approved page itself is copied byte-for-byte.
     await writeFile(join(packageDir, "index.html"), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${entryUrl}"><title>DreamaticArt Preview</title><a href="${entryUrl}">Open preview</a>\n`);
     await writeFile(join(packageDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), entry, files: [...files, "index.html", "package-manifest.json"] }, null, 2));

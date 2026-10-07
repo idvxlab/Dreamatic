@@ -1,3 +1,4 @@
+import { collectModelUsage, annotateModelUsage, writeModelPreview } from "./model-usage.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { deliveryContract, fileHash, htmlTask, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
@@ -45,11 +46,15 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
   }
   const artifactsDir = resolveInside(runDir, "artifacts");
   await mkdir(artifactsDir, { recursive: true });
+  const modelUsage = await collectModelUsage(runDir, artifacts);
+  await writeFile(join(runDir, "plan/model-usage.json"), JSON.stringify(modelUsage, null, 2));
+  const modelPreviewEntry = contract.presentation.mode === "html" ? await writeModelPreview(runDir, contract.presentation.entry, modelUsage) : undefined;
+  await writeFile(join(artifactsDir, "model-usage.json"), JSON.stringify(modelUsage, null, 2));
   if (contract.presentation.mode === "gallery") {
     const galleryPath = resolveInside(runDir, contract.presentation.entry);
     const gallery = await readFile(galleryPath, "utf8").catch(() => "");
     if (!gallery.trim()) throw new Error("Builder must author artifacts/00-gallery.html before finalization");
-    await writeFile(galleryPath, await appendShowcaseReferences(runDir, await annotateShowcasePrompts(runDir, gallery)));
+    await writeFile(galleryPath, await appendShowcaseReferences(runDir, await annotateShowcasePrompts(runDir, annotateModelUsage(gallery, modelUsage))));
   }
   const lint = await lintHtmlDelivery(runDir, completed);
   if (contract.presentation.mode === "gallery") {
@@ -63,7 +68,7 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
   const lintReport = { runId, ...lint, browser };
   await writeFile(join(artifactsDir, "lint-report.json"), JSON.stringify(lintReport, null, 2));
   if (!lint.ok) throw new DeliveryBlocked("designer", lint.issues);
-  const artifactManifest = { schemaVersion: 2, runId, generatedAt: new Date().toISOString(), presentation: contract.presentation, previewFiles: lint.files, htmlEntries: completed.tasks.filter((task) => task.method === "html_generate").flatMap((task) => htmlTask(task).files.filter((file) => file.output.endsWith(".html")).map((file) => file.output)), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "passed", interactions: "not_assessed", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts };
+  const artifactManifest = { modelUsage, ...(modelPreviewEntry ? { modelPreviewEntry } : {}), schemaVersion: 2, runId, generatedAt: new Date().toISOString(), presentation: contract.presentation, previewFiles: lint.files, htmlEntries: completed.tasks.filter((task) => task.method === "html_generate").flatMap((task) => htmlTask(task).files.filter((file) => file.output.endsWith(".html")).map((file) => file.output)), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "passed", interactions: "not_assessed", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts };
   await writeFile(join(artifactsDir, "artifact-manifest.json"), JSON.stringify(artifactManifest, null, 2));
-  return { artifacts, lint: lintReport, presentation: contract.presentation, files: [...new Set(["artifacts/artifact-manifest.json", "artifacts/lint-report.json", contract.presentation.entry, ...artifacts.map((item) => item.path), ...lint.files])] };
+  return { artifacts, lint: lintReport, presentation: contract.presentation, files: [...new Set(["artifacts/artifact-manifest.json", "artifacts/model-usage.json", "artifacts/lint-report.json", contract.presentation.entry, ...(modelPreviewEntry ? [modelPreviewEntry] : []), ...artifacts.map((item) => item.path), ...lint.files])] };
 }

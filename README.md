@@ -18,6 +18,13 @@ The current **v2.0.3 development line** supports:
   design; UX/UI work produces responsive HTML/CSS/JS with local interactions.
 - **Canvas, Preview and Export:** Inspect and arrange project assets, preview the
   delivered design, open it in a new tab, or download the project as a ZIP.
+- **Chinese / English UI:** Switch languages in the header or dialogs; the local
+  preference persists without changing project content or model identifiers.
+- **Model provenance:** Final deliveries include role-specific reasoning models
+  and image-generation/editing models in `plan/model-usage.json` and the artifact
+  manifest. Preview and published Gallery cards display compact model credits.
+  Historical outputs without receipts show “Not recorded”; current settings are
+  never used to guess their models.
 - **Persistent Web and CLI workflows:** Both interfaces share the same agents,
   workspace, project state and recovery mechanism.
 

@@ -75,3 +75,15 @@ test('export includes original imported user material and its delivered image/vi
     for(const path of [`inputs/user-assets/${name}`,`artifacts/home/assets/${name}`])assert.equal((await exec('unzip',['-p',archive.path,`${f.runId}/${path}`])).stdout,bytes);
   }
 });
+
+test('export preserves model records and opens the attributed wrapper without changing approved HTML',async t=>{
+ const f=await fixture(t,'html');
+ const models={schemaVersion:1,reasoning:[{model:'reason-export',provider:'fixture',role:'designer'}],generation:[]};
+ const wrapper='artifacts/00-model-preview.html';const manifest={schemaVersion:2,presentation:{mode:'html',entry:f.entry},modelPreviewEntry:wrapper,modelUsage:models};
+ const changed={'artifacts/artifact-manifest.json':JSON.stringify(manifest),[wrapper]:'<iframe src="home/index.html"></iframe><small>reason-export</small>','artifacts/model-usage.json':JSON.stringify(models),'plan/model-usage.json':JSON.stringify(models)};
+ for(const [path,bytes] of Object.entries(changed))await writeFile(join(f.run,path),bytes);
+ const receipt=Object.fromEntries(Object.entries({...f.outputs,...changed}).map(([path,bytes])=>[path,createHash('sha256').update(bytes).digest('hex')]));await writeFile(join(f.run,'bus.jsonl'),JSON.stringify({type:'build_done',commitReceipt:{files:receipt}})+'\n');
+ const archive=await prepareProjectExport(f.workspace,f.runId);t.after(()=>archive.cleanup());
+ const get=async path=>(await exec('unzip',['-p',archive.path,`${f.runId}/${path}`])).stdout;
+ assert.match(await get('index.html'),/artifacts\/00-model-preview.html/);assert.deepEqual(JSON.parse(await get('plan/model-usage.json')),models);assert.equal(await get(f.entry),f.outputs[f.entry]);
+});

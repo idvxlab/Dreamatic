@@ -53,6 +53,7 @@ export interface RunView {
   }>;
   activity: TimelineItem[];
   agentSessions: AgentSession[];
+  modelUsage?: { schemaVersion: 1; reasoning: Array<{ model: string; provider: string; role?: string }>; generation: Array<{ model: string; provider: string; method?: string; deliverableId?: string }> };
   showcasePath?: string;
   presentation?: { mode: "gallery" | "html"; entry: string };
   htmlEntries?: string[];

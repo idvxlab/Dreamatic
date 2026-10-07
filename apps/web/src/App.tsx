@@ -1,3 +1,4 @@
+import { useI18n, LanguageToggle } from "./i18n";
 import { Cloud, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw, Share2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, getWorkflow, getRun, listRunAssets, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
@@ -34,6 +35,7 @@ function pause(milliseconds: number): Promise<void> {
 
 
 export function App() {
+  const { t } = useI18n();
   const initialized = useRef(false);
   const workspaceReady = useRef(false);
   const awaitingRun = useRef(false);
@@ -297,7 +299,7 @@ export function App() {
   function receive(item: PromptEvent) {
     if (item.type === "error") {
       setPendingAgentStatus(undefined);
-      setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: "Run failed", detail: item.message }]);
+      setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: t("Run failed"), detail: item.message }]);
       return;
     }
     if (item.type === "snapshot" && item.session) {
@@ -318,7 +320,7 @@ export function App() {
     if (type === "tool_execution_start") {
       setPendingAgentStatus(undefined);
       resetStreamingText();
-      const label = typeof event.toolName === "string" ? event.toolName : "Using tool";
+      const label = typeof event.toolName === "string" ? event.toolName : t("Using tool");
       const id = String(event.toolCallId ?? crypto.randomUUID());
       setTimeline((current) => [...current, { id, kind: "tool", label, active: true }]);
       setWorkflow((current) => current.some((entry) => entry.id === id) ? current : [...current, {
@@ -360,7 +362,7 @@ export function App() {
         kind: "message",
         status: "completed",
         actor: "User",
-        label: "You",
+        label: t("You"),
         detail: userText,
         at: new Date().toISOString(),
       };
@@ -380,7 +382,7 @@ export function App() {
       const ownedRun = nextRuns.find((run) => run.sessionId === activeId);
       if (ownedRun) setActiveRunId(ownedRun.id);
     } catch (error) {
-      setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: "Connection interrupted", detail: error instanceof Error ? error.message : String(error) }]);
+      setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: t("Connection interrupted"), detail: error instanceof Error ? error.message : String(error) }]);
     } finally {
       awaitingRun.current = false;
       setRunning(false);
@@ -432,22 +434,22 @@ export function App() {
       />
       <section className="workspace">
         <header className="workspace-header">
-          <div><button className="navigation-trigger" aria-label="Open project navigation" aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? "Hide project panel" : "Show project panel"} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? "Hide project panel" : "Show project panel"} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">Project</span><h2>{activeRun?.title ?? active?.title ?? (loading ? "Connecting…" : "Design workspace")}</h2></div>
-          <div className="header-actions"><span className="saved"><Cloud size={14} /> Saved locally</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> Assets <em>{visibleAssets.length}</em></button><button onClick={() => void shareWorkspace()}><Share2 size={15} /> Share</button><button className="icon-button" title={panelOpen ? "Hide agent panel" : "Show agent panel"} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
+          <div><button className="navigation-trigger" aria-label={t("Open project navigation")} aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">{t("Project")}</span><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2></div>
+          <div className="header-actions"><LanguageToggle /><span className="saved"><Cloud size={14} /> {t("Saved locally")}</span><button className={assetsOpen ? "active" : ""} onClick={() => setAssetsOpen((open) => !open)}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><button onClick={() => void shareWorkspace()}><Share2 size={15} /> {t("Share")}</button><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
         </header>
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
         {assetsOpen && (
           <aside className="asset-drawer">
-            <header><div><Grid2X2 size={16} /><span><strong>Project assets</strong><small>{visibleAssets.length} files in this project</small></span></div><button title="Close assets" onClick={() => setAssetsOpen(false)}><X size={15} /></button></header>
-            <div>{visibleAssets.length === 0 ? <p>No generated assets yet. Start a design run to create them.</p> : visibleAssets.map((asset) => <button key={asset.path} onClick={() => { setSelectedAsset(asset.path); setAssetsOpen(false); }}><span>{asset.path.split("/").at(-1)}</span><small>{asset.kind.toUpperCase()} · {Math.max(1, Math.round(asset.size / 1024))} KB</small></button>)}</div>
+            <header><div><Grid2X2 size={16} /><span><strong>{t("Project assets")}</strong><small>{visibleAssets.length} {t("files in this project")}</small></span></div><button title={t("Close assets")} onClick={() => setAssetsOpen(false)}><X size={15} /></button></header>
+            <div>{visibleAssets.length === 0 ? <p>{t("No generated assets yet. Start a design run to create them.")}</p> : visibleAssets.map((asset) => <button key={asset.path} onClick={() => { setSelectedAsset(asset.path); setAssetsOpen(false); }}><span>{asset.path.split("/").at(-1)}</span><small>{asset.kind.toUpperCase()} · {Math.max(1, Math.round(asset.size / 1024))} KB</small></button>)}</div>
           </aside>
         )}
       </section>
       {panelOpen && <AgentPanel timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
-      {navigationOpen && <button className="navigation-scrim" aria-label="Close project navigation" onClick={() => setNavigationOpen(false)} />}
-      {panelOpen && <button className="agent-scrim" aria-label="Close agent panel" onClick={() => setPanelOpen(false)} />}
-      {connectionError && <div className="connection-banner"><span><strong>Server unavailable</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? "Connecting…" : "Reconnect"}</button></div>}
-      {notice && <div className="toast">{notice}</div>}
+      {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}
+      {panelOpen && <button className="agent-scrim" aria-label={t("Close agent panel")} onClick={() => setPanelOpen(false)} />}
+      {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}
+      {notice && <div className="toast">{t(notice)}</div>}
       {settingsOpen && runtimeConfig && <SettingsModal initial={runtimeConfig} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />}
     </div>
   );

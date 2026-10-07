@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, Upload, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadProject, getCanvasState, getHtmlPreview, saveCanvasState } from "../api";
@@ -113,6 +114,7 @@ function bounds(elements: CanvasElementState[]) {
 }
 
 export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
+  const { t } = useI18n();
   const viewportRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | undefined>(undefined);
   const loadedRun = useRef<string | undefined>(undefined);
@@ -295,15 +297,16 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
 
   return (
     <main className="canvas-shell">
-      <div className="canvas-view-switch" role="tablist" aria-label="Project view">
-        <button className={mode === "canvas" ? "active" : ""} onClick={() => setMode("canvas")}><LayoutDashboard size={14} /> Canvas</button>
-        <button className={mode === "showcase" ? "active" : ""} disabled={!showcaseAvailable} onClick={openShowcase}><FileImage size={14} /> Preview</button>
+      <div className="canvas-view-switch" role="tablist" aria-label={t("Project view")}>
+        <button className={mode === "canvas" ? "active" : ""} onClick={() => setMode("canvas")}><LayoutDashboard size={14} /> {t("Canvas")}</button>
+        <button className={mode === "showcase" ? "active" : ""} disabled={!showcaseAvailable} onClick={openShowcase}><FileImage size={14} /> {t("Preview")}</button>
       </div>
       {mode === "showcase" && (showcaseUrl || interactive) ? (
         <section className="showcase-view">
-          {interactive && previewPages.length > 1 && <div className="preview-pages"><label>Page <select aria-label="Prototype page" value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
-          {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "DreamaticArt"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "DreamaticArt"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? "Preparing interactive preview…"}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>Retry preview</button>}</div>}
-          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? "Exporting…" : "Export"}</button><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> Publish</button></div>}
+          {interactive && previewPages.length > 1 && <div className="preview-pages"><label>{t("Page")} <select aria-label={t("Prototype page")} value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
+          {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "DreamaticArt"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "DreamaticArt"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? t("Preparing interactive preview…")}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>{t("Retry preview")}</button>}</div>}
+          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button></div>}
+          <small className="preview-model-credit">{t("Reasoning models")}: {[...new Set(run?.modelUsage?.reasoning.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}<br />{t("Generation models")}: {[...new Set(run?.modelUsage?.generation.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}</small>
           {exportError && <p className="preview-export-error" role="alert">{exportError}</p>}
         </section>
       ) : (
@@ -311,37 +314,37 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
           {elements.length === 0 ? (
             run ? (
               <section className="run-progress">
-                <p className="eyebrow">Loading project workspace</p>
+                <p className="eyebrow">{t("Loading project workspace")}</p>
                 <h1>{run.title}</h1>
-                <p className="canvas-loading-copy">Restoring the saved design record and visual outputs…</p>
+                <p className="canvas-loading-copy">{t("Restoring the saved design record and visual outputs…")}</p>
               </section>
             ) : (
               <section className="empty-canvas">
                 <div className="empty-orbit"><div><FileImage size={28} /></div></div>
-                <p className="eyebrow">A quiet canvas, ready to work</p>
-                <h1>Turn a brief into a<br />coherent design system.</h1>
-                <p>Ask the agent to begin. Research, Design Context, review challenges, and built artifacts will appear here as the run develops.</p>
-                <span><ZoomIn size={14} /> Visual outputs are inspected before delivery</span>
+                <p className="eyebrow">{t("A quiet canvas, ready to work")}</p>
+                <h1>{t("Turn a brief into a")}<br />{t("coherent design system.")}</h1>
+                <p>{t("Ask the agent to begin. Research, Design Context, review challenges, and built artifacts will appear here as the run develops.")}</p>
+                <span><ZoomIn size={14} /> {t("Approved designs are executed before delivery")}</span>
               </section>
             )
           ) : (
             <div className="canvas-world" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
               {elements.map((item) => item.kind === "group" ? (
                 <section key={item.id} className={`canvas-group-label role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
-                  <span>{item.text}</span><small>{item.role === "reference" ? "Evidence and visual anchors" : "Run outputs"}</small>
+                  <span>{t(item.text ?? "")}</span><small>{item.role === "reference" ? t("Evidence and visual anchors") : t("Run outputs")}</small>
                 </section>
               ) : item.kind === "image" && item.assetPath ? (
                 <figure key={item.id} className={`canvas-artboard role-${item.role ?? "other"} ${selected === item.assetPath ? "selected" : ""}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
                   <div><img draggable={false} src={assetUrl(item.assetPath)} alt="" /></div>
-                  <figcaption><span><strong>{item.assetPath.split("/").at(-1)}</strong><small>{item.role}</small></span><a aria-label="Open asset" href={assetUrl(item.assetPath)} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
+                  <figcaption><span><strong>{item.assetPath.split("/").at(-1)}</strong><small>{item.role}</small></span><a aria-label={t("Open asset")} href={assetUrl(item.assetPath)} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
                 </figure>
               ) : item.kind === "html" ? (
-                <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}><strong>{item.text}</strong><p>HTML interface</p><button onPointerDown={(event) => event.stopPropagation()} onClick={() => void openHtml(item.assetPath)}>Open prototype <ExternalLink size={13} /></button></article>
+                <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}><strong>{item.text}</strong><p>{t("HTML interface")}</p><button onPointerDown={(event) => event.stopPropagation()} onClick={() => void openHtml(item.assetPath)}>{t("Open prototype")} <ExternalLink size={13} /></button></article>
               ) : item.kind === "text" && item.id === LAYOUT_MARKER && run ? (
                 <section key={item.id} className="canvas-project-overview" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
-                  <p className="eyebrow">Project workspace</p>
+                  <p className="eyebrow">{t("Project workspace")}</p>
                   <h1>{run.title}</h1>
-                  <footer><span>{visualAssets.length} visual assets</span><span>{run.notes.length} design notes</span><span>{run.showcasePath ? "Preview available" : "Preview pending"}</span></footer>
+                  <footer><span>{visualAssets.length} {t("visual assets")}</span><span>{run.notes.length} {t("design notes")}</span><span>{run.showcasePath ? t("Preview available") : t("Preview pending")}</span></footer>
                 </section>
               ) : item.kind === "text" ? (
                 <article key={item.id} className={`canvas-note role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>{item.text}</article>
@@ -351,16 +354,16 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
         </div>
       )}
       {mode === "canvas" && (
-        <div className="canvas-toolbar" aria-label="Canvas controls">
-          <button className={tool === "select" ? "active" : ""} aria-label="Select and move elements" onClick={() => setTool("select")}><MousePointer2 size={16} /></button>
-          <button className={tool === "hand" ? "active" : ""} aria-label="Pan canvas" onClick={() => setTool("hand")}><Hand size={16} /></button>
+        <div className="canvas-toolbar" aria-label={t("Canvas controls")}>
+          <button className={tool === "select" ? "active" : ""} aria-label={t("Select and move elements")} onClick={() => setTool("select")}><MousePointer2 size={16} /></button>
+          <button className={tool === "hand" ? "active" : ""} aria-label={t("Pan canvas")} onClick={() => setTool("hand")}><Hand size={16} /></button>
           <span className="tool-separator" />
-          <button aria-label="Zoom out" onClick={() => zoomAt(camera.zoom - .1)}><Minus size={15} /></button>
-          <button className="zoom-label" title="Reset to 100%" onClick={() => zoomAt(1)}>{Math.round(camera.zoom * 100)}%</button>
-          <button aria-label="Zoom in" onClick={() => zoomAt(camera.zoom + .1)}><Plus size={15} /></button>
-          <button aria-label="Fit project" onClick={fit}><Scan size={16} /></button>
-          <button aria-label="Reflow project cards" title="Reflow project cards" onClick={reflow}><LayoutGrid size={16} /></button>
-          {saving && <span className="canvas-saving">Saving…</span>}
+          <button aria-label={t("Zoom out")} onClick={() => zoomAt(camera.zoom - .1)}><Minus size={15} /></button>
+          <button className="zoom-label" title={t("Reset to 100%")} onClick={() => zoomAt(1)}>{Math.round(camera.zoom * 100)}%</button>
+          <button aria-label={t("Zoom in")} onClick={() => zoomAt(camera.zoom + .1)}><Plus size={15} /></button>
+          <button aria-label={t("Fit project")} onClick={fit}><Scan size={16} /></button>
+          <button aria-label={t("Reflow project cards")} title={t("Reflow project cards")} onClick={reflow}><LayoutGrid size={16} /></button>
+          {saving && <span className="canvas-saving">{t("Saving…")}</span>}
         </div>
       )}
       {publishOpen && run && <PublishDialog key={run.id} runId={run.id} title={run.title} onClose={() => setPublishOpen(false)} />}
