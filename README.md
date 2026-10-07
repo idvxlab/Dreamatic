@@ -1,405 +1,247 @@
 # DreamaticArt
 
-**An AI design system that turns creative briefs into reviewed visual designs and interactive HTML interfaces.**
+**从设计需求到经过审阅的设计方案、设计图与交互界面。**
+
+DreamaticArt 是基于 Pi 的开源 AI 设计智能体系统。它组织多个具有明确职责的 Agent，完成需求澄清、资料研究、专业设计、方案审查和设计落实，并将过程与结果保存在本地项目中。你可以通过 macOS 桌面应用、Web 界面或命令行使用同一套设计能力。
+
+官方网站：[https://www.dreamatic.art](https://www.dreamatic.art) · 源码：[GitHub](https://github.com/idvxlab/Dreamatic)
+
+当前源码版本为 **2.0.3**。官网安装包可能与源码版本不同，请以下载页面和安装包版本为准。
 
 ![DreamaticArt](docs/assets/dreamatic-hero.png)
 
-DreamaticArt coordinates research, design, review and implementation in a persistent
-project workspace. Each project retains its requirements, references, design
-specifications, review records and delivered files.
+## 核心功能
 
-The current **v2.0.3 development line** supports:
+### 多领域设计与两类交付
 
-- **Design category recognition:** Orchestrator identifies the categories and
-  tasks required by a brief, including projects that combine several disciplines.
-- **Dynamic Skills:** Designer discovers, selects, loads and switches professional
-  and supporting Skills for each task.
-- **Image and HTML delivery:** Existing image generation/editing serves visual
-  design; UX/UI work produces responsive HTML/CSS/JS with local interactions.
-- **Canvas, Preview and Export:** Inspect and arrange project assets, preview the
-  delivered design, open it in a new tab, or download the project as a ZIP.
-- **Chinese / English UI:** Switch languages in the header or dialogs; the local
-  preference persists without changing project content or model identifiers.
-- **Model provenance:** Final deliveries include role-specific reasoning models
-  and image-generation/editing models in `plan/model-usage.json` and the artifact
-  manifest. Preview and published Gallery cards display compact model credits.
-  Historical outputs without receipts show “Not recorded”; current settings are
-  never used to guess their models.
-- **Persistent Web and CLI workflows:** Both interfaces share the same agents,
-  workspace, project state and recovery mechanism.
+系统根据需求识别设计类型，支持品牌与视觉传播、工业与产品、建筑与空间、媒体等设计，以及 UX/UI 界面设计。一个项目可以包含多个设计领域。
 
-User-requested page content is extracted by Researcher before design. The
-`user_material_extract` tool supports webpages, GitHub READMEs, HTML/Markdown/text
-uploads and modern Office text/images; selected originals are imported with
-verified source receipts. Designer maps reused originals directly into HTML
-resources and declares producers for new imagery. PDF/scanned and legacy Office
-extraction gaps are reported explicitly. See the [design pipeline audit](docs/DESIGN_PIPELINE_AUDIT_2026-10-07.md)
-for the failure evidence, changes and validation.
+| 设计任务 | 当前交付方式 |
+| --- | --- |
+| UX/UI 设计 | 根据经过审阅的方案，通过 HTML 编码工具生成 HTML/CSS/JavaScript 页面及本地交互 |
+| 品牌、产品、工业、建筑、媒体等视觉设计 | 调用生图或图像编辑工具，生成设计图、不同视角及细节图 |
+| 混合设计 | 按方案分别落实图像与 HTML 交付物，并通过指定的展示入口查看 |
 
-## Workflow and agents
+设计方案与设计图用于表达和验证设计意图。当前没有 CAD、工程级 3D、视频或游戏引擎输出；HTML 交付支持本地交互，真实业务后端需要另行接入。
+
+### 职责明确的设计工作流
 
 ```text
-User brief
-  → Orchestrator: clarify requirements and assign categories/tasks
-  → Researcher: gather evidence and references
-  → Designer: load task-specific Skills and design the deliverables
-  ↔ Reviewer: assess the design and request concrete revisions
-  → Builder: execute approved image/HTML tasks and validate outputs
-  → Canvas + Preview → Open / Export
+用户需求 → 需求澄清与调度 → 资料研究 → 专业设计 → 方案审查
+                                           ↑           ↓
+                                           └── 修改 ───┘
+                                               审批通过
+                                                   ↓
+                                           执行方案 → Preview
 ```
 
-Orchestrator coordinates the stages; Researcher supplies evidence throughout the
-design process. Builder starts after the design has passed review.
-
-| Agent | Responsibility |
+| Agent | 职责 |
 | --- | --- |
-| Orchestrator | Understand requirements, identify design categories, assign tasks and manage workflow transitions |
-| Researcher | Research the subject, collect sources and references, and document evidence |
-| Designer | Choose and load Skills; develop concepts, image specifications or complete HTML/CSS/JS sources |
-| Reviewer | Assess design quality, task coverage and executable specifications; approve or request revisions |
-| Builder | Implement approved results using the declared tools, build the image Gallery when needed, and perform mechanical checks |
+| Orchestrator | 理解目标，澄清不确定的需求，判断设计类型，组织和调度工作；不直接研究、设计或审计 |
+| Researcher | 自主检索资料，并从用户提供的 URL、文件中提取有用文字与图片 |
+| Designer | 按设计类型选择并加载独立、可复用的 Skill，形成明确、详细且可执行的设计方案 |
+| Reviewer | 检查方案与用户需求的一致性、重要信息完整性和可执行性，审批或要求修订 |
+| Builder | 机械执行 Designer 制定且经 Reviewer 审批的方案，不做二次设计审查；为图像交付编写具有层次的展示页面 |
 
-Orchestrator determines **what design work is needed**; Designer determines
-**which Skills to use and how to design it**. Skill mappings cover media
-communication, industrial, UX, architecture/space, fashion/textiles, game
-experience and service design. Cross-domain Skills support composition and design
-systems; output Skills guide image expression and HTML delivery. Video, 3D and
-game-engine execution are not implemented.
+Skill 提供领域知识和操作方法。Designer 选择性参考研究资料；当用户明确要求使用或复用指定文本、图片时，按照要求将相关材料纳入设计。
 
-## macOS desktop app
+### 资料、项目与结果管理
 
-On an Apple Silicon Mac, open the DMG from `release/`, drag **DreamaticArt** to
-**Applications**, and launch it. The desktop app includes Node, Pi tools and the
-HTML review browser; it starts and stops its local service automatically.
-Configure your model and search providers through **Designer → Settings**.
+- **资料输入**：通过对话提交 URL、图片和文档，并明确说明需要参考、提取还是原样复用。网页、文本及现代 Office 文件支持文字或图片提取；扫描件、PDF 和旧格式文件的提取能力存在限制，系统会报告无法提取的部分。
+- **项目持久化**：保存需求、研究资料、方案、审查记录和交付物，可重新打开、重命名或移入本地回收站。
+- **Canvas**：查看和排列参考资料、设计说明及生成结果。
+- **Preview**：图像项目以有层次的展示页呈现；UX/UI 项目直接预览实际生成的 HTML 页面，多页面项目支持切换页面。
+- **Export**：下载包含交付物、源文件、资源、方案与研究资料的 ZIP；保留相对路径，不包含会话和系统凭据。
+- **中英文界面**：系统语言设置实时生效并在本机保存，对话框沿用系统语言；项目内容不会被自动翻译。
+- **模型记录**：最终交付和 Preview 展示推理、生图或图像编辑模型信息。发布旧项目时，缺失记录按当前配置补录并注明来源，不覆盖已有记录。
 
-Configuration and projects are stored in `~/Library/Application Support/Dreamatic/`
-and survive app upgrades. Existing web projects are not imported automatically.
-**Preview → Open** opens a desktop preview window; **Export** uses a native save dialog.
-The app still needs internet access to call configured model/search providers.
+### 发布与分享
 
-### Build the macOS installer
+完成图像设计后，可以从 **Preview → Publish** 将完整项目发布到官网 Gallery。发布前确认公开分享，并可填写姓名、组织和个人网站；不填写姓名时显示匿名用户。当前署名是轻量信息标识，不代表已验证账号。
 
-Requirements: an **Apple Silicon Mac (arm64)**, **Node.js 22.19 or newer**,
-npm 10 or newer, internet access and a logged-in macOS desktop session.
-Run from the DreamaticArt project directory:
+发布过程显示打包、上传进度和部署等待状态，防止重复提交。同一项目再次发布时，确认后覆盖原作品，保留原链接。发布标识由系统生成，更新凭据保存在本机，不进入公开 ZIP。
 
-```bash
-npm run release:mac
-```
+**HTML 类型的 UX/UI 项目暂不允许通过 Publish 上传官网，包括含 HTML 交付物的混合项目。** 图像项目的 HTML 展示页不受此限制，HTML 项目仍可 Preview 和 Export。
 
-The release script installs locked dependencies, builds and checks the project,
-prepares the bundled runtime, runs regression and desktop UI tests, then creates
-and verifies the DMG from a read-only mount outside the development directory.
-Electron downloads fall back to a mirror when needed and must match the official
-SHA256 checksum. A failed release stops without replacing the previous DMG.
+## 安装
 
-| Output | Location |
-| --- | --- |
-| Installer | `release/DreamaticArt-<version>-mac-arm64.dmg` |
-| SHA256 checksum | `release/DreamaticArt-<version>-mac-arm64.dmg.sha256` |
-| Release log | `release/logs/<timestamp>.log` |
+### macOS 桌面应用
 
-The release version is taken from the current Git branch, which must be named
-`v<major>.<minor>.<patch>` (for example, `v2.0.3`). The scripts synchronize the
-root and desktop manifests and lockfile to `2.0.3`, and verify both macOS bundle
-version fields inside the DMG. macOS metadata uses the numeric version without
-the `v` prefix. The scripts do not commit to Git, modify `.env` or overwrite
-existing user projects.
+适用于 **Apple Silicon Mac（arm64）**。
 
-To reuse installed dependencies while retaining all release checks:
+1. 在[官网](https://www.dreamatic.art/#download)下载 macOS 安装包。
+2. 打开 DMG，将应用拖入 **Applications**，然后启动。
+3. 点击左下角 **Designer → Settings（设置）**，配置推理和图像模型服务。
+4. 点击 **New project（新建项目）**，开始设计。
+
+桌面版内置运行环境，无需单独安装 Node.js。模型和搜索服务仍需要网络，模型调用使用你配置的 API 密钥。配置和项目保存在 `~/Library/Application Support/Dreamatic/`，应用升级后保留；源码版项目不会自动导入。
+
+本地构建安装包使用 ad-hoc 签名。如果 macOS 阻止打开，请确认安装包来源后，在系统设置的“隐私与安全性”中允许打开。
+
+<a id="web-and-cli-installation"></a>
+
+### 从源码安装 Web / CLI
+
+准备以下环境：
+
+- Node.js **22.19 或更新版本**、npm **10 或更新版本**及 Git。
+- 支持视觉输入的推理模型服务，兼容 OpenAI Chat Completions 或 Responses 协议。
+- 进行图像任务时，需要兼容的生图／图像编辑服务。
+- 系统 `PATH` 中可用的 `zip` 命令，用于导出和发布。
+- 进行 HTML 浏览器验证时，需要已安装的 Chromium 系浏览器，如 Chrome；源码版不会自动下载浏览器。
 
 ```bash
-npm run release:mac -- --skip-install
-```
-
-For development, use `npm run desktop`. For packaging without the full regression
-and desktop UI checks, use `npm run desktop:package` after installing dependencies
-with `npm ci`; installer integrity and independent startup checks still run.
-
-Local builds use ad-hoc signing. Distribution without Gatekeeper confirmation
-requires an Apple Developer ID and notarization credentials. Agent instructions
-and Skills are shared with the Web/CLI versions.
-
-## Web and CLI installation
-
-### Requirements
-
-- Node.js **22.19 or newer** and npm 10 or newer.
-- A vision-capable OpenAI-compatible text model.
-- An OpenAI-compatible image provider for image generation/editing tasks.
-- The server's `zip` command for project downloads.
-- An installed Chromium-based browser for HTML interaction validation. Static
-  validation is available without a browser; no browser is downloaded automatically.
-
-### Setup
-
-```bash
-git clone --branch dev https://github.com/idvxlab/Dreamatic.git
+git clone https://github.com/idvxlab/Dreamatic.git
 cd Dreamatic
+npm ci
 cp .env.example .env
-npm install
 ```
 
-On Windows PowerShell, use `Copy-Item .env.example .env` instead of `cp`. Ensure
-that a compatible `zip` executable is available on the server's `PATH`.
+Windows PowerShell 使用 `Copy-Item .env.example .env`，并确保安装了可用的 `zip` 程序。
 
-Edit `.env` to configure your providers:
+编辑 `.env`，填写自己的服务配置：
 
 ```env
-DREAMATIC_API_KEY=your-text-model-key
-DREAMATIC_BASE_URL=https://your-text-provider/v1
+DREAMATIC_API_KEY=your-reasoning-api-key
+DREAMATIC_BASE_URL=https://your-reasoning-provider/v1
 DREAMATIC_MODEL=your-vision-capable-model
 
-DREAMATIC_IMAGE_API_KEY=your-image-provider-key
+DREAMATIC_IMAGE_API_KEY=your-image-api-key
 DREAMATIC_IMAGE_BASE_URL=https://your-image-provider/v1
 DREAMATIC_IMAGE_MODEL=your-image-model
 ```
 
-Text requests use OpenAI-compatible chat completions by default. Use
-`DREAMATIC_PROVIDER_TYPE=openai-responses` only for a provider implementing that
-protocol. Standard image endpoints are inferred from the image base URL;
-nonstandard endpoints can be configured explicitly in `.env.example`.
-The image key falls back to the text key when omitted.
+推理服务默认使用 Chat Completions；使用 Responses 协议时设置 `DREAMATIC_PROVIDER_TYPE=openai-responses`。图像服务使用标准接口路径，非标准服务可单独配置生成和编辑端点。图像 API 密钥为空时沿用推理密钥。
 
-Web research uses DuckDuckGo by default. Optional Serper settings, role-specific
-models, timeout/concurrency controls and HTML validation settings are documented
-in [.env.example](.env.example). Keep API keys out of Git.
+网页搜索默认使用 DuckDuckGo，也可配置 Serper。各 Agent 的独立模型、超时、并发、重试及浏览器选项见 [.env.example](.env.example)。不要提交包含密钥的 `.env`。
 
-## Run and deploy locally
+### 启动 Web 界面
 
-### Development
+开发模式：
 
 ```bash
 npm run dev
 ```
 
-Open the URL printed by Vite, normally **http://localhost:5173**. The API runs
-on **http://localhost:4310**. The command builds the agent and server packages
-before starting them; keep the process running while using the workspace.
+打开终端输出的地址，通常为 **http://localhost:5173**；API 默认运行在 **http://localhost:4310**。保持终端进程运行。
 
-### Built application
+构建后运行：
 
 ```bash
 npm run build
 npm start
 ```
 
-Open **http://localhost:4310** to use the built Web application and API together.
-After changing frontend code, rebuild the Web application; after changing runtime
-code or Agent tool contracts, restart the server. Building alone does not update
-an already running backend.
+打开 **http://localhost:4310**。Web 与 CLI 默认共用仓库中的 `workspace/`；相对的 `DREAMATIC_WORKSPACE` 路径从仓库根目录解析。以上是本地使用方式，HTML 预览使用独立的本机服务地址。
 
-Both modes load the repository's `.env`. `DREAMATIC_WORKSPACE=./workspace` is
-resolved from the repository root. Web and CLI must use the same workspace to
-share projects. HTML previews currently use a separate loopback origin; these
-instructions cover local deployment, not a public multi-user service.
+## 使用方法
 
-## Usage
+### 1. 配置服务并创建项目
 
-### Web workspace
+进入 **Designer → Settings**，按“搜索、推理模型、图像模型、系统参数”填写服务信息。各 Agent 可以指定独立推理模型，未指定时使用默认模型。只保存修改过的字段，密钥输入留空会保留原值；端口和工作区变更需要重启。
 
-Click the **Designer** user button at the bottom left, then **Settings**, to
-edit the project `.env`. Configuration is grouped into search, reasoning models,
-image models and system parameters, with an example for every field. Only changed
-fields are saved; blank key inputs retain existing secrets. Model changes apply
-to new sessions; server port and workspace changes require a restart.
+**没有项目时，系统不会自动创建项目，对话输入、附件和发送按钮均不可用。** 点击 **New project** 手动创建项目后才能对话。删除最后一个项目后，对话会再次禁用。
 
-1. Create a project, enter the brief and add references if needed.
-2. Answer clarification questions. The conversation displays the recognized
-   design categories and streams agent progress.
-3. Inspect references, notes and outputs on the persistent **Canvas**.
-4. After the build completes, click **Preview** to display the delivered result.
-5. Use **Open** to open the presentation in a new tab, or **Export** to download
-   `<run-id>.zip`.
+### 2. 描述目标和材料要求
 
-| Result | Preview behavior |
-| --- | --- |
-| Image design | Displays the image Gallery |
-| UX/UI design | Displays the actual designed HTML page with its local interactions |
-| Mixed design | Displays the declared HTML entry or Gallery with page links |
+说明设计对象、受众、用途、风格、交付物和必须保留的内容。例如：
 
-HTML previews fit the available width without a Viewport panel; multi-page
-results retain a page selector. Designer authors the page; Builder copies its
-approved sources and resources without redesigning it. Researcher-discovered
-and repository images are reference-only; needed image assets are designed as generation/editing tasks
-and produced before the page is assembled. Prototypes use local
-logic and assets; real backend integration is separate work.
+> 为一个当代茶品牌设计包装与主视觉。面向年轻消费者，采用克制的东方风格，交付包装主视图、使用场景和系列关系图。
 
-Export includes built artifacts, HTML sources, resources, design plans, research,
-review and project metadata. It preserves relative paths and adds an `index.html`
-launcher. Extract the ZIP before opening the launcher or serving the project
-locally. Sessions, caches and historical revisions are excluded. Export does not
-invoke an agent or regenerate results.
+> 根据我提供的网站 URL，提取并复用研究简介、论文文字和人物照片，设计一个响应式学术主页，包含中英文切换、论文筛选及移动端导航。
 
-Projects can be reopened, renamed or moved to recoverable local trash. Feedback
-on a completed project can start a revision while preserving the previous delivery.
+可以上传相关图片和文档。如果要求复用材料，明确指出要使用哪些文字、图片或页面内容。回答系统提出的澄清问题，再由各 Agent 推进工作。
 
-User-provided material: explicitly supplied URLs and uploaded images, videos or
-documents can be reused unchanged. `user_asset_import` saves verified originals
-under `inputs/user-assets/`; Designer declares their local output mappings and
-Builder copies them after approval. Assets linked from a user-supplied page must
-be verified against that page. Researcher-discovered material remains reference
-only. Upload up to four files (images: 12 MB; other files: 128 MB; 160 MB total); local documents use
-download links, and all delivered files are included in Export.
+### 3. 查看过程并预览成果
 
-### CLI
+对话区域显示智能体进度，Canvas 展示项目资料与结果。完成后进入 **Preview**：
 
-Build once before using the CLI:
+- **Open**：单独打开结果；桌面版使用预览窗口。
+- **Export**：下载完整项目 ZIP；桌面版使用原生保存对话框。
+- **Publish**：发布符合条件的图像设计项目。
+
+解压导出包后，通过 `index.html` 进入预览。后续修改可在同一项目中继续提出，方案需要重新设计和审阅后落实。
+
+### 4. 发布到官网
+
+1. 在完成的图像项目中打开 **Preview → Publish**。
+2. 核对目标网站，填写可选创作者信息。
+3. 确认项目内容可以公开分享；如果作品已存在，同时确认覆盖。
+4. 等待上传和部署完成，打开返回的作品链接。
+
+默认目标为 [https://www.dreamatic.art](https://www.dreamatic.art)，可在系统参数 `DREAMATIC_SITE_URL` 中修改。官网首页展示最新作品，独立 Gallery 页面支持分类、搜索和分页，作品卡片展示署名、日期和模型信息。
+
+发布 ZIP 上限为 **128 MiB**，包含设计输出、源文件和参考材料；系统会排除会话、私密运行记录和隐藏杂项文件。旧版本发布的作品如果没有本地更新凭据，不能自动认领并覆盖。
+
+如果你维护 DreamaticSite，也可直接把项目文件夹复制到其 `gallery/<项目名>/` 中。网站识别 `final/artifacts/` 或 `artifacts/`，刷新后自动展示，无需重建前端。官网部署与目录配置见 DreamaticSite 项目文档。
+
+### CLI 使用
 
 ```bash
+# 首次使用前构建
 npm run build
 
-# Image-based design
-npm run cli -- "为一家当代茶品牌设计主视觉和包装系列"
+# 设计任务
+npm run cli -- "为一个科技展览设计主视觉和海报系统"
 
-# Interactive HTML interface
-npm run cli -- "设计一个响应式中英双语学术主页，包含论文筛选和移动端导航"
+# HTML 界面任务
+npm run cli -- "设计一个响应式学术主页，包含论文筛选和移动端导航"
 
-# Attach a reference
+# 附加图片
 npm run cli -- --image ./reference.png "保留标志，设计一套发布海报"
 
-# Interactive mode / machine-readable event stream
+# 交互模式
 npm run cli
-npm run cli -- --json "设计一个科技展览主视觉"
 
-# Resume after the original process has stopped
+# 机器可读事件流
+npm run cli -- --json "设计一个产品概念"
+
+# 原进程停止后，恢复已有任务
 npm run cli -- --resume <run-id>
 ```
 
-## System architecture
+CLI 任务直接从命令行发起，不受 Web 界面的项目输入禁用状态影响。更多选项见 `npm run cli -- --help`。
 
-DreamaticArt extends **Pi** through its SDK, Extensions, Skills and session APIs.
-Pi remains an upstream dependency and provides the agent runtime, providers,
-streaming, tools and persistence. DreamaticArt implements design-specific workflow,
-contracts, production tools and the product interface.
+## 开发与更新
 
-```text
-apps/web                  React + Vite UI, Canvas and Preview
-apps/server               HTTP/SSE transport, sessions, assets, preview and download
-apps/cli                  Terminal interface to the shared workflow
-packages/design-agent     Pi extension, design contracts, Skill management and tools
-.pi/agents                Five Agent prompt contracts
-.pi/skills                Professional, supporting and output-expression Skills
-workspace/runs/<run-id>/   Project files, state, workflow events and sessions
-```
+DreamaticArt 使用 Pi SDK、Extensions、Skills 和会话接口扩展设计能力，Pi 保持为上游依赖。主要目录：
 
-The shared **Design Context** indexes project evidence and specifications. An
-append-only **Design Bus** records handoffs and lifecycle events. Approval
-receipts bind reviewed files to execution; changed inputs require renewed review.
-
-Builder dispatches approved tasks by method: image tools for visual outputs and
-`html_generate` for pages. PNG is the default; JPG/JPEG is also supported with
-matching file encoding. HTML validation checks approved-source equality and
-local resources. Source viewport/interaction checks run before approval when a
-browser is available; Builder does not repeat browser or visual/design audits. These checks do not certify aesthetics, engineering feasibility or
-user acceptance. Interactive previews use an isolated local origin and
-committed-file checks.
-
-## Application examples
-
-Representative design concepts and visual deliverables from DreamaticArt projects.
-
-### Brand & Merchandise: Jingju Guochao Series
-
-| Product system | Packaging | Series overview |
-|---|---|---|
-| <img src="examples/jingju-guochao-merch/final/artifacts/generated-images/01-product-overview.png" width="220"> | <img src="examples/jingju-guochao-merch/final/artifacts/generated-images/07-packaging-application.png" width="220"> | <img src="examples/jingju-guochao-merch/final/artifacts/generated-images/10-series-overview.png" width="220"> |
-
-### Brand & Merchandise: Tongji IDVX Lab
-
-| Tote hero | Notebook cover | Badge system |
-|---|---|---|
-| <img src="examples/tongji-idvx-lab-merch/final/artifacts/generated-images/01-tote-hero-front.png" width="220"> | <img src="examples/tongji-idvx-lab-merch/final/artifacts/generated-images/03-notebook-cover.png" width="220"> | <img src="examples/tongji-idvx-lab-merch/final/artifacts/generated-images/05-badge-set-board.png" width="220"> |
-
-### Product Design: Elderly AI Companion Device
-
-| Hero render | Three-view | CMF board |
-|---|---|---|
-| <img src="examples/elderly-ai-companion-device/final/artifacts/generated-images/01-hero-render.png" width="220"> | <img src="examples/elderly-ai-companion-device/final/artifacts/generated-images/02-three-view.png" width="220"> | <img src="examples/elderly-ai-companion-device/final/artifacts/generated-images/06-cmf-board.png" width="220"> |
-
-### Architecture: Zhujiajiao Visitor Center
-
-| Site context | Zoning | Entry hall |
-|---|---|---|
-| <img src="examples/zhujiajiao-visitor-center-space/final/artifacts/generated-images/01-site-context-relation.png" width="220"> | <img src="examples/zhujiajiao-visitor-center-space/final/artifacts/generated-images/02-master-plan-zoning.png" width="220"> | <img src="examples/zhujiajiao-visitor-center-space/final/artifacts/generated-images/06-hero-entry-hall.png" width="220"> |
-
-### Poster & Advertising: IEEE VIS 2026
-
-| Main poster | Key visual | Social post |
-|---|---|---|
-| <img src="examples/ieee-vis-2026-promo/final/artifacts/generated-images/01-main-poster.png" width="220"> | <img src="examples/ieee-vis-2026-promo/final/artifacts/generated-images/02-key-visual.png" width="220"> | <img src="examples/ieee-vis-2026-promo/final/artifacts/generated-images/05-social-twitter-post.png" width="220"> |
-
-### Campus Campaign: Shanghai Innovation Institute
-
-| Logo poster | Chinese poster | Merch mockup |
-|---|---|---|
-| <img src="examples/shanghai-chuangzhi-college-merch-system/final/artifacts/generated-images/01-logo-application-poster.png" width="220"> | <img src="examples/shanghai-chuangzhi-college-merch-system/final/artifacts/generated-images/02-campaign-poster-zh.png" width="220"> | <img src="examples/shanghai-chuangzhi-college-merch-system/final/artifacts/generated-images/07-merch-mockup.png" width="220"> |
-
-### Product Design: VibeCoding Creative Compact Input
-
-| Hero render | Usage scene | Form language |
-|---|---|---|
-| <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/01-hero-render.png" width="220"> | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/03-usage-scene.png" width="220"> | <img src="examples/vibecoding-creative-compact-input/final/artifacts/generated-images/05-exploded-view.png" width="220"> |
-
-## Development and troubleshooting
+| 目录 | 内容 |
+| --- | --- |
+| `apps/web` | React 界面、Canvas 与 Preview |
+| `apps/server` | HTTP/SSE、会话、资源及应用策略 |
+| `apps/cli` | 命令行入口 |
+| `apps/desktop` | macOS 桌面应用 |
+| `packages/design-agent` | 设计工具、工作流和交付契约 |
+| `.pi/agents`、`.pi/skills` | Agent 指令与专业 Skill |
+| `workspace` | 本地项目与会话输出，不提交生成任务 |
 
 ```bash
 npm run check
 npm run build
-node --test packages/design-agent/test/*.test.mjs apps/server/test/*.test.mjs apps/web/test/*.test.mjs
 ```
 
-If a new feature is unavailable after an update, restart the server and refresh
-the browser. Resume interrupted work in the existing project to reuse completed
-stages. Image requests have bounded retries and body-stall timeouts; successful
-outputs are retained when another item fails.
+更新源码后重新安装锁定依赖、构建并重启服务；刷新浏览器。仅构建不会更新已经运行的后端。
 
-Further details:
+在 Apple Silicon Mac 上构建安装包：
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [v2.0.3 design and execution contracts](docs/V2.0.3.md)
-- [Performance and diagnostics](docs/PERFORMANCE.md)
-- [Observed failures and fixes](docs/ACTION_FAILURE_ANALYSIS.md)
+```bash
+npm run release:mac
+```
 
-## License
+发布分支必须命名为 `v<major>.<minor>.<patch>`，如 `v2.0.3`。脚本执行构建、检查、回归及桌面验证，生成 `release/DreamaticArt-<version>-mac-arm64.dmg` 和 SHA256 文件。桌面开发使用 `npm run desktop`。
+
+## 常见问题
+
+- **模型调用失败**：检查 API 密钥、服务地址、模型名称及协议；图像服务还需支持相应的生成或编辑接口。
+- **没有项目，无法输入**：点击“新建项目”，系统不会自动创建空白项目。
+- **更新后界面或行为没变化**：重新构建、重启服务并刷新浏览器；桌面版需使用重新构建的应用。
+- **发布失败**：确认 ZIP 大小、官网版本与存储权限。官网并发队列可能要求等待；每 IP 的小时次数限制默认关闭，可由官网管理员配置。
+- **官网手动删除作品后仍有本地记录**：发布对话框会核对官网列表；官网不可达时会保守保留不确定提示。
+- **旧项目缺少模型记录**：发布包按发布时配置补录，并注明来源；这不代表已恢复历史实际使用模型。
+
+进一步阅读：[系统架构](docs/ARCHITECTURE.md) · [设计与执行契约](docs/V2.0.3.md) · [性能与诊断](docs/PERFORMANCE.md)
+
+## 许可证
 
 [MIT](LICENSE)
-
-## Publish a design to DreamaticSite
-
-HTML UX/UI deliveries are temporarily ineligible for publication, including mixed
-projects containing HTML deliverables. Preview and Export remain available. Image
-designs still use HTML showcase pages and remain eligible.
-
-After an eligible completed build, open **Preview → Publish**. Review the project and
-public destination, optionally enter your name, organization and website, and
-confirm publication. The complete project export is compressed and uploaded to
-`https://www.dreamatic.art/`; the site validates and deploys it into Gallery, then
-removes the uploaded ZIP. Leave your name blank to display **Anonymous**. These
-self-declared details do not use or activate the site's login system.
-
-The export includes design outputs, source files and reference material, without
-sessions or system credentials. Check the public-sharing confirmation before
-uploading. Published designs provide links to their online preview and Gallery.
-
-Configure `DREAMATIC_SITE_URL` under **Settings → System parameters** to change
-the site origin. HTTPS is required; HTTP localhost is supported for development.
-The website must run the matching DreamaticSite publishing API, allow 128 MiB
-uploads at its reverse proxy, and have write access to its Gallery directory.
-
-Repeat publication reuses a project-local publication id and replaces its previous
-website contents after explicit confirmation. The private update credential stays
-in `.performance/publications.json`, outside exported ZIPs. Creator fields are
-restored when reopening Publish. Packaging shows an indeterminate progress bar;
-upload progress reports streamed bytes, then waits for server deployment. Inputs,
-submission and closing are locked while publication is pending.
-
-Publications made by older versions have no saved update credential and cannot
-be automatically claimed for replacement. The DreamaticSite server must also be
-updated to enable replacement.
-
-For older projects, Publish preserves recorded model usage and fills missing
-reasoning/generation groups from current system settings in the publication ZIP.
-Supplemented records use `source: publication_config_fallback`; the online preview
-labels this provenance. Original Run files and approval receipts remain intact.
