@@ -484,6 +484,8 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .showcase-view { padding-bottom: 58px; }
 .preview-model-credit { bottom: 6px; left: 16px; padding: 0; background: transparent; }
 @media (max-width: 640px) { .workspace-header h2 { max-width: 25vw; } .header-actions .language-toggle button { display: flex; font-size: 11px; } }
-.settings-modal .language-toggle button { padding: 4px 7px; font-size: 11px; min-width: 32px; }
+.settings-modal header > button { grid-column: 3; grid-row: 1; justify-self: end; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border-radius: 50%; color: var(--muted); }
+.settings-modal header > button:hover:not(:disabled) { background: #e9ebe1; color: #34392b; }
+.settings-modal header > button:focus-visible { outline: 2px solid #819342; outline-offset: 2px; }
 .publish-dialog .publish-overwrite{padding:10px 12px;border:1px solid #d9c892;border-radius:8px;background:#faf3de;color:#715b20}
 .publish-progress{display:grid;gap:9px;padding:14px;margin-top:16px;border:1px solid var(--line);border-radius:8px;background:#f0f1e9}.publish-progress>span{display:flex;gap:8px;align-items:center;font-size:13px}.publish-progress small{color:#777b70;font-size:11px;line-height:1.5}.publish-progress progress{width:100%;height:8px;accent-color:#819342}

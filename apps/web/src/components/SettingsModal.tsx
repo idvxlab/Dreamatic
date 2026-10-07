@@ -1,4 +1,4 @@
-import { useI18n, LanguageToggle } from "../i18n";
+import { useI18n } from "../i18n";
 import { Save, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RuntimeConfig } from "../api";
@@ -24,7 +24,7 @@ export function SettingsModal({ initial, onClose, onSave }: SettingsModalProps) 
       if (event.key === "Escape" && !saving) onClose();
       if (event.key === "Tab") { const controls = [...dialog.current!.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]')]; const first = controls[0], last = controls.at(-1); if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); } else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); } }
     }}>
-      <header><div className="settings-icon"><SlidersHorizontal size={17} /></div><span><strong id="settings-title">{t("Settings")}</strong><small>{t("Read and save the project .env configuration")}</small></span><LanguageToggle /><button type="button" title={t("Close settings")} aria-label={t("Close settings")} disabled={saving} onClick={onClose}><X size={16} /></button></header>
+      <header><div className="settings-icon"><SlidersHorizontal size={17} /></div><span><strong id="settings-title">{t("Settings")}</strong><small>{t("Read and save the project .env configuration")}</small></span><button type="button" title={t("Close settings")} aria-label={t("Close settings")} disabled={saving} onClick={onClose}><X size={16} /></button></header>
       <div className="config-source"><code title={initial.envPath}>{initial.envPath}</code><span>{t("Model changes apply to new sessions. Port and workspace changes require a server restart.")}</span></div>
       <div className="config-tabs" role="tablist" aria-label={t("Configuration modules")}>{initial.modules.map((item, index) => <button type="button" key={item.id} id={`config-tab-${item.id}`} role="tab" aria-selected={module === item.id} aria-controls={`config-panel-${item.id}`} tabIndex={module === item.id ? 0 : -1} onClick={() => setModule(item.id)} onKeyDown={(event) => {
         if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) { event.preventDefault(); const next = event.key === "Home" ? 0 : event.key === "End" ? initial.modules.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + initial.modules.length) % initial.modules.length; setModule(initial.modules[next]!.id); dialog.current?.querySelector<HTMLButtonElement>(`#config-tab-${initial.modules[next]!.id}`)?.focus(); }
