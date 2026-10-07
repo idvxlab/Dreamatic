@@ -32,3 +32,8 @@ test('synchronizes manifests and lockfile from Git without changing internal pac
     assert.equal(lock.packages['packages/design-agent'].version, '0.1.0');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('main branch uses package version; explicit release versions override it and reject invalid input',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'dreamatic-release-main-'));const previous=process.env.DREAMATIC_RELEASE_VERSION;
+ try{execFileSync('git',['init','-b','main',root]);await mkdir(join(root,'apps/desktop'),{recursive:true});for(const file of ['package.json','apps/desktop/package.json'])await writeFile(join(root,file),JSON.stringify({version:'2.0.3'}));await writeFile(join(root,'package-lock.json'),JSON.stringify({version:'2.0.3',packages:{'':{},'apps/desktop':{}}}));delete process.env.DREAMATIC_RELEASE_VERSION;assert.equal(await syncReleaseVersion(root),'2.0.3');process.env.DREAMATIC_RELEASE_VERSION='2.0.4';assert.equal(await syncReleaseVersion(root),'2.0.4');process.env.DREAMATIC_RELEASE_VERSION='../bad';await assert.rejects(syncReleaseVersion(root),/Release branch/)}finally{if(previous===undefined)delete process.env.DREAMATIC_RELEASE_VERSION;else process.env.DREAMATIC_RELEASE_VERSION=previous;await rm(root,{recursive:true,force:true})}
+});

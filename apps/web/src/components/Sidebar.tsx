@@ -1,6 +1,8 @@
 import { useI18n } from "../i18n";
-import { Archive, Check, ChevronDown, Layers3, MoreHorizontal, Pencil, Plus, Search, Settings2, Sparkles, Trash2, X } from "lucide-react";
+import { Archive, Info, Github, Check, ChevronDown, Layers3, MoreHorizontal, Pencil, Plus, Search, Settings2, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { VERSION_REPOSITORY_URL } from "../app-info";
+import { AboutModal } from "./AboutModal";
 import type { RunView } from "../types";
 
 interface SidebarProps {
@@ -16,17 +18,18 @@ interface SidebarProps {
 
 export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun, onDeleteRun, onSettings, creating = false }: SidebarProps) {
   const { t } = useI18n();
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-  const userButtonRef = useRef<HTMLButtonElement>(null);
+  const [brandMenuOpen, setBrandMenuOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const brandArea = useRef<HTMLDivElement>(null);
+  const brandButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (!userMenuOpen) return;
-    const dismiss = (event: MouseEvent) => { if (!userMenuRef.current?.contains(event.target as Node)) setUserMenuOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setUserMenuOpen(false); userButtonRef.current?.focus(); } };
+    if (!brandMenuOpen) return;
+    const dismiss = (event: MouseEvent) => { if (!brandArea.current?.contains(event.target as Node)) setBrandMenuOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setBrandMenuOpen(false); brandButton.current?.focus(); } };
     document.addEventListener("mousedown", dismiss); document.addEventListener("keydown", escape);
-    userMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+    brandArea.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
     return () => { document.removeEventListener("mousedown", dismiss); document.removeEventListener("keydown", escape); };
-  }, [userMenuOpen]);
+  }, [brandMenuOpen]);
   const [query, setQuery] = useState("");
   const [menuRunId, setMenuRunId] = useState<string>();
   const [editingRunId, setEditingRunId] = useState<string>();
@@ -60,10 +63,20 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
 
   return (
     <aside className="sidebar" id="project-panel">
-      <div className="brand-row">
-        <div className="brand-mark"><Sparkles size={17} strokeWidth={1.8} /></div>
-        <div><strong>DreamaticArt</strong><span>{t("Design intelligence")}</span></div>
-        <ChevronDown className="muted-icon" size={15} />
+      <div className="brand-area" ref={brandArea}>
+        <button ref={brandButton} className="brand-row" aria-label={t("DreamaticArt menu")} aria-haspopup="menu" aria-expanded={brandMenuOpen} aria-controls={brandMenuOpen ? "brand-menu" : undefined} onClick={() => setBrandMenuOpen(open => !open)}>
+          <div className="brand-mark"><Sparkles size={17} strokeWidth={1.8} /></div>
+          <div><strong>DreamaticArt</strong><span>{t("Design intelligence")}</span></div>
+          <ChevronDown className="muted-icon" size={15} />
+        </button>
+        {brandMenuOpen && <div className="brand-menu" id="brand-menu" role="menu" aria-label={t("DreamaticArt menu")} onKeyDown={event => {
+          const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+          if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); const index = items.indexOf(document.activeElement as HTMLElement); const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; items[next]?.focus(); }
+        }}>
+          <a role="menuitem" href={VERSION_REPOSITORY_URL} target="_blank" rel="noopener noreferrer" onClick={() => setBrandMenuOpen(false)}><Github size={16} /> GitHub</a>
+          <button role="menuitem" onClick={() => { setBrandMenuOpen(false); onSettings(); }}><Settings2 size={16} /> {t("Settings")}</button>
+          <button role="menuitem" onClick={() => { setBrandMenuOpen(false); setAboutOpen(true); }}><Info size={16} /> {t("About DreamaticArt")}</button>
+        </div>}
       </div>
       <button className="new-project" onClick={onCreate} disabled={creating}><Plus size={16} /> {creating ? t("Creating…") : t("New project")}</button>
       <div className="search-box"><Search size={15} /><input aria-label={t("Search projects")} placeholder={t("Search projects")} value={query} onChange={(event) => setQuery(event.target.value)} /></div>
@@ -93,10 +106,7 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
         ))}
         {visibleRuns.length === 0 && <p className="empty-projects">{t("No matching projects")}</p>}
       </div>
-      <div className="profile-area" ref={userMenuRef}>
-        {userMenuOpen && <div className="user-menu" id="user-menu" role="menu" aria-label={t("User menu")}><button role="menuitem" onClick={() => { setUserMenuOpen(false); onSettings(); }}><Settings2 size={16} /> {t("Settings")}</button></div>}
-        <button ref={userButtonRef} className="profile" aria-label={t("User menu: Designer")} aria-haspopup="menu" aria-expanded={userMenuOpen} aria-controls={userMenuOpen ? "user-menu" : undefined} onClick={() => setUserMenuOpen((open) => !open)}><div className="avatar">D</div><span><strong>{t("Designer")}</strong><small>{t("Local workspace")}</small></span><ChevronDown size={15} /></button>
-      </div>
+      {aboutOpen && <AboutModal onClose={() => { setAboutOpen(false); brandButton.current?.focus(); }} />}
     </aside>
   );
 }

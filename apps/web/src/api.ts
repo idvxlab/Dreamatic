@@ -121,6 +121,7 @@ export async function getHealth(): Promise<HealthView> {
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export interface RuntimeConfig {
+  applied?: { workspaceChanged: boolean; portChanged: boolean; port: number };
   envPath: string;
   modules: Array<{ id: string; title: string; description: string }>;
   fields: ConfigField[];

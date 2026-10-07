@@ -1,3 +1,4 @@
+import { imageProgress } from "@dreamatic/design-agent/workflow-progress";
 import { briefDesignScopes, designClassificationMessage } from "@dreamatic/design-agent";
 import { indexedJsonl } from "./jsonl-index.js";
 import { readFile, readdir, stat } from "node:fs/promises";
@@ -32,6 +33,8 @@ export interface WorkflowEventView {
   children?: WorkflowEventView[];
   actionCount?: number;
   agent?: string;
+  updatedAt?: string;
+  imageProgress?: import("@dreamatic/design-agent/workflow-progress").ImageProgress;
 }
 
 interface SessionInvocation extends WorkflowEventView {
@@ -375,8 +378,9 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
     if (type === "agent_progress") {
       if (typeof event.output === "string") {
         invocation.output = compact(event.output, 1_200);
+        if (at) invocation.updatedAt = at;
         const tool = typeof event.toolCallId === "string" ? tools.get(`${invocationId}:${event.toolCallId}`) : undefined;
-        if (tool?.status === "running") tool.output = invocation.output;
+        if (tool?.status === "running") { tool.output = invocation.output; if (at) tool.updatedAt = at; const progress = imageProgress(tool.imageProgress, event); if (progress) tool.imageProgress = progress; }
       }
       continue;
     }

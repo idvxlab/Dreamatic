@@ -3300,6 +3300,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         if (anchorIndex < 0) throw new Error(`Unknown anchorId: ${params.anchorId}`);
         const anchor = tasks[anchorIndex]!;
         const notify = (notice: RetryNotice) => onUpdate?.({ content: [{ type: "text", text: `Image generation retry ${notice.nextAttempt}: ${notice.error}` }], details: { retry: notice } });
+        await appendWorkflowLifecycleEvent(workspaceDir, params.runId, { type: "agent_progress", invocationId: options.parentInvocation?.id, agent: options.parentInvocation?.agent ?? "builder", toolCallId: _id, total: tasks.length, output: `Preparing ${tasks.length} design images`, status: "running" });
         let completed = 0;
         const generate = async (task: ImageGenerateTask): Promise<Record<string, unknown>> => {
           signal?.throwIfAborted();
@@ -3463,6 +3464,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             if (outputPaths.has(resolveInside(workspaceDir, source))) throw new Error("Batch edit sources must already exist outside this batch's outputs; execute dependent edits in a later batch");
           }
         }
+        await appendWorkflowLifecycleEvent(workspaceDir, params.runId, { type: "agent_progress", invocationId: options.parentInvocation?.id, agent: options.parentInvocation?.agent ?? "builder", toolCallId: _id, total: params.tasks.length, output: `Preparing ${params.tasks.length} image edits`, status: "running" });
         let completed = 0;
         const results = await mapWithConcurrency(params.tasks, imageConcurrency, async (task) => {
           signal?.throwIfAborted();

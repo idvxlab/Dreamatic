@@ -11,6 +11,10 @@
     "./workflow-retries": {
       "types": "./dist/workflow-retries.d.ts",
       "import": "./dist/workflow-retries.js"
+    },
+    "./workflow-progress": {
+      "types": "./dist/workflow-progress.d.ts",
+      "import": "./dist/workflow-progress.js"
     }
   },
   "scripts": {

@@ -172,6 +172,7 @@ export interface RunView {
   showcasePath?: string;
   presentation?: { mode: "gallery" | "html"; entry: string };
   htmlEntries?: string[];
+  hasImageDeliverables?: boolean;
   sessionId?: string;
 }
 
@@ -640,6 +641,7 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       notes: options.summary ? [] : await runNotes(runDir),
       activity,
       agentSessions: childSessions.map(agentSessionSummary),
+      hasImageDeliverables: Array.isArray(builtManifest?.artifacts) && builtManifest.artifacts.some((item: { method?: string; path?: string }) => ["image_generate", "image_edit"].includes(item.method ?? "") && typeof item.path === "string" && /\.(png|jpe?g|webp|gif)$/i.test(item.path)),
       ...(builtManifest?.modelUsage ? { modelUsage: builtManifest.modelUsage as NonNullable<RunView["modelUsage"]> } : {}),
       ...(path ? { showcasePath: relative(workspaceDir, path).replaceAll("\\", "/") } : {}),
       ...(builtManifest?.schemaVersion === 2 && ["html", "gallery"].includes(String(presentation.mode)) && typeof presentation.entry === "string" ? { presentation: { mode: presentation.mode as "html" | "gallery", entry: presentation.entry } } : {}),

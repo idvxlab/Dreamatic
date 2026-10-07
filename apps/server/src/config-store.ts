@@ -304,22 +304,22 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "label": "Server port",
     "module": "system",
     "example": "4310",
-    "description": "Takes effect after restarting the server.",
+    "description": "Applied automatically after saving. The desktop app manages its local service port.",
     "type": "number",
     "defaultValue": "4310",
     "min": 1,
     "max": 65535,
-    "restartRequired": true
+    "restartRequired": false
   },
   {
     "key": "DREAMATIC_WORKSPACE",
     "label": "Workspace directory",
     "module": "system",
     "example": "./workspace",
-    "description": "Relative paths resolve from the DreamaticArt directory. Requires a server restart.",
+    "description": "Relative paths resolve from the configuration directory. Applied automatically after saving.",
     "type": "text",
     "defaultValue": "./workspace",
-    "restartRequired": true
+    "restartRequired": false
   },
   {
     "key": "DREAMATIC_TOOL_PATH",

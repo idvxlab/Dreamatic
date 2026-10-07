@@ -9,11 +9,15 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const args = process.argv.slice(2);
 if (args.includes('--help')) {
-  console.log('Usage: npm run release:mac [-- --skip-install]\n\nBuild and verify the Apple Silicon macOS installer.\nRequires macOS arm64, Node >=22.19, npm, internet access and a logged-in desktop session.\n--skip-install reuses the already installed, locked development dependencies.\nVersion is synchronized from the current v<major>.<minor>.<patch> Git branch.');
+  console.log('Usage: npm run release:mac [-- --skip-install] [-- --version X.Y.Z]\n\nBuild and verify the Apple Silicon macOS installer.\nRequires macOS arm64, Node >=22.19, npm, internet access and a logged-in desktop session.\n--skip-install reuses the already installed, locked development dependencies.\nVersion: --version, then a version-named Git branch, then package.json.');
 } else {
   let log;
   try {
-    if (args.some(arg => arg !== '--skip-install')) throw new Error('Unknown option. Use --help.');
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--skip-install') continue;
+      if (args[i] === '--version' && args[i + 1]) { process.env.DREAMATIC_RELEASE_VERSION = args[++i]; continue; }
+      throw new Error('Unknown or incomplete option. Use --help.');
+    }
     if (process.platform !== 'darwin' || process.arch !== 'arm64') throw new Error('Run this release on an Apple Silicon Mac (macOS arm64).');
     const [major, minor] = process.versions.node.split('.').map(Number);
     if (major < 22 || (major === 22 && minor < 19)) throw new Error('Node.js 22.19 or newer is required.');
@@ -42,7 +46,7 @@ if (args.includes('--help')) {
     await run('4/7 Prepare the bundled Node, Pi tools, browser and icon', process.execPath, ['scripts/desktop/prepare.mjs']);
     const testDirs = ['apps/server/test', 'apps/web/test', 'packages/design-agent/test', 'apps/desktop/test'];
     const tests = (await Promise.all(testDirs.map(async directory => (await readdir(join(root, directory))).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(directory, name))))).flat();
-    await run('5/7 Run regression and desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=2', ...tests]);
+    await run('5/7 Run regression and desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=1', ...tests]);
     await run('6/7 Check desktop Settings, Preview and Export', process.execPath, ['apps/desktop/test-ui.mjs']);
     await run('7/7 Package and verify the isolated read-only installer', process.execPath, ['scripts/desktop/package.mjs']);
     const { version } = JSON.parse(await readFile(join(root, 'apps/desktop/package.json'), 'utf8'));
