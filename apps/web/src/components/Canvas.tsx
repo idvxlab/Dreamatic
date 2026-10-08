@@ -146,7 +146,12 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
   async function shareProject() {
     if (!publishedLink) return;
     setShareMessageFading(false); setShareNotice(value => value + 1);
-    try { await navigator.clipboard.writeText(publishedLink); setShareMessage("Published project link copied"); }
+    const desktop = (window as Window & { dreamaticDesktop?: { copyPublicationLink: (url: string) => Promise<void> } }).dreamaticDesktop;
+    // Start clipboard writing before opening the browser so web retains focus
+    // and both operations begin within the original click gesture.
+    const copy = desktop ? desktop.copyPublicationLink(publishedLink) : navigator.clipboard?.writeText(publishedLink) ?? Promise.reject(new Error("Clipboard unavailable"));
+    window.open(publishedLink, "_blank", "noopener,noreferrer");
+    try { await copy; setShareMessage("Published project link copied"); }
     catch { setShareMessage("Could not copy the link. Please try again."); }
   }
 
@@ -328,7 +333,7 @@ export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
         <section className="showcase-view">
           {interactive && previewPages.length > 1 && <div className="preview-pages"><label>{t("Page")} <select aria-label={t("Prototype page")} value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
           {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "DreamaticArt"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "DreamaticArt"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? t("Preparing interactive preview…")}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>{t("Retry preview")}</button>}</div>}
-          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button title={htmlPublicationBlocked ? t("HTML UX/UI projects cannot currently be published to the official Gallery") : undefined} disabled={htmlPublicationBlocked || exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button><button disabled={!publishedLink || exporting} title={!publishedLink ? t("Publish this project before sharing") : t("Copy published project link")} onClick={() => void shareProject()}><Share2 size={14} /> {t("Share")}</button></div>}
+          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button title={htmlPublicationBlocked ? t("HTML UX/UI projects cannot currently be published to the official Gallery") : undefined} disabled={htmlPublicationBlocked || exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button><button disabled={!publishedLink || exporting} title={!publishedLink ? t("Publish this project before sharing") : t("Copy and open published project")} onClick={() => void shareProject()}><Share2 size={14} /> {t("Share")}</button></div>}
           {htmlPublicationBlocked && <small className="preview-model-credit">{t("HTML UX/UI projects cannot currently be published to the official Gallery")}</small>}
           <small className="preview-model-credit">{t("Reasoning models")}: {[...new Set(run?.modelUsage?.reasoning.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}<br />{t("Generation models")}: {[...new Set(run?.modelUsage?.generation.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}</small>
           {shareMessage && <p className={`preview-share-message${shareMessageFading ? " fading" : ""}`} role="status">{t(shareMessage)}</p>}

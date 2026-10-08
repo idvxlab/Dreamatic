@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, shell, session } from 'electron';
+import { app, BrowserWindow, Menu, dialog, shell, session, clipboard, ipcMain } from 'electron';
 import { createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve, basename } from 'node:path';
@@ -40,7 +40,14 @@ else {
       });
     }
     function openExternal(value) { try { const url = new URL(value); if (url.protocol === 'https:' || url.protocol === 'http:') void shell.openExternal(url.href); } catch {} }
-    mainWindow = new BrowserWindow({ title: 'DreamaticArt', width: 1440, height: 940, minWidth: 900, minHeight: 600, show: false, backgroundColor: '#f8f7f5', webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true } });
+    ipcMain.handle('dreamatic-copy-publication-link', (event, value) => {
+      if (event.sender !== mainWindow?.webContents || event.senderFrame?.parent || new URL(event.senderFrame.url).origin !== origin) throw new Error('Untrusted clipboard request');
+      if (typeof value !== 'string' || value.length > 4096) throw new Error('Invalid publication link');
+      const url = new URL(value);
+      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Invalid publication link');
+      clipboard.writeText(url.href);
+    });
+    mainWindow = new BrowserWindow({ title: 'DreamaticArt', width: 1440, height: 940, minWidth: 900, minHeight: 600, show: false, backgroundColor: '#f8f7f5', webPreferences: { preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)), nodeIntegration: false, contextIsolation: true, sandbox: true } });
     guard(mainWindow);
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: 'DreamaticArt', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Open Project Folder', click: async () => { const health = await fetch(`${origin}/api/health`).then(r => r.json()); await shell.openPath(health.workspaceDir); } }, { label: 'Open Configuration Folder', click: () => { void shell.openPath(dataDir); } }, { type: 'separator' }, { role: 'quit' }] },

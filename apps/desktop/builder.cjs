@@ -3,7 +3,7 @@ const { resolve, join } = require('node:path');
 module.exports = {
   appId: 'design.dreamatic.desktop', productName: 'DreamaticArt',
   directories: { app: 'apps/desktop', output: 'release' },
-  files: ['main.mjs', 'lifecycle.mjs', 'package.json'],
+  files: ['main.mjs', 'lifecycle.mjs', 'preload.cjs', 'package.json'],
   asar: true,
   electronDist: 'node_modules/electron/dist',
   extraResources: [{ from: '.desktop-runtime', to: 'runtime', filter: ['**/*', '!.downloads/**', '!**/.DS_Store'] }],

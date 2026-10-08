@@ -198,7 +198,7 @@ Follow progress in the conversation and inspect project materials on Canvas. Aft
 | **Open** | Open the delivered presentation separately; the desktop app uses a preview window |
 | **Export** | Save the complete project ZIP; the desktop app uses a native save dialog |
 | **Publish** | Upload eligible image or mixed projects to the official Gallery |
-| **Share** | After successful publication, copy the official project link; the confirmation fades after four seconds |
+| **Share** | After successful publication, copy the official project link and open it in a new browser window or tab; the confirmation fades after four seconds |
 
 Extract an exported ZIP before opening its `index.html` launcher. Continue in the same project to request revisions; revised specifications are designed and reviewed before execution.
 

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 const dataDir = await mkdtemp('/private/tmp/dreamatic-desktop-ui-');
-let app;
+let app, originalClipboard;
 const previewServer = createServer((_request, response) => {
   response.writeHead(200, { 'Content-Type': 'text/html' });
   response.end('<button onclick="this.textContent=123">Preview interaction</button>');
@@ -37,6 +37,28 @@ try {
   await page.waitForFunction(() => !document.querySelector('.settings-modal') && document.body.innerText.includes('New project'));
   assert.equal((await page.evaluate(() => fetch('/api/health').then(response => response.json()))).workspaceDir, join(dataDir, 'new-workspace'));
 
+  const publicationLink = 'https://www.dreamatic.art/gallery-assets/published-desktop/artifacts/00-gallery.html';
+  originalClipboard = await app.evaluate(({ clipboard, shell }) => {
+    const previous = clipboard.readText();clipboard.writeText('');
+    shell.openExternal = async url => { globalThis.sharedExternalLink = url; };
+    return previous;
+  });
+  const fixtureRun = { id:'share-fixture',sessionId:'share-session',title:'Desktop share fixture',status:'complete',stages:{build:'completed'},notes:[],documents:[],activity:[],agentSessions:[],assetCount:0,showcasePath:'runs/share-fixture/artifacts/00-gallery.html',presentation:{mode:'gallery',entry:'artifacts/00-gallery.html'} };
+  await page.route('**/api/**', async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/stream')) { await route.fulfill({contentType:'text/event-stream',body:''});return; }
+    const value = url.pathname === '/api/health' ? {ok:true} : url.pathname === '/api/sessions' ? [{id:'share-session',title:fixtureRun.title,running:false,messages:[],projectId:fixtureRun.id}] : url.pathname === '/api/runs' ? [fixtureRun] : url.pathname === '/api/runs/share-fixture' ? fixtureRun : url.pathname.endsWith('/publish') ? {site:'https://www.dreamatic.art',published:true,mayExist:true,inProgress:false,receipt:{projectId:'published-desktop',previewUrl:publicationLink,galleryUrl:'https://www.dreamatic.art/#gallery'}} : url.pathname.endsWith('/canvas') ? null : [];
+    await route.fulfill({contentType:'application/json',body:JSON.stringify(value)});
+  });
+  await page.route('**/assets/**', route => route.fulfill({contentType:'text/html',body:'<h1>Desktop preview</h1>'}));
+  await page.reload();await page.getByRole('button',{name:'Preview',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.preview-actions button:last-child').disabled);
+  await page.getByRole('button',{name:'Share',exact:true}).click();
+  await page.getByText('Published project link copied',{exact:true}).waitFor();
+  assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),publicationLink);
+  assert.equal(await app.evaluate(()=>globalThis.sharedExternalLink),publicationLink);
+  assert.equal(await page.evaluate(async()=>{try{await window.dreamaticDesktop.copyPublicationLink('javascript:alert(1)');return false;}catch{return true;}}),true);
+  console.log('DESKTOP_SHARE_CLIPBOARD_EXTERNAL_BROWSER_OK');
   const nextWindow = app.waitForEvent('window');
   await page.evaluate(url => window.open(url, '_blank'), previewUrl);
   const preview = await nextWindow;
@@ -45,6 +67,7 @@ try {
   await preview.getByRole('button', { name: 'Preview interaction' }).click();
   await preview.getByRole('button', { name: '123' }).waitFor();
   assert.equal(await preview.evaluate(() => typeof window.require), 'undefined');
+  assert.equal(await preview.evaluate(() => typeof window.dreamaticDesktop), 'undefined');
   await preview.close();
   const output = join(dataDir, 'export-test.zip');
   await app.evaluate(({ dialog }, path) => { dialog.showSaveDialogSync = () => path; }, output);
@@ -55,4 +78,4 @@ try {
 } catch (error) {
   console.error('Desktop service diagnostics:', await readFile(join(dataDir, 'desktop.log'), 'utf8').catch(() => 'Log unavailable'));
   throw error;
-} finally { await app?.close(); await new Promise(resolve => previewServer.close(resolve)); await rm(dataDir, { recursive: true, force: true }); }
+} finally { if(app && originalClipboard !== undefined) await app.evaluate(({clipboard},value)=>clipboard.writeText(value),originalClipboard).catch(()=>{});await app?.close(); await new Promise(resolve => previewServer.close(resolve)); await rm(dataDir, { recursive: true, force: true }); }
