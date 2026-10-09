@@ -1,3 +1,4 @@
+import { readRunContext } from "./context-model.js";
 import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -80,8 +81,8 @@ function attribute(tag: string, name: string): string {
 }
 
 export async function annotateShowcasePrompts(runDir: string, html: string): Promise<string> {
-  const manifest = await json(join(runDir, "plan/deliverable_manifest.json"));
-  const plan = await json(join(runDir, "plan/design_plan.json"));
+  const manifest = await readRunContext(runDir, "plan/deliverable_manifest.json").then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return {}; throw error; });
+  const plan = await readRunContext(runDir, "plan/design_plan.json").then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return {}; throw error; });
   const tasks = plan.schemaVersion === 2 ? plan.execution_plan : plan.image_generation_plan;
   const entries = Array.isArray(tasks) ? tasks.map(record).filter((task) => task.method !== "html_generate") : [];
   const prompts = new Map<string, string>();
@@ -126,7 +127,7 @@ export async function annotateShowcasePrompts(runDir: string, html: string): Pro
 
 export async function appendShowcaseReferences(runDir: string, html: string): Promise<string> {
   const manifest = await json(join(runDir, "research/assets/manifest.json"));
-  const evidence = await json(join(runDir, "research/evidence.json"));
+  const evidence = await readRunContext(runDir, "research/evidence.json").then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return {}; throw error; });
   const sources = new Map<string, { number: number; title: string; author: string; date: string; journal: string; publisher: string; volume: string; issue: string; pages: string; articleNumber: string; conference: string; site: string; reportNumber: string; kind: string; doi: string; accessed: string }>();
   const sourceAliases = new Map<string, string>();
   const addSource = (value: unknown) => {

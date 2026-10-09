@@ -1,0 +1,283 @@
+Dreamatic: Negotiating Evolving Design Intent in Human-AI Co-Creation
+
+通过可协商的设计意图，支持人机共创中的用户控制与局部修订
+
+Research Outline / 中文研究规划稿 / 9 October 2026
+
+作者信息暂不列出。本文是研究计划，尚无用户实验结果；所有假设、样本规模与预期贡献均待验证。版式参考 ACM CHI 单栏 manuscript，保留摘要、CCS、关键词、编号章节与参考文献结构。
+
+ABSTRACT
+
+Generative design agents can transform briefs into multiple visual and interactive artifacts, yet users may struggle to preserve important requirements as intentions evolve across planning, review, generation, and revision. We propose to investigate negotiable design intent as a shared, versioned representation connecting user requirements, design decisions, execution tasks, and artifacts. Building on Dreamatic, we will develop an editable intent panel, artifact-to-intent links, and a change-impact preview that exposes what a revision may affect and what should remain unchanged. A formative study will examine how designers express constraints, interpret unexpected changes, and accept new directions. A subsequent controlled study will compare a conversational interface, editable intent support, and additional impact previews while holding the agent backend and generation budget constant. The evaluation will distinguish user-endorsed intent evolution from unendorsed violations and examine preservation failures, repair effort, perceived control, workload, and exploratory behavior. The intended contribution is an empirically grounded account of how explicit, revisable intent representations can support control without prematurely constraining creative exploration. No effectiveness claims are made before these studies.
+
+摘要说明
+
+本研究关注设计意图在多阶段 Agent 工作流中如何被表达、保持和主动改变。计划通过形成性研究提炼需求，构建可编辑意图、产物关联及修改影响预览，再用受控实验验证其对非预期修改、返工与用户控制感的作用。核心区分是“用户认可的意图演化”与“未经认可的要求违反”，避免把所有变化都视为错误。
+
+CCS CONCEPTS / KEYWORDS
+
+Human-centered computing → Human computer interaction (HCI); Interactive systems and tools. Computing methodologies → Artificial intelligence.
+
+Human-AI co-creation; design intent; user agency; change impact; multi-agent design; creativity support.
+
+图 1. 论文主线：把隐藏在对话与方案中的意图，转化为用户可查看、修改并追踪的共享对象。
+
+
+--- PAGE ---
+
+
+1 INTRODUCTION / 问题、研究问题与贡献
+
+<b>研究内容。</b> 用“只改配色，却改动 Logo 和版式”的具体情境引入问题。解释跨 Agent、跨产物转换如何增加发现和修复错误的成本，并说明设计意图可能合理演化，不能将初始需求视为永久目标。
+
+<b>研究任务。</b> 分析现有运行记录中的典型事件；界定目标人群为具有实际设计经验的品牌或视觉设计师；将任务收窄为品牌视觉及网页延展。用有证据的案例代替笼统的行业痛点。
+
+<b>技术路线。</b> 将一次修改事件定义为：修改前状态、当时有效意图、用户请求、系统动作、修改后产物及用户判定。建立时间顺序，确保用修改当时的要求评价结果，而非事后补写约束。
+
+<b>RQ1：</b>设计师如何区分必须保留、允许探索和可以改变的设计意图？<br/><b>RQ2：</b>可编辑意图及产物关联，如何影响非预期修改、返工和控制感？<br/><b>RQ3：</b>修改影响预览带来什么额外作用，又产生怎样的操作负担与探索限制？
+
+<b>预期贡献：</b>C1，来自真实设计过程的意图协商需求与失败分类；C2，连接意图、决策与产物的可修订交互机制；C3，解释何时该机制有帮助、何时产生负担的实证证据。多 Agent 分工与文件整理作为实现基础，不单独作为理论贡献。
+
+2 RELATED WORK / 理论定位与差异
+
+<b>研究内容。</b> 组织三条文献线索：人机共创的沟通与主动权；混合主动权和错误恢复；生成式设计中的意图表达、版本比较与修改控制。COFI [1] 帮助分析沟通和协作结构；混合主动权 [2] 与 HAI 指南 [3] 提供干预和恢复视角；用户中心共创框架 [4] 提供控制分配的参照。
+
+<b>研究任务。</b> 制作比较矩阵：意图是否可编辑、是否绑定产物、是否有时间版本、是否预览影响、是否允许重新协商。检索近三年的相关 CHI/DIS/IUI 系统，并检查全文；目前列出的文献只构成起点，尚不能证明研究空白。
+
+<b>技术路线。</b> 按功能和交互机制比较，避免按“是否使用 Agent”分类。理论上把意图表示视为共享理解的可操作载体；通过用户是否发现分歧、表达保留要求及主动改变方向来检验机制，而非仅给系统附加理论名称。
+
+<b>本章产出：</b>相关工作比较表、可辩护的差异声明，以及将理论构念对应到可观察行为的映射。
+
+
+--- PAGE ---
+
+
+3 FORMATIVE STUDY / 形成性研究
+
+3.1 目标、参与者与材料
+
+<b>研究内容。</b> 理解设计师实际如何表达意图、发现漂移和修复修改，并检验“约束／偏好／探索目标”的分类是否符合其工作方式。分类是初始分析框架，可以被数据修正。
+
+<b>研究任务。</b> 计划招募约 8–12 名有实际品牌、视觉或 UX 设计经验的参与者，记录经验年限与生成式 AI 使用习惯。收集约 20–30 个经授权的历史修改片段作为辅助材料，不把历史片段当成独立参与者。
+
+3.2 研究流程
+
+每位参与者完成一次约 60–90 分钟的会话：背景访谈；阅读含品牌素材的 brief；使用当前系统生成或查看初稿；完成保留约束下的局部修改；自主选择一次方向变化；结合录像和产物进行回顾访谈。生成等待过长时使用已有初稿进入修改环节，并记录材料条件。
+
+访谈围绕具体事件：你当时希望改什么？哪些内容不应改变？何时发现系统理解不同？这个意外变化是否值得保留？如果事前看见影响范围，你会作何选择？避免只问“你喜欢这个功能吗”。
+
+3.3 数据与分析
+
+<b>技术路线。</b> 同步记录屏幕、用户输入、阶段事件、设计版本、产物差异和回顾解释。以修改事件为分析单位，先开放编码，再对照初始分类；两名研究者讨论分歧、负例与代码定义。反思性主题分析不以一致率替代理论解释；用于正式定量标注的代码本另行进行可靠性检验。
+
+[['初始事件类别', '需要的证据'], ['要求遗漏／误解', '当时用户要求 + 系统解释 + 产物'], ['修改副作用／传播遗漏', '保留要求 + 受影响对象 + 前后差异'], ['主动意图演化', '用户明确改变方向的操作或言语证据'], ['接受 Agent 建议', '建议发生时间 + 用户确认；沉默不算接受']]
+
+<b>本章产出。</b> 设计需求 DR1–DR4、失败分类、意图卡片字段及交互草图。DR 候选是显式来源、可修订边界、影响可见性、未知状态可见性；正式论文须展示它们如何从数据产生，而不是将候选写成发现。
+
+<b>研究伦理：</b>取得录音与项目材料授权；允许使用虚构客户任务；去除客户信息、密钥和模型会话隐私；为参与者提供合理补偿与退出方式。
+
+
+--- PAGE ---
+
+
+4 CONCEPTUAL FRAMEWORK / 可协商的设计意图
+
+<b>研究内容。</b> 提出可修订的意图表示：意图具有来源、作用范围与修改边界，并通过设计决策与产物连接；允许明确表达“尚不知道如何判定”。这是一项待检验的交互框架，而非已验证的通用理论。
+
+<b>研究任务。</b> 定义术语、字段与更新规则；用形成性研究中的正例和负例检查模型能否解释实际过程；明确模型不能直接证明审美一致性。
+
+4.1 意图对象与关联
+
+意图对象 i 包含：稳定 ID、表述、类型、来源证据、确认状态、scope、变更规则、验证方法与内容版本。类型暂分硬约束、偏好、探索目标；来源分用户明确表达、Agent 推断、研究建议。用户明确要求可以直接登记，影响重大的推断需要澄清。
+
+[['对象', '示例', '状态与关系'], ['I-01 硬约束', '原始 Logo 形状和文字不变', '用户明确；关联包装与网页'], ['I-02 偏好', '视觉语言更现代', '解释待讨论；允许比较方向'], ['D-01 决策', '增加留白、简化层级', '服务 I-02；关联海报任务'], ['A-01 产物', '包装主视觉', '来自任务 T-01；保留 I-01']]
+
+4.2 有效意图、意图演化与违反
+
+在时间 t，用 I(t) 表示当时有效且相关的意图集。用户明确授权的变化形成新版本 I(t+1)，旧版本保留为历史。未经认可且违反 I(t) 的变化属于失败；用户事后接受也保留其最初未经认可的记录，单独标记后续接受。
+
+构建关联图 G(t)：意图 → 决策 → 任务 → 产物。图中的边表示已声明的设计或执行关系，不直接表示因果关系，也不保证捕获全部语义依赖。保持“预测影响”“用户选择范围”“实际变化”三种记录，避免把预测当成事实。
+
+4.3 可检验的机制命题
+
+<b>技术路线。</b> 将共享理解操作化为：用户发现并纠正错误解释；将控制操作化为：表达保留要求、改变作用范围和否决传播；将探索操作化为：比较备选方向、主动修订偏好及接受新方向。用行为与访谈交叉解释，而非只用一个“控制感分数”。
+
+<b>本章产出：</b>术语表、状态转换图、意图关联示例，以及理论构念与评价指标的对应表。
+
+
+--- PAGE ---
+
+
+5 DREAMATIC / 系统与交互机制
+
+<b>研究内容。</b> 描述研究原型如何将意图协商接入现有 Researcher、Designer、Reviewer、Builder 流程。重点展示用户能作出的设计决定及其后果；基础架构只介绍解释机制所需的部分。
+
+<b>研究任务。</b> 开发意图面板、产物关联和修改影响预览；增加结构化事件记录；保持相同模型与执行权限。明确区分当前已实现的 Context 整理与尚待开发的研究功能。
+
+[['信息域', '已有基础', '待开发研究功能'], ['project.json', '原始需求、范围、修订请求', '稳定意图 ID、来源、状态与变更规则'], ['research.json', '证据、发现、使用条件', '发现与意图／未决问题的引用'], ['design.json', '设计系统、策略、任务、交付物', '意图与决策关联、修改范围和保留约束'], ['review.json', '审核结论与问题', '意图覆盖及产物验证证据'], ['运行事件与产物', '阶段事件、文件哈希、归档', '交互事件、前后差异、接受／拒绝记录']]
+
+5.1 三个用户操作入口
+
+意图面板：查看 Agent 对需求的解释，编辑、撤销或改变意图类型。产物关联：在画布选择包装或网页，查看相关意图与决策。修改影响预览：展示计划更新对象、计划保留对象和未确认影响；用户可以调整范围、确认或返回探索。
+
+5.2 技术路线与局部修订
+
+修改请求 → 识别涉及的意图与决策 → 按显式引用计算候选影响范围 → 生成包含更新、保留和未知项的变更计划 → 用户交互 → Designer 更新规格 → Reviewer 审核 → Builder 执行 → 记录实际差异。第一版采用图遍历和明确引用；复杂语义依赖只标记不确定，不以模型猜测冒充已知关系。
+
+变化后重新绑定规格与源码哈希，失效旧批准；工具提供素材、文件和浏览器证据。语义及审美判断仍需用户或设计师。研究事件采用 pseudonymous participant ID、条件、任务、时间、意图版本、修改对象及判断依据，避免收集无关聊天内容。
+
+<b>本章产出。</b> 系统图、三个关键界面、一次完整交互 walkthrough、事件 schema，以及可复现实验配置。不得把当前规格审批描述为已经验证实际生成图片的质量。
+
+
+--- PAGE ---
+
+
+6 EVALUATION / 受控实验设计
+
+<b>研究内容。</b> 分离可编辑意图和影响预览的作用，检验它们能否减少非预期修改与返工，同时评估额外负担和探索行为。
+
+<b>研究任务。</b> 先用约 4–6 人开展预实验，检验任务难度、时长、指标定义和生成成本；正式研究暂按 24–36 人估算招募可行性，最终人数须由最小有意义效应、事件发生率及重复测量模型模拟决定，不以该范围宣称功效充分。
+
+<b>H1：</b>B 相对 A 降低非预期保留失败与返工成本；<b>H2：</b>C 相对 B 提高修改范围理解并进一步减少副作用。额外负担与探索限制作为竞争性解释检验，不能预设所有指标都会改善。
+
+6.1 实验条件与控制
+
+[['条件', '可见交互', '主要比较'], ['A 对话基线', '对话修改与现有画布；无意图面板', '受控基线'], ['B 显式意图', 'A + 可编辑意图 + 产物关联', 'B 对 A：意图支持'], ['C 影响预览', 'B + 修改范围／保留／未知项预览', 'C 对 B：预览增益']]
+
+为隔离交互机制，A/B/C 使用相同意图提取、关联和修订后端，A 隐藏结构化表示，B/C 逐步暴露控制入口。A 因而是从当前界面构造的受控基线，不能直接等同未扩展的当前 Dreamatic。若要声称新表示本身改善生成质量，需另做后端消融。
+
+保持模型版本、Skills、工具权限、材料、初始产物质量和预算上限一致；记录实际 token、费用、失败重试和等待时间。A/B 也生成同样的候选影响计划，但不展示预览，防止 C 获得额外推理预算。用户决策导致的实际成本差异属于结果，应如实报告。
+
+6.2 任务、流程与随机化
+
+<b>技术路线。</b> 采用被试内设计；用六种条件顺序平衡顺序效应，使用不同但难度匹配的 brief，并独立平衡任务与条件。每个条件包含约束保持型修改和开放探索型修改，不要求反复修改同一品牌，以降低记忆迁移。
+
+每次会话包括统一培训、练习、三个条件的任务、条件后短量表和事件回顾访谈。通过预实验设定时限及每条件任务数量；记录主动操作时间与模型等待时间。任务包含真实选择空间，避免设计成必然有利于意图面板的“找字段”测验。
+
+<b>退出与失败处理：</b>提前规定技术中断、未完成任务与缺失数据的规则；不因结果差就排除参与者。区分提供商故障与交互机制失败，报告所有条件的完成情况。
+
+
+--- PAGE ---
+
+
+6.3 MEASURES AND ANALYSIS / 指标与分析
+
+<b>研究内容。</b> 主要评价要求保持与修复成本；次要评价理解、控制、负担和探索。不能把意图面板的点击次数直接等同于更高 agency。
+
+[['指标', '操作化', '证据与注意事项'], ['非预期保留失败率（主）', '违反的有效保留意图-产物对 / 可评估对数', '比较前后产物、当时约束和用户解释；未知单列'], ['返工时间（主）', '发现并修复非预期变化的主动用时', '等待时间另报；未修复事件视为删失'], ['需求覆盖（次）', '满足的适用要求 / 可评估要求', '按要求类型评价；审美不强制二值化'], ['控制与理解（次）', '量表 + 对影响范围的预测 + 回顾访谈', '自编条目先访谈和预试；不宣称成熟量表'], ['工作负荷（次）', 'NASA-TLX 或明确说明的 Raw TLX [5]', '固定版本与计分方式，报告六个维度'], ['探索与质量（次）', '备选方向、主动演化及专家盲评', '更多候选不必然更有创意；盲评隐藏条件']]
+
+对照任务的固定保留要求在各条件相同，不通过撤销要求减少失败分母；用户可自由协商的偏好另行记录。报告每条件的可评估对数、unknown 比例及相关敏感性分析，防止只筛选容易判断的要求。
+
+<b>研究任务。</b> 定义保留要求、变化判断和不可评估项；确定主指标、比较和多重检验策略。人工标注者尽量不知实验条件，重叠标注一部分数据，报告一致性与分歧处理；主观判断保留不确定性。
+
+<b>技术路线。</b> 保留失败按意图-产物对建模，使用适合二项结果的混合效应模型；返工时间根据分布和删失采用合适模型。纳入条件、顺序和任务因素，考虑参与者与任务的聚类。不要把同一人的多个产物当成独立样本。报告效应量、区间和原始分布，而不仅报告 p 值。
+
+预注册主比较 B-A、C-B；对多个主检验进行预定校正。生成质量与主观控制为次要／探索性分析。专家评分同时报告一致性，且不通过“平均分不显著”证明质量没有下降。若目标是非劣效，需要事先确定有意义的界值及相应样本规划。
+
+7 RESULTS / 结果章节的写作计划
+
+<b>研究内容。</b> 依次报告完成情况、主指标、次指标、负例与定性解释。所有结果目前待采集；不在 outline 中填写虚构均值、显著性或访谈引语。
+
+<b>研究任务与技术路线。</b> 准备主结果区间图、返工分布、主动演化案例和失败路径图。分析“为什么”：面板是否帮助发现误解？预览是否减少传播错误？较多确认是否拖慢探索？如果无显著收益，应报告不确定性和机制使用情况，避免事后更换主指标。
+
+
+--- PAGE ---
+
+
+8 DISCUSSION / 解释机制与可迁移启示
+
+<b>研究内容。</b> 根据结果讨论显式意图如何成为共同理解的载体，以及“保留”和“探索”的边界如何协商。讨论可见性、编辑权与否决权是否产生不同作用，不把可解释性自动等同于控制。
+
+<b>研究任务。</b> 将结果回扣 RQ1–RQ3 和 [1–4]；解释专家与较少经验用户、约束保持与开放探索任务之间的差异。用反例限制主张，例如用户为减少操作而接受默认计划、预览错误导致过度信任。
+
+<b>技术路线。</b> 用量化差异定位事件，再用过程记录和回顾访谈解释；形成有条件的设计建议，如重要约束显式化、低影响决策轻量处理、允许推迟确认、展示未知关系。只有证据支持的建议写成研究结论。
+
+<b>可迁移贡献：</b>适用于多阶段、跨产物、持续修改的创作 Agent，而非仅限某个模型。提出可操作的交互设计原则及可复用标注协议；避免把特定品牌设计实验推广到 CAD、建筑工程或所有创作任务。
+
+9 LIMITATIONS AND ETHICS / 局限与伦理
+
+<b>研究内容。</b> 列出受控任务、短期使用、生成随机性、图关系不完整、主观质量评价及样本构成对结论的限制。人工后验解释可能受记忆和结果偏好影响。
+
+<b>研究任务。</b> 在招募与材料准备阶段处理客户作品、版权、研究授权和日志隐私；提供模型发送范围说明。正式投稿前完成适用的机构伦理流程，匿名化参与者和敏感项目数据。
+
+<b>技术路线。</b> 最小化日志字段；分离身份映射与事件数据；保护本地凭据；发布脱敏的任务、代码本和分析脚本。不能公开材料时提供替代样例。记录模型和系统版本，说明复现成本及随机性的处理方式。
+
+后续可开展长期部署，研究用户是否逐渐形成协作策略、意图管理是否产生维护负担；可扩展到多人团队，但本研究不同时验证团队协作和个体控制。
+
+10 CONCLUSION / 结论
+
+<b>研究内容。</b> 用一段话回答研究问题，概括得到支持的机制、作用边界及下一步工作。结论应由数据决定。
+
+<b>研究任务与技术路线。</b> 将结论与贡献逐项对照，删除未验证的有效性表述。若效果有限，保留形成性研究、失败分类和边界证据的价值，不宣称系统已解决开放式设计验证。
+
+<b>候选结论结构（非研究结果）：</b>“我们研究了……，通过……发现……；这些证据说明在……条件下……，同时在……情境下仍有……限制。”
+
+
+--- PAGE ---
+
+
+REFERENCES / 初始参考文献
+
+本页列出已核对出处的基础文献与规范。它不是完整 related work；正式撰稿须补齐近年相关系统、阅读全文并核对引用。所有访问日期为 2026-10-09。
+
+[1] Jeba Rezwana and Mary Lou Maher. 2023. Designing Creative AI Partners with COFI: A Framework for Modeling Interaction in Human-AI Co-Creative Systems. ACM Transactions on Computer-Human Interaction.
+
+<link href="https://doi.org/10.1145/3519026" color="#174b70">来源 / DOI</link>；<link href="https://arxiv.org/abs/2204.07666" color="#174b70">作者稿 / 开放版本</link>
+
+[2] Eric Horvitz. 1999. Principles of Mixed-Initiative User Interfaces. Proceedings of CHI 1999.
+
+<link href="https://www.microsoft.com/en-us/research/publication/principles-mixed-initiative-user-interfaces/" color="#174b70">来源 / DOI</link>
+
+[3] Saleema Amershi et al. 2019. Guidelines for Human-AI Interaction. Proceedings of CHI 2019.
+
+<link href="https://doi.org/10.1145/3290605.3300233" color="#174b70">来源 / DOI</link>；<link href="https://www.microsoft.com/en-us/research/wp-content/uploads/2019/01/Guidelines-for-Human-AI-Interaction-camera-ready.pdf" color="#174b70">作者稿 / 开放版本</link>
+
+[4] Caterina Moruzzi and Solange Margarido. 2024. A User-centered Framework for Human-AI Co-creativity. Extended Abstracts of CHI 2024.
+
+<link href="https://doi.org/10.1145/3613905.3650929" color="#174b70">来源 / DOI</link>；<link href="https://www.research.ed.ac.uk/files/430272653/User_Centered_Co_Creativity_CHI_AuthorManuscript.pdf" color="#174b70">作者稿 / 开放版本</link>
+
+[5] NASA Human Systems Integration Division. NASA Task Load Index (TLX). Official assessment resources.
+
+<link href="https://www.nasa.gov/human-systems-integration-division/nasa-task-load-index-tlx/" color="#174b70">来源 / DOI</link>
+
+[6] ACM CHI 2027. CHI Publication Formats. Official author guidance.
+
+<link href="https://chi2027.acm.org/chi-publication-formats/" color="#174b70">来源 / DOI</link>
+
+格式与引用说明
+
+依据官方 CHI 2027 指南 [6]，初投稿使用单栏 manuscript，匿名 LaTeX 选项为 manuscript,review,anonymous；正式出版使用 sigconf 双栏。这份中文 outline 使用程序生成的单栏阅读版，并非 ACM acmart/TAPS 模板编译稿，没有虚构 DOI、版权或会议接受信息。正式提交前应改写为英文，并使用官方模板完成格式与匿名化检查。
+
+当前系统依据与主张边界
+
+系统基础来自仓库的 ARCHITECTURE.md、DESIGN-CONTEXT.md、context-model.ts 及相关读写／审批代码。四份统一文档、自动派生报告、版本／哈希和旧项目兼容已经实现；意图面板、意图关系图、修改预览及本文的用户研究仍待实施。工程回归通过不能作为 HCI 假设成立的证据。
+
+后续检索优先词：design intent、human-AI co-creativity、agency、mixed initiative、change impact、semantic editing、constraint preservation、version comparison。重点核查研究机制的重合程度，而非仅比较模型与 Agent 数量。
+
+
+--- PAGE ---
+
+
+APPENDIX A / 实施路线与实验任务样例
+
+A.1 工作包与推进门槛（暂定 12 周）
+
+[['阶段', '任务与产出', '进入下一阶段的条件'], ['第 1–2 周', '文献比较；事件分类；形成性访谈和材料准备', '问题定义稳定；材料和研究授权明确'], ['第 3–5 周', '意图模型、关联、三个界面及研究日志', '可完成示例修改；无来源和版本歧义'], ['第 6 周', '4–6 人预实验；任务和指标修订', '时长可行；保留失败能可靠标注'], ['第 7–9 周', '样本规划、预注册与正式受控实验', '停止规则预先确定；条件预算一致'], ['第 10–12 周', '分析、负例解释、图表与论文写作', '每项结论均能对应数据或明确局限']]
+
+此时间表取决于伦理流程、招募、生成费用和原型稳定性，不承诺投稿日期。最优先的下一项工作是形成性研究方案与标注代码本，而不是进一步增加 Agent 或自动评分模型。
+
+A.2 一组修改任务示例
+
+<b>初始任务：</b>为虚构茶品牌制作包装主视觉、海报和网页。提供可复用 Logo、品牌文字和两组参考图；用户可以表达自己的风格偏好。
+
+<b>约束保持型修改：</b>“将主色从绿色改为朱红色，保持 Logo、产品形态和已确认文案；让海报与网页同步。”记录哪些对象实际变化、哪些保留意图被违反，以及发现和修复成本。
+
+<b>探索型修改：</b>“我想比较更年轻、更轻盈的方向，可以重新考虑配色与版式，但品牌名不能改。”观察用户是否主动修订偏好、接受新方向和控制影响范围。两个任务都允许合理的设计选择，不要求所有参与者采用相同审美方案。
+
+A.3 最小事件与标注记录
+
+事件字段：participantId、condition、taskId、requestTime、intentVersionBefore/After、requestedChange、preserveIds、predictedTargets、userSelectedTargets、actualChangedArtifacts、userEndorsement、evidenceRefs、activeTime、waitTime。意图-产物对是标注对象，参与者／任务是聚类单位。
+
+标注规则：先确认要求在事件发生前是否有效；再看是否适用于该产物；最后判断是否满足。无法可靠判断时标记 unknown 并说明原因。用户改变意图、接受建议和事后接受意外结果分别记录；沉默、继续操作及模型自报“满足”都不是充分证据。
+
+<b>成功标准：</b>获得能解释交互机制及其边界的可信证据。无效或混合结果也可以产生贡献，前提是实验、标注和解释足够严谨。

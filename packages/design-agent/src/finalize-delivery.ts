@@ -1,3 +1,4 @@
+import { readRunContext, hasUnifiedContext, CONTEXT_FILES } from "./context-model.js";
 import { collectModelUsage, annotateModelUsage, writeModelPreview } from "./model-usage.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -23,8 +24,8 @@ export async function pendingRequiredOutputs(runDir: string, contract: ReturnTyp
 
 /** New typed delivery finalization is isolated from the v2.0.2 image/Gallery path. */
 export async function finalizeDelivery(runDir: string, runId: string, signal?: AbortSignal) {
-  const plan = JSON.parse(await readFile(join(runDir, "plan/design_plan.json"), "utf8"));
-  const manifest = JSON.parse(await readFile(join(runDir, "plan/deliverable_manifest.json"), "utf8"));
+  const plan = JSON.parse(await readRunContext(runDir, "plan/design_plan.json"));
+  const manifest = JSON.parse(await readRunContext(runDir, "plan/deliverable_manifest.json"));
   const contract = deliveryContract(plan, manifest);
   await validateDeliveryContract(runDir, contract);
   const pending = await pendingRequiredOutputs(runDir, contract);
@@ -37,7 +38,7 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
     const generatedImage = ["image_generate", "image_edit"].includes(String(deliverable.method));
     if (generatedImage && !imageBytesMatchPath(await readFile(await physicalRunFile(runDir, path)), path)) throw new DeliveryBlocked("runtime", [`Image encoding does not match the declared output path: ${path}. Use the image output encoder; do not rename bytes or change the approved manifest.`]);
     const mimeType = generatedImage ? imageOutputFormat(path) === "png" ? "image/png" : "image/jpeg" : undefined;
-    artifacts.push({ ...(mimeType ? { mimeType } : {}), deliverableId: deliverable.id, path, method: deliverable.method, scope_id: deliverable.scope_id, category: deliverable.category, skill_refs: deliverable.skill_refs, contributing_scopes: deliverable.contributing_scopes, bytes: info.size, sha256: await fileHash(runDir, path), provenance: { plan: "plan/design_plan.json" }, executionResult: "created" });
+    artifacts.push({ ...(mimeType ? { mimeType } : {}), deliverableId: deliverable.id, path, method: deliverable.method, scope_id: deliverable.scope_id, category: deliverable.category, skill_refs: deliverable.skill_refs, contributing_scopes: deliverable.contributing_scopes, bytes: info.size, sha256: await fileHash(runDir, path), provenance: { plan: await hasUnifiedContext(runDir) ? CONTEXT_FILES.design : "plan/design_plan.json" }, executionResult: "created" });
   }
   const completed = { ...contract, tasks: contract.tasks.filter((task) => artifacts.some((artifact) => artifact.deliverableId === task.id)) };
   for (const task of completed.tasks.filter((item) => item.method === "html_generate")) {

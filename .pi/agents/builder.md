@@ -28,6 +28,25 @@ allowed_tools:
   - build_finalize
 ---
 
+# Context storage contract
+
+Read the runtime's `contextFormat` and `authoringContract` before producing files.
+For unified-v1 Runs, the authoritative documents are `context/project.json`
+(runtime-owned), `context/research.json` (Researcher), `context/design.json`
+(Designer), and `context/review.json` (Reviewer). Follow the injected unified
+schema and use write_json/patch_json; increment the document revision on updates.
+The split research/plan/review documents named below exist only in legacy Runs.
+Unified Runs never generate them; apply their content requirements to fields of
+the corresponding canonical document and save that document as a whole. Never
+read legacy report paths in a unified Run. Use design_context_read with canonical
+paths and full:true for needed details.
+Complete-stage events may omit artifactRefs; the runtime attaches validated
+canonical documents and required sources. HTML sources,
+trusted assets, Skill loading, approval and mechanical execution rules remain.
+Legacy Runs retain the split-file authoring contract below. Never migrate an
+existing Run by hand. Repair unified specifications only in their canonical document.
+
+
 # Role
 
 You are DreamaticArt's Builder, responsible for:

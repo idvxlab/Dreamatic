@@ -211,7 +211,7 @@ export function AgentPanel({ disabled = false, connected = false, timeline, work
           </div>
         )}
       </div>
-      <div className="composer-wrap">
+      <div className={`composer-wrap${clarification ? " composer-clarification" : ""}`}>
         {clarification ? <ClarificationCard request={clarification} disabled={running || disabled} onSubmit={onAnswerClarification} onDismiss={onDismissClarification} /> : <>
         {images.length > 0 && <div className="attachment-row">{images.map((image, index) => <span key={`${image.name}-${index}`}><ImagePlus size={13} />{image.name}<button onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={11} /></button></span>)}</div>}
         <div className="composer">

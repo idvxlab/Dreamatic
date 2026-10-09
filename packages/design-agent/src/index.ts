@@ -19,3 +19,5 @@ export { DESIGN_CATEGORIES, designScopes, briefDesignScopes, designClassificatio
 
 export { annotateModelUsage, collectModelUsage } from "./model-usage.js";
 export type { ModelUsage, ModelRecord } from "./model-usage.js";
+
+export { CONTEXT_FILES, CONTEXT_PROJECTIONS, hasUnifiedContext, syncProjectContext, readRunContext } from "./context-model.js";

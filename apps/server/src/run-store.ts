@@ -1,3 +1,4 @@
+import { hasUnifiedContext, syncProjectContext, readRunContext, CONTEXT_FILES } from "@dreamatic/design-agent";
 import type { Dirent } from "node:fs";
 import { indexedJsonl } from "./jsonl-index.js";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
@@ -76,6 +77,7 @@ export async function primeDraftRun(workspaceDir: string, unsafeRunId: string, s
   brief.title = text.slice(0, 72);
   brief.titleStatus = "temporary";
   await writeFile(briefPath, JSON.stringify(brief, null, 2), "utf8");
+  if (await hasUnifiedContext(join(workspaceDir, "runs", runId))) await syncProjectContext(join(workspaceDir, "runs", runId), brief);
   state.updatedAt = new Date().toISOString();
   state.lastEvent = "brief_received";
   await writeFile(join(runDir, "run-state.json"), JSON.stringify(state, null, 2), "utf8");
@@ -87,6 +89,7 @@ export async function attachSessionToRun(workspaceDir: string, unsafeRunId: stri
   const brief = await readFile(briefPath, "utf8").then((source) => record(JSON.parse(source) as unknown));
   brief.sessionId = sessionId;
   await writeFile(briefPath, JSON.stringify(brief, null, 2), "utf8");
+  if (await hasUnifiedContext(join(workspaceDir, "runs", runId))) await syncProjectContext(join(workspaceDir, "runs", runId), brief);
   const title = typeof brief.title === "string" && brief.title.trim()
     ? brief.title.trim()
     : typeof brief.brief === "string" && brief.brief.trim()
@@ -109,6 +112,7 @@ export async function renameRun(workspaceDir: string, unsafeRunId: string, unsaf
   const temporary = `${briefPath}.${process.pid}.tmp`;
   await writeFile(temporary, JSON.stringify(brief, null, 2), "utf8");
   await rename(temporary, briefPath);
+  if (await hasUnifiedContext(runDir)) await syncProjectContext(runDir, brief);
   return { id: runId, title };
 }
 
@@ -197,10 +201,11 @@ function compactMarkdown(source: string): string {
 
 async function runNotes(runDir: string): Promise<RunNoteView[]> {
   const notes: RunNoteView[] = [];
+  const unified = await hasUnifiedContext(runDir);
   for (const candidate of NOTE_FILES) {
-    const existing = await findRunDocument(runDir, candidate.path);
-    const text = await readFile(existing?.absolutePath ?? join(runDir, candidate.path), "utf8").then(compactMarkdown).catch(() => "");
-    if (text) notes.push({ ...candidate, path: existing?.path ?? candidate.path, text });
+    const existing = unified ? undefined : await findRunDocument(runDir, candidate.path);
+    const text = await readRunContext(runDir, existing?.path ?? candidate.path).then(compactMarkdown).catch(() => "");
+    if (text) notes.push({ ...candidate, path: unified ? ({ research: CONTEXT_FILES.research, plan: CONTEXT_FILES.design, review: CONTEXT_FILES.review })[candidate.id] : existing?.path ?? candidate.path, text });
   }
   return notes;
 }

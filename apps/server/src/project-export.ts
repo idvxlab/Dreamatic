@@ -1,4 +1,4 @@
-import { annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/design-agent";
+import { hasUnifiedContext, CONTEXT_PROJECTIONS, annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/design-agent";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
@@ -24,9 +24,11 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
   const cleanup = () => rm(temp, { recursive: true, force: true });
   const packageDir = join(temp, runId);
   const files: string[] = [];
+  const retired = await hasUnifiedContext(runDir) ? new Set<string>(Object.values(CONTEXT_PROJECTIONS).flat()) : new Set<string>();
   try {
     await mkdir(packageDir);
     async function copy(path: string): Promise<void> {
+      if (retired.has(path)) return;
       const source = join(runDir, path);
       const info = await lstat(source);
       if (info.isSymbolicLink()) throw new Error(`Cannot export symbolic link: ${path}`);
@@ -47,7 +49,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
       } else throw new Error(`Unsupported project file: ${path}`);
     }
     // Keep relative asset links intact, without sessions, caches or duplicate historical Runs.
-    for (const path of ["artifacts", "plan", "research", "review", "references", "inputs", "brief.json", "run-state.json"]) {
+    for (const path of ["artifacts", "plan", "research", "review", "context", "references", "inputs", "brief.json", "run-state.json"]) {
       const exists = await lstat(join(runDir, path)).then(() => true).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return false;
         throw error;

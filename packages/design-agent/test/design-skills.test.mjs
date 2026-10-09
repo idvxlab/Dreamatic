@@ -9,6 +9,7 @@ import { createDreamaticExtension, specialistCompletionEvent } from '../dist/ext
 import { createReadTool, createWriteTool, createGrepTool } from '@earendil-works/pi-coding-agent';
 import { designerDraftReadiness, designerHandoffError } from '../dist/designer-recovery.js';
 import { configureToolSearchPath } from '../dist/runtime.js';
+import { RUN_CONTEXT_SECTIONS } from '../dist/run-files.js';
 import { designScopes } from '../dist/design-categories.js';
 import { encodeImageOutput, imageEncoding } from "../dist/image-output.js";
 import { finalizeDelivery } from "../dist/finalize-delivery.js";
@@ -25,7 +26,21 @@ function harness(workspaceDir, agent, runId = 'demo') {
   createDreamaticExtension({ workspaceDir, ...(agent ? { parentInvocation: { id: `${agent}-1`, agent, runId } } : {}) })({ on(name, handler) { handlers.set(name, handler); }, registerTool(tool) { tools.set(tool.name, tool); } });
   return { tools, handlers };
 }
-async function invoke(tools, name, args, ctx = context) { return tools.get(name).execute(name, args, undefined, undefined, ctx); }
+async function invoke(tools, name, args, ctx = context) {
+  const result = await tools.get(name).execute(name, args, undefined, undefined, ctx);
+  if (name === 'run_init') {
+    // These tests intentionally exercise the historical split-file contract.
+    // The unified authoring/approval path has its own end-to-end suite.
+    const runDir = JSON.parse(result.content[0].text).runDir;
+    await rm(join(runDir, 'context'), { recursive: true, force: true });
+    const brief = JSON.parse(await readFile(join(runDir, 'brief.json'), 'utf8'));
+    delete brief.contextFormat;
+    await writeFile(join(runDir, 'brief.json'), JSON.stringify(brief));
+    const index = JSON.parse(await readFile(join(runDir, 'design-context.json'), 'utf8'));
+    await writeFile(join(runDir, 'design-context.json'), JSON.stringify({ ...index, sections: RUN_CONTEXT_SECTIONS }));
+  }
+  return result;
+}
 const value = (result) => JSON.parse(result.content[0].text);
 const scopes = [{ id: 'product', category: 'industrial', task: 'Design the hardware' }, { id: 'ui', category: 'ux', task: 'Design control pages' }, { id: 'campaign', category: 'media_communication', task: 'Design the campaign poster' }];
 async function init(workspaceDir, selected = scopes) {

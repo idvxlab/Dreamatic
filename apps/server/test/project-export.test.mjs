@@ -26,7 +26,7 @@ async function fixture(t, mode) {
     await mkdir(dirname(join(run,path)),{recursive:true}); await writeFile(join(run,path),bytes);
     receipt[path] = createHash('sha256').update(bytes).digest('hex');
   }
-  for (const [path,bytes] of Object.entries({'brief.json':'{"title":"Test"}', 'run-state.json':'{"stages":{"build":"completed"}}','plan/design_plan.json':'{}','plan/html/home/index.html':'Designer source','research/findings.md':'Research','review/design-review.md':'Review','sessions/private.json':'Private','history/old.txt':'Old'})) {
+  for (const [path,bytes] of Object.entries({'brief.json':'{"title":"Test"}', 'run-state.json':'{"stages":{"build":"completed"}}','context/design.json':'{"schemaVersion":1}', 'plan/design_plan.json':'{}','plan/html/home/index.html':'Designer source','research/findings.md':'Research','review/design-review.md':'Review','sessions/private.json':'Private','history/old.txt':'Old'})) {
     await mkdir(dirname(join(run,path)),{recursive:true}); await writeFile(join(run,path),bytes);
   }
   await writeFile(join(run,'bus.jsonl'),JSON.stringify({type:'build_done',commitReceipt:{files:receipt}})+'\n');
@@ -37,7 +37,7 @@ for (const mode of ['html','gallery']) test(`${mode} download ZIP includes compl
   const archive = await prepareProjectExport(f.workspace,f.runId); t.after(archive.cleanup);
   assert.equal(archive.filename, `${f.runId}.zip`);
   const {stdout:list} = await exec('unzip',['-Z1',archive.path]);
-  for (const path of [f.entry,'artifacts/home/style.css','artifacts/home/app.js','artifacts/home/image.jpg','plan/html/home/index.html','research/findings.md','review/design-review.md','brief.json','index.html','package-manifest.json']) assert.ok(list.includes(`${f.runId}/${path}`),path);
+  for (const path of [f.entry,'artifacts/home/style.css','artifacts/home/app.js','artifacts/home/image.jpg','plan/html/home/index.html','context/design.json','research/findings.md','review/design-review.md','brief.json','index.html','package-manifest.json']) assert.ok(list.includes(`${f.runId}/${path}`),path);
   assert.doesNotMatch(list,/sessions|history|bus\.jsonl/);
   for (const [path,bytes] of Object.entries(f.outputs)) {
     assert.equal((await exec('unzip',['-p',archive.path,`${f.runId}/${path}`])).stdout,bytes);
@@ -92,4 +92,23 @@ test('export omits Finder metadata and private hidden files from public project 
  const f=await fixture(t,'gallery');
  for(const file of ['artifacts/.DS_Store','research/.DS_Store','artifacts/.env','artifacts/__MACOSX/._image.jpg']){await mkdir(dirname(join(f.run,file)),{recursive:true});await writeFile(join(f.run,file),'private metadata')}
  const archive=await prepareProjectExport(f.workspace,f.runId);try{const files=(await exec('unzip',['-Z1',archive.path])).stdout;assert.doesNotMatch(files,/DS_Store|\.env|__MACOSX/);assert.match(files,/00-gallery\.html/)}finally{await archive.cleanup()}
+});
+
+test('unified ZIP export preserves canonical Context and excludes stale split files without deleting originals', async t => {
+  const { CONTEXT_PROJECTIONS } = await import('@dreamatic/design-agent');
+  const f = await fixture(t, 'html');
+  await writeFile(join(f.run, 'brief.json'), JSON.stringify({ title: 'Unified export', contextFormat: 'unified-v1' }));
+  const retired = Object.values(CONTEXT_PROJECTIONS).flat();
+  for (const path of retired) {
+    await mkdir(dirname(join(f.run, path)), { recursive: true });
+    await writeFile(join(f.run, path), 'Stale adapter');
+  }
+  const archive = await prepareProjectExport(f.workspace, f.runId); t.after(archive.cleanup);
+  const list = (await exec('unzip', ['-Z1', archive.path])).stdout.trim().split('\n');
+  assert.ok(list.includes(`${f.runId}/context/design.json`));
+  assert.ok(list.includes(`${f.runId}/plan/html/home/index.html`));
+  for (const path of retired) {
+    assert.equal(list.includes(`${f.runId}/${path}`), false, path);
+    assert.equal(await readFile(join(f.run, path), 'utf8'), 'Stale adapter');
+  }
 });

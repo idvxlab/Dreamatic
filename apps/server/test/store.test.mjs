@@ -376,3 +376,45 @@ test('running image progress is visible inside its tool in server snapshots and 
     assert.equal(tool().output,'Batch completed');assert.equal(tool().status,'completed');
   } finally {await rm(workspace,{recursive:true,force:true});}
 });
+
+
+test("unified project metadata stays consistent through session attachment and rename", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-unified-project-"));
+  try {
+    const { createDreamaticExtension } = await import("@dreamatic/design-agent");
+    const tools = new Map();
+    createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
+    await tools.get("run_init").execute("init", { runIdOverride: "demo", projectTitle: "Academic work", brief: "Design a page", designScopes: [{ id: "ui", category: "ux", task: "Academic page" }] });
+    await attachSessionToRun(workspace, "demo", "session-new");
+    await renameRun(workspace, "demo", "Research studio");
+    const runDir = join(workspace, "runs/demo");
+    const project = JSON.parse(await readFile(join(runDir, "context/project.json"), "utf8"));
+    const brief = JSON.parse(await readFile(join(runDir, "brief.json"), "utf8"));
+    assert.deepEqual(project.brief, brief);
+    assert.equal(project.brief.sessionId, "session-new");
+    assert.equal(project.brief.title, "Research studio");
+    assert.equal(project.brief.originalRequest, null);
+    assert.equal(project.revision, 3);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('unified product notes render canonical Context without persisted Markdown reports', async () => {
+  const { createDreamaticExtension, CONTEXT_FILES } = await import('@dreamatic/design-agent');
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-canonical-notes-'));
+  try {
+    const tools = new Map();
+    createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
+    const result = await tools.get('run_init').execute('init', { runIdOverride: 'notes', projectTitle: 'Context notes', brief: 'Render notes', designScopes: [{ id: 'page', category: 'ux', task: 'Page' }] });
+    const runDir = JSON.parse(result.content[0].text).runDir;
+    await writeFile(join(runDir, CONTEXT_FILES.research), JSON.stringify({ schemaVersion: 1, runId: 'notes', revision: 1, evidence: { target: 'Notes', summary: 'Research', official_sources: [], open_questions: [] }, findings: '# Findings\nCanonical research', usageConditions: 'References only' }));
+    await writeFile(join(runDir, CONTEXT_FILES.design), JSON.stringify({ schemaVersion: 1, runId: 'notes', revision: 1, system: { system_thesis: 'Notes', palette: {}, typography: {} }, strategy: { design_intent: 'Notes' }, tasks: [{ id: 'page', method: 'manual' }], deliverables: [{ id: 'page', kind: 'html_page', purpose: 'Notes', acceptance_test: 'Readable', required: true, file: 'artifacts/page.html' }], presentation: { mode: 'html', entry: 'artifacts/page.html' }, executionNotes: 'Canonical rationale' }));
+    await writeFile(join(runDir, CONTEXT_FILES.review), JSON.stringify({ schemaVersion: 1, runId: 'notes', revision: 1, assessment: { review_stage: 'design_context', round: 1, summary: 'Canonical assessment', verdict: 'fail', scores: {}, issues: [{ id: 'notes', status: 'open' }], resolved_issue_ids: [], remaining_risks: [] } }));
+    const runs = await runInventory(workspace);
+    assert.deepEqual(runs[0].notes.map(note => note.id), ['research', 'plan', 'review']);
+    assert.deepEqual(runs[0].notes.map(note => note.path), [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review]);
+    assert.match(runs[0].notes[0].text, /Canonical research/);
+    assert.match(runs[0].notes[1].text, /Canonical rationale/);
+    assert.match(runs[0].notes[2].text, /Canonical assessment/);
+    for (const file of ['research/research-findings.md', 'plan/task_breakdown.md', 'review/design-review.md']) await assert.rejects(readFile(join(runDir, file)), /ENOENT/);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});

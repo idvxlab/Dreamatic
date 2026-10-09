@@ -274,7 +274,7 @@ test("run initialization preserves actual user wording separately from titles an
     assert.equal(brief.title, "筋织人形晶格");
     assert.equal(brief.brief, "A resolved visual concept");
     const context = JSON.parse((await tools.get("design_context_read").execute("context", { runId: "first", audience: "researcher" })).content[0].text);
-    assert.equal(JSON.parse(context.files.find((file) => file.path === "brief.json").content).originalRequest, original);
+    assert.equal(JSON.parse(context.files.find((file) => file.path === "context/project.json").content).brief.originalRequest, original);
     await tools.get("run_init").execute("second", { runIdOverride: "second", brief: "Another task summary", projectTitle: "Another project", designScopes: [{ id: "concept", category: "industrial", task: "Another concept" }] });
     const second = JSON.parse(await readFile(join(workspaceDir, "runs/second/brief.json"), "utf8"));
     assert.equal(second.originalRequest, null);

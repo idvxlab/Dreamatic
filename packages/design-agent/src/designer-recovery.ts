@@ -1,3 +1,4 @@
+import { readRunContext, hasUnifiedContext, CONTEXT_FILES } from "./context-model.js";
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { briefDesignScopes } from "./design-categories.js";
@@ -14,7 +15,7 @@ export function designerHandoffError(task: string, brief: Record<string, unknown
 /** Read-only draft diagnostics. File existence is never approval, and no prior Skill is activated here. */
 export async function designerDraftReadiness(runDir: string) {
   const issues: string[] = [];
-  const read = async (path: string) => { try { return JSON.parse(await readFile(await physicalRunFile(runDir, path), "utf8")) as Record<string, unknown>; } catch { issues.push(`${path}: missing or invalid JSON`); return undefined; } };
+  const read = async (path: string) => { try { return JSON.parse(await readRunContext(runDir, path)) as Record<string, unknown>; } catch { issues.push(`${path}: missing or invalid JSON`); return undefined; } };
   const plan = await read("plan/design_plan.json"), manifest = await read("plan/deliverable_manifest.json");
   if (plan && manifest) {
     try { const contract = deliveryContract(plan, manifest); await validateDeliveryContract(runDir, contract); issues.push(...await lintHtmlSourceDependencies(runDir, contract)); } catch (error) { issues.push(error instanceof Error ? error.message : String(error)); }
@@ -70,8 +71,8 @@ export async function designerDraftReadiness(runDir: string) {
 /** Publication envelope changes do not reset a deterministic draft failure. */
 export async function designerDraftFingerprint(runDir: string, activeSkills: unknown) {
   const hash = createHash("sha256");
-  const files = ["plan/design_plan.json", "plan/deliverable_manifest.json", "plan/design_system.json"];
-  const plan = await physicalRunFile(runDir, files[0]!).then((path) => readFile(path, "utf8")).then(JSON.parse).catch(() => ({}));
+  const files = await hasUnifiedContext(runDir) ? [CONTEXT_FILES.design] : ["plan/design_plan.json", "plan/deliverable_manifest.json", "plan/design_system.json"];
+  const plan = await readRunContext(runDir, "plan/design_plan.json").then(JSON.parse).catch(() => ({}));
   for (const task of Array.isArray(plan.execution_plan) ? plan.execution_plan : []) if (task?.method === "html_generate") for (const file of Array.isArray(task.files) ? task.files : []) if (typeof file?.source === "string" && file.source.startsWith("plan/") && !file.source.split("/").includes("..")) files.push(file.source);
   for (const file of [...new Set(files)].sort()) hash.update(file).update(await physicalRunFile(runDir, file).then((path) => readFile(path)).catch(() => "missing"));
   return hash.update(JSON.stringify(activeSkills)).digest("hex");

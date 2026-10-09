@@ -1,3 +1,4 @@
+import { readRunContext, unifiedContextPrompt, legacyContextPrompt, canonicalContextError, contextAuthoringExample, contextProjections, CONTEXT_FILES, CONTEXT_OWNERS, CONTEXT_PROJECTIONS, hasUnifiedContext, saveContextDocument, assertContextDocument, syncProjectContext, UNIFIED_CONTEXT_INSTRUCTION } from "./context-model.js";
 import { recordReasoningModel, collectModelUsage, annotateModelUsage } from "./model-usage.js";
 import {
   createAgentSession,
@@ -27,7 +28,7 @@ import { discoverResearchAssets, fetchResearchAsset, hasResearchPageCache, resea
 import { ResponseBodyTimeoutError, boundedResponseBytes, imageRequestScheduler, projectContext, serializeJsonWrite } from "./performance.js";
 import { dreamaticSessionFailure, stopAfterCommittedTurn } from "./session-status.js";
 import { isRetryableStatus, retryAfterMs, RetryableHttpError, withRetry, type RetryNotice } from "./retry.js";
-import { DESIGN_CAPABILITIES, approvedImageEdit, approvedImageAcceptance, designSpecificationProtocol, normalizeDraftPresentation, deliveryContract, designSourceFiles, fileHash, htmlTask, imagePlan, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
+import { DESIGN_CAPABILITIES, approvedImageEdit, approvedImageAcceptance, designSpecificationProtocol, unifiedDesignSpecificationProtocol, normalizeDraftPresentation, deliveryContract, designSourceFiles, fileHash, htmlTask, imagePlan, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
 import { extractUserMaterial } from "./user-material-extract.js";
 import { importUserAsset, recordUserMaterialSources, userMaterialInventory } from "./user-assets.js";
 import { lintHtmlSourceResources, materializeHtml } from "./html-delivery.js";
@@ -199,6 +200,8 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
   const path = resolveInside(runDir, target);
   const local = relative(runDir, path).replaceAll("\\", "/");
   const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json", "artifacts/model-usage.json", "plan/model-usage.json"]);
+  const unified = await hasUnifiedContext(runDir);
+  if (unified && Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(local))) throw new Error(`${local} is a retired read-only Context path; no such file is generated. Edit the role-owned context document with write_json/patch_json.`);
   const roots: Record<string, string> = { researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" };
   if (agent === "builder") {
     const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
@@ -207,9 +210,9 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
       throw new Error(`Approved HTML output ${local} is generated mechanically. Use html_generate or execute_design_plan; restore changed outputs from approved sources. Design defects require Designer correction and a new Reviewer approval, not edits to artifacts or plan sources.`);
     }
   }
-  const isAllowed = (candidate: string) => !runtimeOwned.has(candidate) && (agent === "orchestrator"
+  const isAllowed = (candidate: string) => !(unified && Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(candidate))) && !runtimeOwned.has(candidate) && (CONTEXT_OWNERS[candidate] === agent || (agent === "orchestrator"
     ? candidate === "plan/progress.json" || candidate.startsWith("plan/handoff/")
-    : !!roots[agent] && candidate.startsWith(roots[agent]!) && candidate !== "plan/progress.json");
+    : !!roots[agent] && candidate.startsWith(roots[agent]!) && candidate !== "plan/progress.json"));
   if (!isAllowed(local)) throw new Error(`${agent} cannot write ${local}. Write only your role-owned outputs; runtime-managed state and other roles' files are protected.`);
   const state = await readJsonRecord(runDir, "run-state.json").catch(() => undefined);
   if (state?.status === "complete") throw new Error("This Run is complete. Orchestrator must call run_revision with explicit user feedback before modifying it.");
@@ -296,7 +299,7 @@ function batchSummary(results: Array<Record<string, unknown>>) {
 }
 
 async function readJsonRecord(runDir: string, path: string): Promise<Record<string, unknown>> {
-  return requiredRecord(parseRunJson(await readFile(resolveInside(runDir, path), "utf8"), path), path);
+  return requiredRecord(parseRunJson(await readRunContext(runDir, path), path), path);
 }
 
 function parseRunJson(source: string, path: string): unknown {
@@ -353,6 +356,18 @@ async function normalizeJsonFile(runDir: string, path: string, normalize: (recor
 }
 
 async function normalizeStageOutputs(runDir: string, agent: string): Promise<void> {
+  if (await hasUnifiedContext(runDir)) {
+    const path = agent === "researcher" ? CONTEXT_FILES.research : agent === "designer" ? CONTEXT_FILES.design : agent === "reviewer" ? CONTEXT_FILES.review : undefined;
+    await assertContextDocument(runDir, CONTEXT_FILES.project, basename(runDir));
+    if (path) await assertContextDocument(runDir, path, basename(runDir));
+    if (agent === "researcher") {
+      // Acquisition metadata belongs to tools; no Agent-authored second store.
+      await mkdir(join(runDir, "research/assets"), { recursive: true });
+      const manifest = join(runDir, "research/assets/manifest.json");
+      if (!(await stat(manifest).catch(() => undefined))) await writeFile(manifest, JSON.stringify({ runId: basename(runDir), assets: [] }, null, 2));
+    }
+    return;
+  }
   for (const required of STAGE_REQUIRED_FILES[agent] ?? []) {
     const existing = await findRunDocument(runDir, required);
     if (existing && existing.path !== required) await cp(existing.absolutePath, resolveInside(runDir, required), { errorOnExist: true, force: false });
@@ -505,6 +520,7 @@ function referenceReviewCoverage(manifest: Record<string, unknown> | undefined, 
 }
 
 async function materializeDesignExecutionDocs(runDir: string): Promise<void> {
+  if (await hasUnifiedContext(runDir)) return;
   const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
   const deliverables = requiredArray(manifest, "deliverables", "plan/deliverable_manifest.json")
     .map((entry, index) => requiredRecord(entry, `deliverables[${index}]`));
@@ -631,6 +647,15 @@ function assertReviewBuildReady(review: Record<string, unknown>): void {
 
 async function stageRequiredFiles(runDir: string, agent: string): Promise<string[]> {
   const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+  if (await hasUnifiedContext(runDir)) {
+    const required: string[] = [];
+    if (agent === "researcher") required.push(CONTEXT_FILES.project, CONTEXT_FILES.research, "research/assets/manifest.json", "research/assets/validation.json");
+    if (agent === "designer" || agent === "reviewer") {
+      required.push(CONTEXT_FILES.project, CONTEXT_FILES.research, CONTEXT_FILES.design, ".performance/skills-designer.json", ...await designSourceFiles(runDir));
+      if (agent === "reviewer") required.push(CONTEXT_FILES.review);
+    }
+    if (agent !== "builder") return [...new Set(required)];
+  }
   if (agent === "designer" || agent === "reviewer") {
     const scopes = briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({})));
     if (plan?.schemaVersion !== 2 && !scopes.length) return STAGE_REQUIRED_FILES[agent] ?? [];
@@ -647,13 +672,13 @@ async function stageRequiredFiles(runDir: string, agent: string): Promise<string
 /** Supporting evidence may be attached read-only; canonical stage outputs are always required. */
 async function publicationReferences(runDir: string, runId: string, agent: string, requiredFiles: string[], suppliedRefs: string[]): Promise<string[]> {
   const roleRoot = ({ researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" } as Record<string, string>)[agent];
-  const canonicalRefs = requiredFiles.filter((path) => roleRoot && path.startsWith(roleRoot));
+  const canonicalRefs = requiredFiles.filter((path) => CONTEXT_OWNERS[path] === agent || (roleRoot && path.startsWith(roleRoot)));
   const explicitRefs: string[] = [];
   for (const supplied of suppliedRefs) {
     const prefix = `runs/${runId}/`;
     const candidate = supplied.startsWith(prefix) ? supplied.slice(prefix.length) : supplied;
     const local = canonicalRunDocument(relative(runDir, resolveInside(runDir, candidate)).replaceAll("\\", "/"));
-    const researchInput = agent === "designer" && RUN_CONTEXT_SECTIONS.research.includes(local);
+    const researchInput = agent === "designer" && (RUN_CONTEXT_SECTIONS.research.includes(local) || local === CONTEXT_FILES.research);
     if (!requiredFiles.includes(local) && !researchInput && (!roleRoot || !local.startsWith(roleRoot))) throw new Error(`artifactRefs must reference ${agent}-owned or declared inputs in this Run: ${supplied}`);
     const existing = await findRunDocument(runDir, local);
     if (!existing || !(await stat(existing.absolutePath)).size) throw new Error(`artifactRefs file is missing or empty: ${local}. Correct or omit this extra reference; no event was published.`);
@@ -761,16 +786,7 @@ interface DesignContextIndex {
   runId: string;
   status: "collecting" | "designing" | "in_review" | "needs_revision" | "approved" | "implemented" | "complete";
   revision: number;
-  sections: {
-    requirements: string;
-    research: string[];
-    designSpec: string[];
-    tokens: string;
-    components: string;
-    decisions: string;
-    reviewIssues: string[];
-    implementation: string;
-  };
+  sections: Record<string, string | string[]>;
   latestVerdict?: "pass" | "fail";
   lastEvent?: string;
   updatedAt: string;
@@ -1173,6 +1189,13 @@ async function updateDesignContextIndex(workspaceDir: string, runId: string, eve
   }
   if (eventType === "build_done") context.status = "implemented";
   if (eventType === "export_done") context.status = "complete";
+  if (await hasUnifiedContext(dirname(path))) {
+    context.sections = {
+      project: CONTEXT_FILES.project, research: CONTEXT_FILES.research, design: CONTEXT_FILES.design, review: CONTEXT_FILES.review,
+      resources: ["research/assets/manifest.json", "research/assets/validation.json", ".performance/user-materials.json"],
+      implementation: "artifacts/artifact-manifest.json",
+    };
+  }
   context.lastEvent = eventType;
   context.updatedAt = now;
   const temporary = `${path}.${process.pid}.tmp`;
@@ -1390,6 +1413,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     if (!assignedRunId) return;
     const runsRoot = resolveInside(workspaceDir, "runs");
     const absolute = resolve(cwd, path);
+    const assignedDir = resolveInside(workspaceDir, join("runs", assignedRunId));
+    const assignedLocal = relative(assignedDir, absolute).replaceAll("\\", "/");
+    if (Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(assignedLocal)) && await hasUnifiedContext(assignedDir)) throw new Error("Retired Context path. Read the role document in context/ with design_context_read; use paths and full:true for details.");
     const physicalRoot = await realpath(runsRoot).catch(() => runsRoot);
     const physicalPath = await realpath(absolute).catch(() => absolute);
     for (const [root, target] of [[runsRoot, absolute], [physicalRoot, physicalPath]]) {
@@ -1431,13 +1457,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     if (options.parentInvocation?.agent !== "builder") return;
     assertAssignedRun(runId, "image execution");
     const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
-    const source = await readFile(join(runDir, "plan/design_plan.json"), "utf8").catch((error) => {
+    const source = await readRunContext(runDir, "plan/design_plan.json").catch((error) => {
       if (error.code === "ENOENT") return undefined;
       throw error;
     });
     if (!source) return; // Preserve standalone/legacy image tooling without a typed plan.
     const plan = JSON.parse(source) as Record<string, unknown>;
-    const manifest = await readFile(join(runDir, "plan/deliverable_manifest.json"), "utf8").catch((error) => {
+    const manifest = await readRunContext(runDir, "plan/deliverable_manifest.json").catch((error) => {
       if (error.code === "ENOENT") return undefined;
       throw error;
     });
@@ -1533,7 +1559,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         if (!options.personaPath) return assignment && !event.systemPrompt.includes(assignment) ? { systemPrompt: `${event.systemPrompt}\n\n${assignment}` } : undefined;
         const source = await readFile(options.personaPath!, "utf8");
         const { body } = parseFrontmatter(source);
-        const block = dreamaticPersonaPromptBlock(body);
+        const promptRunId = options.parentInvocation?.runId ?? options.projectId ?? requestAssignedRunId;
+        const unifiedPrompt = promptRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", safeRunId(promptRunId))));
+        const block = dreamaticPersonaPromptBlock(unifiedPrompt ? unifiedContextPrompt(body) : body);
         const marker = /<!-- DREAMATIC_ACTIVE_PERSONA -->[\s\S]*?<!-- \/DREAMATIC_ACTIVE_PERSONA -->/g;
         const systemPrompt = marker.test(event.systemPrompt)
           ? event.systemPrompt.replace(marker, () => block)
@@ -1562,9 +1590,33 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       if (enabled) workflowStopped = true;
       return { ...textResult(value), ...(enabled ? { terminate: true } : {}) };
     };
+    const contextFailures = new Map<string, number>();
+    pi.on("agent_start", () => { contextFailures.clear(); });
+    pi.on("tool_result", async (event) => {
+      const runId = options.parentInvocation?.runId;
+      if (!runId || !["write_json", "patch_json", "design_bus_post", "read", "write", "edit"].includes(event.toolName)) return;
+      const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
+      if (!(await hasUnifiedContext(runDir))) return;
+      if (!event.isError) {
+        if (event.toolName === "design_bus_post") contextFailures.clear();
+        return;
+      }
+      const raw = event.content.filter(item => item.type === "text").map(item => (item as { text: string }).text).join("\n");
+      if (!/context|review\/design-review|research\/(?:evidence|research-findings|brand_lock)|plan\/(?:design_plan|design_system|deliverable_manifest)|patch_json|write_json|review_stage|verdict/i.test(raw)) return;
+      const issue = canonicalContextError(raw);
+      const key = createHash("sha256").update(`${event.toolName}:${issue}`).digest("hex");
+      const attempts = (contextFailures.get(key) ?? 0) + 1;
+      contextFailures.set(key, attempts);
+      const blocked = attempts >= 3;
+      const recovery = { ok: false, blocked, retryable: false, repairOwner: options.parentInvocation!.agent, runId, attempts, issue,
+        instruction: blocked ? "Stop this specialist invocation and return the diagnosis to Orchestrator. Re-dispatch only for an actual canonical schema repair, never unchanged completion retries or legacy files." : "Repair the named canonical field. Do not switch tools or create legacy files. Use the exact nested authoringExample; patch updates must be objects and include the next /revision. No completion was committed.",
+        authoringExample: contextAuthoringExample(options.parentInvocation!.agent, runId) };
+      if (blocked) workflowStopped = true;
+      return { content: textResult(recovery).content, details: recovery, isError: !blocked };
+    });
     if (profile) pi.registerProvider(profile.providerId, profile.registration);
     pi.on("tool_call", async (event, context) => {
-        if (workflowStopped) return { block: true, terminate: true, reason: "This turn has already committed its completion or user clarification. Stop; continue only in the next authorized turn." };
+        if (workflowStopped) return { block: true, terminate: true, reason: "This turn has committed completion, clarification or a blocking validation diagnosis. Stop; continue only in the next authorized turn." };
         if (!options.parentInvocation && ["run_init", "spawn_agent"].includes(event.toolName) && context?.cwd) {
           try {
             await validateDreamaticPersonaContracts(context.cwd);
@@ -1587,7 +1639,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
         }
         if (assignedRunId && ["read", "write", "edit", "ls", "grep", "find"].includes(event.toolName) && typeof input.path === "string" && !isAbsolute(input.path)
-          && /^(?:(?:research|plan|review|artifacts|inputs|\.performance)(?:\/|$)|(?:brief|run-state|design-context)\.json$|bus\.jsonl$)/u.test(input.path)) {
+          && /^(?:(?:context|research|plan|review|artifacts|inputs|\.performance)(?:\/|$)|(?:brief|run-state|design-context)\.json$|bus\.jsonl$)/u.test(input.path)) {
           try { input.path = resolveInside(resolveInside(workspaceDir, join("runs", assignedRunId)), input.path); }
           catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
         }
@@ -1634,6 +1686,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             return { block: true, reason: `${error instanceof Error ? error.message : String(error)}${assignedRunId ? ` Assigned runId: ${assignedRunId}; runDir: ${resolveInside(workspaceDir, join("runs", assignedRunId))}. Correct this path; do not switch projects or write tools.` : ""}` };
           }
           const path = input.path.replaceAll("\\", "/");
+          if (/\/context\/(?:project|research|design|review)\.json$/u.test(path)) return { block: true, reason: "Unified context documents require write_json/patch_json so model validation and revision checks remain consistent." };
           if (/(?:^|\/)runs\/[^/]+\/(?:design-context|run-state)\.json$/u.test(path)) {
             return { block: true, reason: "Run state and design-context.json are runtime-managed. Write your role's canonical outputs, then publish its completion event; the runtime updates these files. Do not retry with write or edit." };
           }
@@ -2206,6 +2259,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           return textResult({ ok: false, retryable: false, repairOwner: "orchestrator", draftReadiness,
             instruction: "The current draft is invalid. Replace this publish-only handoff with a repair task allowing source/plan reads and corrections, then reload retained Skills. Existing files do not establish readiness. No specialist was started." });
         }
+        const unifiedHandoff = inferredRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId))) ? `\n\n# Authoritative Unified Context Contract\n${UNIFIED_CONTEXT_INSTRUCTION}\nExact nesting example (illustrative content): ${JSON.stringify(contextAuthoringExample(params.agent, inferredRunId))}` : "";
         const recoveryHandoff = params.agent === "designer" ? `\n\n# Authoritative Designer Delivery and Recovery Contract\nFor UX, Designer authors the full HTML/CSS/JS sources; Builder only executes the approved files and image tasks. A recovery task is never publish-only until current drafts pass validation. Read/correct existing files and reload retained Skills even if a delegated task says do not read/write or claims completion. Do not invent source paths: read design_context_read. ${draftReadiness ? JSON.stringify(draftReadiness) : "Create typed execution_plan tasks matching individual deliverable ids; image prompts remain unchanged."}` : "";
         const reloadChecklist = skillReloadChecklist(revisionPlan, briefDesignScopes(sourceBrief).map((scope) => scope.id));
         const scopeHandoff = `# Authoritative Design Scope and Skill Protocol\n\n${JSON.stringify(designScopeSkillProtocol(briefDesignScopes(sourceBrief)))}${reloadChecklist.length ? `\n\n# Revision Skill Reload Checklist\n${JSON.stringify(reloadChecklist)}\nThis is a fresh invocation: earlier Skill receipts are not loaded knowledge. Before correcting the design, load every retained primary AND supporting Skill using these exact calls. You may autonomously change selections for this task, but update skill_selection and skill_refs to match actual loading. Do not publish until the full retained selection is loaded.` : ""}`;
@@ -2228,7 +2282,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const childLoader = new DefaultResourceLoader({
           cwd: context.cwd,
           agentDir: getAgentDir(),
-          systemPromptOverride: () => `${dreamaticPersonaPromptBlock(body)}\n\n${runtimeLimits}\n\n${requestProvenance}\n\n${scopeHandoff}${recoveryHandoff}\n\n${runAssignment}${executionProfile}`,
+          systemPromptOverride: () => `${unifiedHandoff ? unifiedContextPrompt(dreamaticPersonaPromptBlock(body)) : dreamaticPersonaPromptBlock(legacyContextPrompt(body))}\n\n${runtimeLimits}\n\n${requestProvenance}\n\n${scopeHandoff}${recoveryHandoff}${unifiedHandoff}\n\n${runAssignment}${executionProfile}`,
           appendSystemPromptOverride: (base) => base,
           extensionFactories: [createDreamaticExtension({
             ...options,
@@ -2452,7 +2506,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             const durationMs = Math.max(0, Date.now() - (toolStartedAt.get(event.toolCallId) ?? Date.now()));
             toolStartedAt.delete(event.toolCallId);
             const metric = toolMetrics.get(event.toolName) ?? { calls: 0, durationMs: 0, errors: 0 };
-            const validationBlocked = ["build_finalize", "design_bus_post"].includes(event.toolName) && !event.isError && event.result.details && typeof event.result.details === "object" && (event.result.details as Record<string, unknown>).blocked === true;
+            const validationBlocked = !event.isError && event.result.details && typeof event.result.details === "object" && (event.result.details as Record<string, unknown>).blocked === true;
             const executionFailed = ["image_generate_batch", "image_edit_batch", "execute_image_plan", "execute_design_plan"].includes(event.toolName) && event.result.details?.ok === false;
             metric.calls += 1;
             metric.durationMs += durationMs;
@@ -2769,6 +2823,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           ? "legacy_draft_user_input"
           : originalRequest ? "pi_user_prompt" : "unavailable";
         const brief = {
+          contextFormat: "unified-v1",
           runId,
           createdAt: typeof existingBrief.createdAt === "string" ? existingBrief.createdAt : new Date().toISOString(),
           ...(typeof existingBrief.sessionId === "string" ? { sessionId: existingBrief.sessionId } : {}),
@@ -2785,6 +2840,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           domainContext,
         };
         await writeFile(join(runDir, "brief.json"), JSON.stringify(brief, null, 2), "utf8");
+        await syncProjectContext(runDir, brief);
         await recordUserMaterialSources(runDir, userMaterialPrompts.length ? userMaterialPrompts : originalRequest ? [originalRequest] : []);
         if (originalRequestSource === "pi_user_prompt") requestAssignedRunId = runId;
         await writeFile(join(runDir, "bus.jsonl"), "", { encoding: "utf8", flag: "a" });
@@ -2798,6 +2854,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           runDir,
           designScopes: scopes,
           scopeProtocol: designScopeSkillProtocol(scopes),
+          contextFormat: "unified-v1",
+          contextFiles: CONTEXT_FILES,
+          authoringContract: UNIFIED_CONTEXT_INSTRUCTION,
           designContext: join(runDir, "design-context.json"),
           researchDir: join(runDir, "research"),
           researchAssetsDir: join(runDir, "research", "assets"),
@@ -2850,29 +2909,29 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         if (state?.status === "complete") throw new Error("Open an explicit user revision before posting to a completed Run");
         if (!options.parentInvocation && Object.values(STAGE_COMPLETION_EVENTS).flat().includes(params.type)) throw new Error("Only the responsible specialist can commit stage completion");
         await mkdir(runDir, { recursive: true });
-        if (options.parentInvocation) await normalizeStageOutputs(runDir, options.parentInvocation.agent);
+
         if (options.parentInvocation && params.artifactRefs) params.artifactRefs = params.artifactRefs.map((path) => {
           const prefix = `runs/${runId}/`;
           return path.startsWith(prefix) ? `${prefix}${canonicalRunDocument(path.slice(prefix.length))}` : canonicalRunDocument(path);
         });
-        if (options.parentInvocation?.agent === "designer") {
-          // Historical receipts cannot stand in for knowledge loaded in this invocation.
-          if ((await classifiedScopes()).length) await persistSkillReceipt();
-          await materializeDesignExecutionDocs(runDir);
-        }
-        if (options.parentInvocation?.agent === "researcher") await writeResearchAcquisitionStatus(runDir, runId);
         let requiredFiles: string[] = [];
         let executionReadiness: Record<string, unknown> | undefined;
         if (options.parentInvocation) {
           try {
+            await normalizeStageOutputs(runDir, options.parentInvocation.agent);
+            if (options.parentInvocation.agent === "designer") {
+              if ((await classifiedScopes()).length) await persistSkillReceipt();
+              await materializeDesignExecutionDocs(runDir);
+            }
+            if (options.parentInvocation.agent === "researcher") await writeResearchAcquisitionStatus(runDir, runId);
             executionReadiness = await validateStageOutputs(runDir, runId, options.parentInvocation.agent, params.type, signal);
             requiredFiles = await stageRequiredFiles(runDir, options.parentInvocation.agent);
             params.artifactRefs = await publicationReferences(runDir, runId, options.parentInvocation.agent, requiredFiles, params.artifactRefs ?? []);
           }
           catch (error) {
             signal?.throwIfAborted();
-            if (options.parentInvocation.agent !== "designer") throw error;
-            const issue = error instanceof Error ? error.message : String(error);
+            if (options.parentInvocation.agent !== "designer") throw new Error(await hasUnifiedContext(runDir) ? canonicalContextError(error instanceof Error ? error.message : String(error)) : error instanceof Error ? error.message : String(error));
+            const issue = await hasUnifiedContext(runDir) ? canonicalContextError(error instanceof Error ? error.message : String(error)) : error instanceof Error ? error.message : String(error);
             const fingerprint = await designerDraftFingerprint(runDir, skillActivation.all());
             const recoveryPath = join(runDir, ".performance/designer-recovery.json");
             const previous = await readFile(recoveryPath, "utf8").then(JSON.parse).catch(() => undefined);
@@ -2937,7 +2996,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const revisionId = randomUUID();
           const archive = resolveInside(runDir, join("history", revisionId));
           await mkdir(archive, { recursive: true });
-          for (const name of ["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research", "plan", "review", "artifacts"]) {
+          for (const name of ["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research", "plan", "review", "artifacts", "context"]) {
             const source = join(runDir, name);
             if (await stat(source).then(() => true).catch(() => false)) await cp(source, join(archive, name), { recursive: true });
           }
@@ -2947,6 +3006,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const revisionRequest = { id: revisionId, feedback: params.feedback, preserve: params.preserve ?? [], needsResearch: params.needsResearch === true, baseSnapshot: relative(runDir, archive), requestedAt: now };
           const brief = await readJsonRecord(runDir, "brief.json");
           await writeFile(join(runDir, "brief.json"), JSON.stringify({ ...brief, ...(revisedScopes ? { resolvedScope: { ...(brief.resolvedScope && typeof brief.resolvedScope === "object" ? brief.resolvedScope : {}), designScopes: revisedScopes } } : {}), revisionRequest }, null, 2));
+          if (await hasUnifiedContext(runDir)) await syncProjectContext(runDir, await readJsonRecord(runDir, "brief.json"));
           const index = await readJsonRecord(runDir, "design-context.json");
           await writeFile(join(runDir, "design-context.json"), JSON.stringify({ ...index, status: "designing", latestVerdict: null, revisionRequest, updatedAt: now, lastEvent: "run_revision_started" }, null, 2));
           await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify({ id: revisionId, runId, type: "run_revision_started", from_agent: "orchestrator", to: "designer", summary: params.feedback, revisionRequest, at: now })}\n`);
@@ -2969,23 +3029,47 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       description: "Atomically serialize Run JSON. The argument envelope is {runId, path, data}: runId and path belong at the root; data is only the file content. Pass data as an object, not a serialized string. Designer manifests automatically fill a missing fixed Gallery entry or the sole declared HTML page entry before saving/hashing; mixed outputs need explicit mode and multiple HTML deliverables need explicit entry. Never write design-context.json or run-state.json: completion events update those runtime-owned files.",
       parameters: Type.Object({
         runId: Type.String(),
-        path: Type.String({ description: "Run-relative JSON path, such as plan/design_plan.json" }),
+        path: Type.String({ description: "Run-relative JSON path; unified Runs use context/research.json, context/design.json or context/review.json" }),
         data: Type.Record(Type.String(), Type.Unknown()),
       }),
-      prepareArguments: (args) => normalizeWriteJsonArguments(args, options.parentInvocation?.runId ?? options.projectId, workspaceDir),
+      prepareArguments: (args) => {
+        try { return normalizeWriteJsonArguments(args, options.parentInvocation?.runId ?? options.projectId, workspaceDir); }
+        catch (error) {
+          const role = options.parentInvocation?.agent;
+          const runId = options.parentInvocation?.runId ?? options.projectId;
+          if (!role || !runId) throw error;
+          throw new Error(`${error instanceof Error ? error.message : String(error)}. Exact role argument example: ${JSON.stringify(contextAuthoringExample(role, runId))}. runId/path/data are TOOL arguments. schemaVersion/revision belong INSIDE data. Do not invent omitted document fields or change legacy storage contracts.`);
+        }
+      },
       async execute(_id, params, signal) {
         const runId = safeRunId(params.runId);
         assertAssignedRun(runId, "write_json");
         if (["design-context.json", "run-state.json"].includes(params.path)) {
           return textResult({ ok: false, writePerformed: false, runtimeManaged: true, instruction: "This file belongs to the runtime. Do not retry with write or edit. Persist only your role's canonical outputs and publish the completion event; the runtime updates the context index and Run state automatically." });
         }
-        if (!/^(research|plan|review|artifacts)\/.+\.json$/.test(params.path) || params.path.split("/").includes("..")) {
-          throw new Error("write_json requires a Run-relative JSON path under research, plan, review or artifacts");
+        if (!/^(research|plan|review|artifacts|context)\/.+\.json$/.test(params.path) || params.path.split("/").includes("..")) {
+          throw new Error("write_json requires a Run-relative JSON path under context, research, plan, review or artifacts; use context/research.json, context/design.json or context/review.json without a runs/<id>/ prefix");
         }
         const runDir = resolveInside(workspaceDir, join("runs", runId));
         const path = resolveInside(runDir, params.path);
         await assertRoleWrite(workspaceDir, runId, options.parentInvocation?.agent ?? "orchestrator", path);
         const data = requiredRecord(params.data, params.path);
+        if (CONTEXT_OWNERS[params.path]) {
+          if (!(await hasUnifiedContext(runDir))) throw new Error("Unified context writes require a newly initialized unified Run; legacy projects retain their original contract");
+          const previous = await readFile(path, "utf8").then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return undefined; throw error; });
+          if (previous && Number(data.revision) <= Number(previous.revision)) throw new Error(`${params.path}#/revision: Increment context revision before saving changed content. Current revision: ${previous.revision}; set revision to ${Number(previous.revision) + 1} in the same write or patch.`);
+          signal?.throwIfAborted();
+          const views = contextProjections(params.path, data, runId);
+          if (params.path === CONTEXT_FILES.design) {
+            if ((await classifiedScopes()).length) await persistSkillReceipt();
+            try { await validateDesignScopes(runDir, JSON.parse(views["plan/design_plan.json"]!), JSON.parse(views["plan/deliverable_manifest.json"]!)); }
+            catch (error) { throw new Error(`context/design.json#/deliverables: ${canonicalContextError(error instanceof Error ? error.message : String(error))}. Use assigned scope_id/category and Skills loaded in this invocation.`); }
+          }
+          await saveContextDocument(runDir, params.path, data, runId);
+          const source = await readFile(path, "utf8");
+          return textResult({ ok: true, path: relative(workspaceDir, path), bytes: Buffer.byteLength(source), sha256: createHash("sha256").update(source).digest("hex"), instruction: UNIFIED_CONTEXT_INSTRUCTION });
+        }
+
         const warnings: string[] = [], normalizedFields: Record<string, string> = {};
         if (options.parentInvocation?.agent === "designer") {
           data.runId ??= runId;
@@ -3065,9 +3149,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "patch_json",
       label: "Patch structured project data",
-      description: "Update changed JSON fields using JSON pointers; /array/- appends one item. Pass the exact 64-character sha256 from a prior context read/save. All normal role and schema validation applies; never rewrite unrelated completed content.",
+      description: "Update changed JSON fields using JSON pointers; updates must be an actual array of {pointer,value} objects, never a JSON string. For unified Context include /revision=currentRevision+1 in the same patch. Review fields use /assessment/verdict, /assessment/review_stage, /assessment/scores, etc.; never root /verdict or /review_stage. /array/- appends one item. Pass the exact 64-character sha256 from a prior context read/save. All normal role and schema validation applies; never rewrite unrelated completed content.",
       parameters: Type.Object({ runId: Type.String(), path: Type.String(), sha256: Type.String(), updates: Type.Array(Type.Object({ pointer: Type.String(), value: Type.Unknown() }), { minItems: 1 }) }),
       async execute(id, params, signal, onUpdate, context) {
+        if (!Array.isArray(params.updates) || params.updates.some(update => !update || typeof update !== "object" || Array.isArray(update))) throw new Error('patch_json updates must be an actual array of {pointer,value} objects, never a JSON string. Include {pointer:"/revision",value:currentRevision+1} for Context patches.');
         assertAssignedRun(params.runId, "patch_json");
         const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
         const path = resolveInside(runDir, params.path);
@@ -3112,26 +3197,36 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         assertAssignedRun(params.runId, "design_context_read");
         const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
         const common = ["brief.json", "design-context.json", ".performance/user-materials.json"];
-        const byAudience = {
+        let byAudience: Record<string, readonly string[]> = {
           researcher: RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")),
           designer: [...RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")), "review/design-review.json", ...STAGE_REQUIRED_FILES.designer!],
           reviewer: [...RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")), "plan/design_system.json", "plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md", "plan/task_breakdown.md", "review/design-review.json"],
           builder: ["research/brand_lock.md", "plan/design_system.json", "plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md", "plan/task_breakdown.md", "review/design-review.json"],
-        } as const;
+        };
+        const unified = await hasUnifiedContext(runDir);
+        if (unified) {
+          common.splice(0, common.length, CONTEXT_FILES.project, "design-context.json", ".performance/user-materials.json");
+          byAudience = {
+            researcher: [CONTEXT_FILES.research, "research/assets/manifest.json"],
+            designer: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review, "research/assets/manifest.json"],
+            reviewer: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review, "research/assets/manifest.json"],
+            builder: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review],
+          };
+        }
         const designScopeList = briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({})));
         const skillRecords = params.audience === "researcher" || !designScopeList.length ? [] : [".performance/skills-designer.json"];
         const sourcePaths = params.audience === "researcher" ? [] : await designSourceFiles(runDir).catch(() => []);
         const files = [];
         const missingFiles: string[] = [];
-        for (const path of params.paths ?? [...common, ...byAudience[params.audience], ...skillRecords]) {
-          if (![...common, ...byAudience[params.audience], ...skillRecords, ...sourcePaths].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
+        for (const path of params.paths ?? [...common, ...byAudience[params.audience]!, ...skillRecords]) {
+          if (![...common, ...byAudience[params.audience]!, ...skillRecords, ...sourcePaths].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
           const existing = await findRunDocument(runDir, path);
           const source = await readFile(existing?.absolutePath ?? resolveInside(runDir, path), "utf8").catch((error: NodeJS.ErrnoException) => {
             if (error.code === "ENOENT") return undefined;
             throw error;
           });
           if (source === undefined) { missingFiles.push(path); continue; }
-          const limit = path.endsWith("design_plan.json") ? 24_000 : 12_000;
+          const limit = (path.endsWith("design_plan.json") || path === CONTEXT_FILES.design) ? 24_000 : 12_000;
           const isJson = path.endsWith(".json");
           const projected = isJson && !params.full ? projectContext(parseRunJson(source, path), limit) : undefined;
           const compactSource = isJson ? JSON.stringify(projected?.content ?? parseRunJson(source, path)) : source;
@@ -3171,7 +3266,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const referenceReview = referenceReviewCoverage(referenceManifest, planRecord);
         const skillLoading = params.audience === "designer" ? { selectionChecklist: skillReloadChecklist(planRecord, designScopeList.map((scope) => scope.id), skillActivation.all()),
           instruction: "A new Designer invocation has no loaded Skills. Load all retained primary and supporting selections before correcting/publishing; or explicitly update the plan to match your new selection. This checklist does not activate knowledge." } : undefined;
-        return textResult({ ok: true, runId: params.runId, audience: params.audience, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: await designerDraftReadiness(runDir), outputContract: designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), userMaterials: await userMaterialInventory(runDir), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, referenceInventory, referenceReview,
+        return textResult({ ok: true, ...(unified ? { contextFormat: "unified-v1", authoringContract: UNIFIED_CONTEXT_INSTRUCTION, authoringExample: contextAuthoringExample(params.audience, params.runId), ...(params.audience === "designer" ? { associationContract: { assignedScopes: designScopeList, loadedSkills: skillActivation.all(), rule: "Every task and deliverable needs the exact assigned scope_id/category. Every deliverable needs loaded skill_refs from that scope. A unified design requires system, strategy, tasks, deliverables and presentation in the same saved document; never omit system on the first write." } } : {}) } : { contextFormat: "legacy" }), runId: params.runId, audience: params.audience, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: await designerDraftReadiness(runDir), outputContract: unified ? unifiedDesignSpecificationProtocol(imageSizeCeiling()) : designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), userMaterials: await userMaterialInventory(runDir), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, referenceInventory, referenceReview,
           instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. For omitted JSON details, call design_context_read with paths containing only the needed file and full=true. Preserve all deliverable and reference identities; an overview is not the complete specification." });
       },
     });
@@ -4006,9 +4101,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           ? resolveInside(workspaceDir, params.finalDir)
           : resolveInside(workspaceDir, join("runs", runId, "final"));
         await mkdir(finalDir, { recursive: true });
-        for (const name of ["research", "plan", "artifacts", "review"]) {
+        const retired = await hasUnifiedContext(runDir) ? new Set<string>(Object.values(CONTEXT_PROJECTIONS).flat()) : new Set<string>();
+        for (const name of ["research", "plan", "artifacts", "review", "context"]) {
           const source = join(runDir, name);
-          if (await stat(source).then(() => true).catch(() => false)) await cp(source, join(finalDir, name), { recursive: true, force: true });
+          if (await stat(source).then(() => true).catch(() => false)) await cp(source, join(finalDir, name), { recursive: true, force: true, filter: (path) => !retired.has(relative(runDir, path).replaceAll("\\", "/")) });
         }
         const busPath = join(runDir, "bus.jsonl");
         if (await stat(busPath).then(() => true).catch(() => false)) await cp(busPath, join(finalDir, "bus.jsonl"), { force: true });

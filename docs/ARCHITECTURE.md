@@ -66,3 +66,12 @@ HTML pages can be the presentation themselves; mixed Galleries link the pages.
 The server serves interactive previews on an isolated committed-file origin.
 See [v2.0.3 contracts and Skill mapping](V2.0.3.md) for ownership, compatibility,
 output contracts and extension points.
+
+## Unified Design Context
+
+New Runs use four role-owned documents under `context/`: project, research, design
+and review. Execution and UI report views derive from those documents in memory;
+new Runs never persist the old research/plan/review Context files.
+Legacy Runs retain their storage and approval contracts. See
+[Design Context](DESIGN-CONTEXT.md) for schema, ownership, derived reports,
+revision/hash rules and recovery behavior.

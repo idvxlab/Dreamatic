@@ -569,3 +569,6 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 
 .about-modal dd a { color: inherit; text-decoration-color: #a6b194; text-underline-offset: 4px; }
 .about-modal dd a:hover { color: #52683a; }
+
+/* Allow long clarification forms to shrink into the panel and scroll, including actions. */
+.agent-panel > .composer-clarification { min-height: 0; flex-shrink: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scroll-padding-block: 14px; }

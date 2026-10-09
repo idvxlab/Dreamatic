@@ -1,3 +1,4 @@
+import { readRunContext, CONTEXT_FILES } from "./context-model.js";
 import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, relative } from "node:path";
@@ -149,6 +150,16 @@ export function designSpecificationProtocol(sizeCeiling: string) {
     presentation: { gallery: { mode: "gallery", entry: GALLERY_ENTRY }, html: { mode: "html", entry: "artifacts/<scope-id>/index.html" }, rule: "entry is the single Showcase homepage, not an artifacts[] list. Designer saves deterministically fill a missing Gallery entry or the sole html_page deliverable.file before hashing. Pure image/HTML deliverables also determine a missing mode. Mixed/manual outputs require an explicit mode; multiple HTML deliverables require an explicit entry. Explicit choices are preserved and validated, never guessed from file order." },
     resourcePolicy: { researchAssets: "Researcher-discovered materials remain reference-only. Exception: explicitly user-provided URLs/uploads can be imported with user_asset_import and reused unchanged.", userMaterials: "Call user_asset_import(runId, source, sourcePageUrl?) before review. It verifies the user source and saves exact image/video/document bytes under inputs/user-assets/. Map its returned source to artifacts/<page>/assets/<file> in resources; no image producer dependency is needed. Never embed remote assets or copy arbitrary repository/research files.", pageImages: "Declare image_generate/image_edit tasks with complete prompts, sizes and acceptance. Map their artifacts/... outputs in HTML resources and include producer ids in dependencies. Designer-authored SVG/CSS/JS belongs in files.", approval: "All local references must resolve to declared outputs before publication and Reviewer approval, including lazy images and fallbacks.", builder: "Execute approved producers and HTML mappings; check paths, integrity and source equality. No second browser/visual/design audit." },
     publication: { artifactRefs: "Optional additional existing owned outputs or canonical read-only research inputs. Runtime always attaches validated Designer plan/source outputs. Changing the publication envelope cannot repair draft fields." },
+  };
+}
+
+/** Canonical authoring protocol; execution schema versions are not storage versions. */
+export function unifiedDesignSpecificationProtocol(sizeCeiling: string) {
+  const { imageOnly: _legacy, typed, ...shared } = designSpecificationProtocol(sizeCeiling);
+  return { ...shared,
+    storage: { path: CONTEXT_FILES.design, schemaVersion: 1, fields: ["schemaVersion", "runId", "revision", "system", "strategy", "tasks", "deliverables", "presentation"], rule: "Save a single canonical document with write_json/patch_json. Positive increasing revision. No legacy files or design_system_ref. Method and size belong only to tasks; deliverables derive them from the same id." },
+    typed: { ...typed, schemaVersion: 1, imageTasks: "context/design.json.tasks", rule: "One task per deliverable with identical id. Manual tasks are allowed; other tasks follow the typed execution fields. No execution_plan/image_generation_plan arrays in the saved model." },
+    presentation: { ...shared.presentation, rule: "Declare presentation.mode and entry explicitly in context/design.json. Mixed/manual outputs require an explicit choice; multiple HTML outputs require an explicit entry." },
   };
 }
 
@@ -325,7 +336,7 @@ export async function validateDeliveryContract(runDir: string, contract: Deliver
   if (contract.presentation.mode === "gallery" && contract.presentation.entry !== GALLERY_ENTRY) throw new Error("Gallery presentation uses artifacts/00-gallery.html");
 }
 export async function designSourceFiles(runDir: string): Promise<string[]> {
-  const plan = JSON.parse(await readFile(resolveInside(runDir, "plan/design_plan.json"), "utf8")) as Record<string, unknown>;
+  const plan = JSON.parse(await readRunContext(runDir, "plan/design_plan.json")) as Record<string, unknown>;
   if (plan.schemaVersion !== 2) return [];
   if (!Array.isArray(plan.execution_plan)) throw new Error("execution_plan must be an array");
   return [...new Set(plan.execution_plan.map((item) => record(item)).filter((task) => task.method === "html_generate").flatMap((task) => {

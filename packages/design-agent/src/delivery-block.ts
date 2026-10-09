@@ -16,7 +16,7 @@ export class BuildIncomplete extends Error {
 let runtimeHash: Promise<string> | undefined;
 /** A runtime correction invalidates an old deterministic block without changing approval. */
 export async function deliveryRuntimeStamp(): Promise<string> {
-  runtimeHash ??= Promise.all(["extension.js", "delivery-block.js", "html-delivery.js", "html-preflight.js", "finalize-delivery.js", "design-contract.js", "image-size.js", "image-output.js", "designer-recovery.js", "user-assets.js"].map((name) => readFile(new URL(name, import.meta.url))))
+  runtimeHash ??= Promise.all(["context-model.js", "extension.js", "delivery-block.js", "html-delivery.js", "html-preflight.js", "finalize-delivery.js", "design-contract.js", "image-size.js", "image-output.js", "designer-recovery.js", "user-assets.js"].map((name) => readFile(new URL(name, import.meta.url))))
     .then((files) => { const hash = createHash("sha256"); for (const bytes of files) hash.update(bytes); return hash.digest("hex"); });
   return createHash("sha256").update(await runtimeHash).update(JSON.stringify([process.env.DREAMATIC_HTML_BROWSER, process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE, process.env.DREAMATIC_HTML_REQUIRE_BROWSER])).digest("hex");
 }

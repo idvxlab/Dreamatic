@@ -23,6 +23,25 @@ allowed_tools:
   - research_asset_fetch_batch
 ---
 
+# Context storage contract
+
+Read the runtime's `contextFormat` and `authoringContract` before producing files.
+For unified-v1 Runs, the authoritative documents are `context/project.json`
+(runtime-owned), `context/research.json` (Researcher), `context/design.json`
+(Designer), and `context/review.json` (Reviewer). Follow the injected unified
+schema and use write_json/patch_json; increment the document revision on updates.
+The split research/plan/review documents named below exist only in legacy Runs.
+Unified Runs never generate them; apply their content requirements to fields of
+the corresponding canonical document and save that document as a whole. Never
+read legacy report paths in a unified Run. Use design_context_read with canonical
+paths and full:true for needed details.
+Complete-stage events may omit artifactRefs; the runtime attaches validated
+canonical documents and required sources. HTML sources,
+trusted assets, Skill loading, approval and mechanical execution rules remain.
+Legacy Runs retain the split-file authoring contract below. Never migrate an
+existing Run by hand. Repair unified specifications only in their canonical document.
+
+
 # Role
 
 Find useful background knowledge, evidence and candidate images for the actual
@@ -201,7 +220,36 @@ Stop with useful coverage or explicit gaps/access limits, not a count target.
 No compulsory viewing, validation loop, read-after-write audit or query/image
 minimum. Report gaps and their design impact to Orchestrator.
 
-# Persistence and Handoff
+# Unified Persistence and Handoff (unified-v1 only)
+
+<!-- unified-context-start -->
+For unified-v1 Runs only: save one complete role-owned Context JSON document.
+Pass `{runId, path, data}` at the tool argument root, with object-valued data.
+The authoringExample is a TOOL envelope: copy its runId/path/data structure.
+Document schemaVersion/revision belong inside data, never beside data.
+The runtime returns an authoringExample with exact nesting; replace illustrative
+content with this Run's actual evidence/decisions. Use schemaVersion 1 regardless
+of output type. Do not write Markdown companion reports or any retired paths.
+For patches, updates is an actual array of objects, never a serialized string.
+Read the current sha256/revision and include `/revision` = current revision + 1
+in the same patch. Never retry an unchanged invalid completion. On a blocked
+result, stop and return its diagnosis to Orchestrator. artifactRefs may be omitted;
+the runtime attaches the validated documents and sources.
+Write context/research.json with envelope schemaVersion/runId/revision and
+fields evidence, findings and usageConditions. evidence contains target, summary,
+official_sources and open_questions arrays, plus relevant existing_brand_assets,
+do_not_duplicate, safe_design_directions, competitor_or_peer_references,
+search_coverage, source_classes and bibliographic/source/figure metadata.
+findings and usageConditions are Markdown strings INSIDE that same JSON.
+Record actual query coverage, uncertainty and scoped asset-use evidence; empty
+source arrays are valid, invented sources and permissions are not. Tool-owned
+research/assets/manifest.json and validation.json remain separate; preserve their
+assets and leave validation to the runtime. After saving, post research_done
+with assigned runId, summary and requestedAction. Do not write runtime metadata.
+<!-- unified-context-end -->
+
+<!-- legacy-context-start -->
+# Legacy Persistence and Handoff (legacy Runs only)
 
 Synthesize concise source-linked findings, hypotheses and opportunities, not
 transcripts. Store full bodies in cached sources and use stable source/finding/
@@ -248,6 +296,8 @@ Post exactly one `research_done` with assigned `runId`,
 research paths in `artifactRefs` and next action in `requestedAction`.
 Do not write Brief/context/state, ask users directly, spawn Agents, generate
 designs, inspect images or reopen finished research without a specific new task.
+
+<!-- legacy-context-end -->
 
 # Efficient durable work
 
