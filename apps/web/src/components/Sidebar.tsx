@@ -32,6 +32,29 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
   }, [brandMenuOpen]);
   const [query, setQuery] = useState("");
   const [menuRunId, setMenuRunId] = useState<string>();
+  const projectMenu = useRef<HTMLDivElement>(null);
+  const projectMenuButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!menuRunId) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !projectMenu.current?.contains(target) && !projectMenuButton.current?.contains(target)) {
+        setMenuRunId(undefined);
+      }
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuRunId(undefined);
+        projectMenuButton.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuRunId]);
   const [editingRunId, setEditingRunId] = useState<string>();
   const [draftTitle, setDraftTitle] = useState("");
   const visibleRuns = useMemo(() => {
@@ -96,8 +119,8 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
                 <span className="session-thumb">{run.title.slice(0, 1).toUpperCase()}</span>
                 <span><strong>{run.title}</strong><small>{runLabel(run)}</small></span>
               </button>
-              <button className="project-menu-trigger" aria-label={`${t("Project actions")}: ${run.title}`} onClick={() => setMenuRunId((current) => current === run.id ? undefined : run.id)}><MoreHorizontal size={15} /></button>
-              {menuRunId === run.id && <div className="project-menu">
+              <button ref={menuRunId === run.id ? projectMenuButton : undefined} className="project-menu-trigger" aria-label={`${t("Project actions")}: ${run.title}`} aria-expanded={menuRunId === run.id} onClick={() => setMenuRunId((current) => current === run.id ? undefined : run.id)}><MoreHorizontal size={15} /></button>
+              {menuRunId === run.id && <div ref={projectMenu} className="project-menu">
                 <button onClick={() => beginRename(run)}><Pencil size={13} /> {t("Rename")}</button>
                 <button className="danger" disabled={run.status === "active"} title={run.status === "active" ? t("Wait for the running agent to finish before deleting") : undefined} onClick={() => confirmDelete(run)}><Trash2 size={13} /> {t("Delete")}</button>
               </div>}

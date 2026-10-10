@@ -1,3 +1,4 @@
+import { observePresentation, presentationRequirements } from "./presentation-validation.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -162,10 +163,12 @@ export async function browserExecutable(): Promise<string | undefined> {
 }
 
 /** Browser checks use a disposable, API-free origin and declarative actions, never agent-authored test code. */
-export async function checkHtmlBrowser(runDir: string, contract: DeliveryContract, signal?: AbortSignal, options: { interactionsOnly?: boolean } = {}) {
+export async function checkHtmlBrowser(runDir: string, contract: DeliveryContract, signal?: AbortSignal, options: { interactionsOnly?: boolean; sourcePreview?: boolean } = {}) {
   const executablePath = await browserExecutable();
   if (!executablePath) return { status: "unavailable", passed: false, issues: [] as string[], reason: "Set DREAMATIC_HTML_BROWSER_EXECUTABLE to a Chromium browser. Static validation only; interactions remain unverified." };
   const tasks = contract.tasks.filter((task) => task.method === "html_generate").map(htmlTask);
+  const checkAccess = !(options.sourcePreview && contract.presentation.mode === "gallery");
+  if (checkAccess && contract.presentation.mode === "gallery" && presentationRequirements(contract).length) tasks.push({ id: "runtime-gallery", method: "html_generate", files: [{ source: contract.presentation.entry, output: contract.presentation.entry }], resources: contract.deliverables.map(item => ({ source: String(item.file), output: String(item.file) })), dependencies: [], interaction_checks: [], viewports: [{ width: 1440, height: 900 }, { width: 390, height: 844 }] });
   const allowed = new Set(tasks.flatMap((task) => [...task.files, ...task.resources].map((file) => file.output)));
   const server = createServer(async (request, response) => {
     try {
@@ -190,6 +193,16 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
     const abort = () => { void browser?.close(); };
     signal?.addEventListener("abort", abort, { once: true });
     try {
+      const observations = new Map<number, Map<string, { satisfied: string[]; links: string[] }>>();
+      const observe = async (page: import("playwright-core").Page, width: number) => {
+        if (!checkAccess || !presentationRequirements(contract).length) return;
+        const observation = await observePresentation(page, contract);
+        const path = decodeURIComponent(new URL(page.url()).pathname.slice(1));
+        const byPage = observations.get(width) ?? new Map();
+        const previous = byPage.get(path);
+        byPage.set(path, { satisfied: [...new Set([...(previous?.satisfied ?? []), ...observation.satisfied])], links: [...new Set([...(previous?.links ?? []), ...observation.links])] });
+        observations.set(width, byPage);
+      };
       for (const task of tasks) {
         for (const viewport of task.viewports) {
           const context = await browser.newContext({ viewport, serviceWorkers: "block" });
@@ -204,6 +217,14 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
             for (const file of htmlFiles) {
               signal?.throwIfAborted();
               await page.goto(`${origin}/${file.output}`, { waitUntil: "load", timeout: 15000 });
+              await observe(page, viewport.width);
+              const missingAnchors = await page.locator('a[href^="#"]').evaluateAll(elements => elements.flatMap(element => {
+                const href = element.getAttribute("href");
+                if (!href || href === "#") return [];
+                let id: string; try { id = decodeURIComponent(href.slice(1)); } catch { return [href]; }
+                return document.getElementById(id) || Array.from(document.getElementsByName(id)).length ? [] : [href];
+              }));
+              for (const href of [...new Set(missingAnchors)]) issues.push(`${task.id}.files (${file.output}): anchor ${href} has no target element; add the intended section or correct the link in the source`);
               if (!options.interactionsOnly && await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) issues.push(`${file.output}: horizontal overflow at ${viewport.width}px`);
             }
             for (const check of task.interaction_checks) {
@@ -217,7 +238,15 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
                 activeStep = `step ${index + 1} ${step.action} ${step.selector}`;
                 signal?.throwIfAborted();
                 const target = page.locator(step.selector);
-                if (step.action === "click") await target.click();
+                if (step.action === "expect_url") {
+                  await page.waitForURL(url => url.href.endsWith(step.value!), { timeout: 5000 });
+                }
+                else if (step.action === "expect_in_viewport") {
+                  await target.waitFor({ state: "visible" });
+                  const box = await target.boundingBox();
+                  if (!box || box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= viewport.width || box.y >= viewport.height) throw new Error(`${step.selector} is outside the viewport`);
+                }
+                else if (step.action === "click") await target.click();
                 else if (step.action === "fill") await target.fill(step.value!);
                 else if (step.action === "press") await target.press(step.value!);
                 else if (step.action === "expect_visible" && (step.match ?? "any") === "any") await target.filter({ visible: true }).first().waitFor({ state: "visible" });
@@ -239,6 +268,7 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
                   }
                 }
               }
+              await observe(page, viewport.width);
               checks.push({ taskId: task.id, name: check.name, width: viewport.width, status: "passed" });
               } catch (error) {
                 signal?.throwIfAborted();
@@ -249,6 +279,15 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
           } catch (error) { issues.push(`${task.id} at ${viewport.width}px: ${error instanceof Error ? error.message : String(error)}`); }
           finally { await context.close(); }
         }
+      }
+      for (const [width, byPage] of observations) {
+        const reachable = new Set([contract.presentation.entry]);
+        for (let changed = true; changed;) {
+          changed = false;
+          for (const path of reachable) for (const link of byPage.get(path)?.links ?? []) if (byPage.has(link) && !reachable.has(link)) { reachable.add(link); changed = true; }
+        }
+        const satisfied = new Set([...reachable].flatMap(path => byPage.get(path)?.satisfied ?? []));
+        for (const requirement of presentationRequirements(contract)) if (!satisfied.has(requirement.id)) issues.push(`Presentation ${requirement.id}: required ${requirement.access} access is missing or hidden from entry at ${width}px`);
       }
     } finally { signal?.removeEventListener("abort", abort); }
     signal?.throwIfAborted();

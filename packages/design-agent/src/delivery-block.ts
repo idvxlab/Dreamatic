@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 
 export class DeliveryBlocked extends Error {
   constructor(readonly repairOwner: "designer" | "runtime", readonly issues: string[]) {
@@ -13,10 +13,13 @@ export class BuildIncomplete extends Error {
   }
 }
 
-let runtimeHash: Promise<string> | undefined;
-/** A runtime correction invalidates an old deterministic block without changing approval. */
+const loadedRuntimeAt = new Date().toISOString();
+const loadedRuntimeHash = createHash("sha256");
+/** Capture code identity during module initialization, not lazily after a later rebuild. */
+for (const name of ["orchestrator-contract.js", "runtime.js", "design-categories.js", "design-context-v2.js", "presentation-validation.js", "context-schema.js", "context-draft.js", "context-authoring.js", "context-tools.js", "skill-activation.js", "design-scope-validation.js", "model-response-policy.js", "session-status.js", "provider.js", "workflow-contract.js", "retry.js", "context-model.js", "extension.js", "delivery-block.js", "html-delivery.js", "html-preflight.js", "finalize-delivery.js", "design-contract.js", "image-size.js", "image-output.js", "designer-recovery.js", "user-assets.js"]) loadedRuntimeHash.update(readFileSync(new URL(name, import.meta.url)));
+const loadedCodeFingerprint = loadedRuntimeHash.digest("hex");
+export const loadedRuntimeIdentity = { initializedAt: loadedRuntimeAt, codeFingerprint: loadedCodeFingerprint };
+/** A runtime/configuration correction invalidates cached mechanical evidence. */
 export async function deliveryRuntimeStamp(): Promise<string> {
-  runtimeHash ??= Promise.all(["context-model.js", "extension.js", "delivery-block.js", "html-delivery.js", "html-preflight.js", "finalize-delivery.js", "design-contract.js", "image-size.js", "image-output.js", "designer-recovery.js", "user-assets.js"].map((name) => readFile(new URL(name, import.meta.url))))
-    .then((files) => { const hash = createHash("sha256"); for (const bytes of files) hash.update(bytes); return hash.digest("hex"); });
-  return createHash("sha256").update(await runtimeHash).update(JSON.stringify([process.env.DREAMATIC_HTML_BROWSER, process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE, process.env.DREAMATIC_HTML_REQUIRE_BROWSER])).digest("hex");
+  return createHash("sha256").update(loadedCodeFingerprint).update(JSON.stringify([process.env.DREAMATIC_HTML_BROWSER, process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE, process.env.DREAMATIC_HTML_REQUIRE_BROWSER])).digest("hex");
 }

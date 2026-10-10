@@ -1,3 +1,19 @@
+type ThinkingFormat = "openai" | "qwen" | "qwen-chat-template" | "zai";
+
+/** Explicit endpoint capabilities; do not infer unsupported controls from model names. */
+export function modelCapabilities(id: string, source = process.env.DREAMATIC_MODEL_CAPABILITIES) {
+  if (!source?.trim()) return { reasoning: false };
+  const parsed: unknown = JSON.parse(source);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("DREAMATIC_MODEL_CAPABILITIES must be a JSON object keyed by exact model id");
+  const entry = Object.hasOwn(parsed, id) ? (parsed as Record<string, unknown>)[id] : undefined;
+  if (entry === undefined) return { reasoning: false };
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw new Error(`Invalid model capabilities for ${id}`);
+  const config = entry as Record<string, unknown>;
+  if (typeof config.reasoning !== "boolean" || (config.thinkingFormat !== undefined && !["openai", "qwen", "qwen-chat-template", "zai"].includes(String(config.thinkingFormat))) || (config.supportsStrictMode !== undefined && typeof config.supportsStrictMode !== "boolean") || Object.keys(config).some(key => !["reasoning", "thinkingFormat", "supportsStrictMode"].includes(key))) throw new Error(`Invalid model capabilities for ${id}: use reasoning:boolean, optional thinkingFormat and verified supportsStrictMode:boolean`);
+  if (!config.reasoning && config.thinkingFormat) throw new Error(`thinkingFormat requires reasoning:true for ${id}`);
+  return { reasoning: config.reasoning, ...((config.thinkingFormat || config.supportsStrictMode !== undefined) ? { compat: { ...(config.thinkingFormat ? { thinkingFormat: config.thinkingFormat as ThinkingFormat, supportsReasoningEffort: config.thinkingFormat === "openai" } : {}), ...(config.supportsStrictMode !== undefined ? { supportsStrictMode: config.supportsStrictMode as boolean } : {}) } } : {}) };
+}
+
 const PERSONAS = ["orchestrator", "researcher", "designer", "reviewer", "builder"] as const;
 
 function personaModelId(persona: string, fallback: string): string {
@@ -24,13 +40,14 @@ export function dreamaticProviderFromEnv() {
   const api = providerType.includes("responses") ? "openai-responses" as const : "openai-completions" as const;
   const displayName = process.env.DREAMATIC_PROVIDER_NAME?.trim() || "DreamaticArt profile";
   const cost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const verifiedCapabilities = (id: string) => { const capability = modelCapabilities(id); return { ...capability, compat: { supportsStrictMode: false, ...capability.compat } }; };
   const modelDescriptor = (id: string) => ({
     id,
     name: id,
     api,
     provider: providerId,
     baseUrl,
-    reasoning: false,
+    ...verifiedCapabilities(id),
     input: ["text", "image"] as ("text" | "image")[],
     cost,
     contextWindow: 131_072,
@@ -54,7 +71,7 @@ export function dreamaticProviderFromEnv() {
         id,
         name: id,
         api,
-        reasoning: false,
+        ...verifiedCapabilities(id),
         input: ["text", "image"] as ("text" | "image")[],
         cost,
         contextWindow: 131_072,

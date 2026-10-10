@@ -28,17 +28,29 @@ network requests, iframe embeds, eval, service workers or base elements. Use inl
 data or local JS constants instead of fetch. Prevent default form submission
 when handling it locally. Relative page links and system fonts are valid.
 
-Use schemaVersion 2 in design_plan.json and deliverable_manifest.json. Each
-execution task has the same id/scope_id/category as its deliverable, method
-html_generate, files (source/output mappings), resources (local asset mappings),
-dependencies (producer ids), interaction_checks and applicable viewports.
-For mixed delivery, keep one image task per image deliverable in execution_plan
-with its exact id, prompt_seed, negative_prompt_seed, size, size_rationale and
-acceptance. Put all producing image ids in the HTML task dependencies. A group
-id such as decorative-images is not a replacement for these tasks. Do not keep
-executable image prompts solely in the legacy image_generation_plan when using
-schemaVersion 2. Builder batches those individual tasks without changing them.
-All outputs stay under artifacts/. Preserve relative URLs in the source code.
+Follow the runtime-injected design contract version. In unified v2, each deliverable
+owns id/scope/file and nested execution:{method:"html_generate",files,resources,
+uses,interaction_requirements,interaction_checks,viewports}. execution.uses references
+other deliverable ids; runtime derives dependencies and artifact resource mappings.
+Keep image prompts/sizes inside each image deliverable's execution. Never author a
+second task list or duplicate scope/identity. Historical unified v1 retains tasks;
+Builder consumes the derived execution view.
+Production required and presentation required are separate. Explicitly declare
+user_requested and presentation access (embed/link/download); user-requested imagery
+must be visible or accessible from the entry, rather than only copied to artifacts.
+
+Declare executable interaction_checks once: {name, viewport?:{min_width?,max_width?},
+steps:[{action,selector?,value?}]}. Optional interaction_requirements are descriptive
+notes, not a second copy of outcome assertions or a publication prerequisite.
+Native anchor navigation does not require a separate test list; test meaningful
+scripted user flows and responsive menu behavior. Commit then publish; publication
+validates sources. Use design_context_validate for optional targeted diagnostics
+and repair the reported exact fields/sources. Final validation
+checks the Gallery and real assets after Builder creates them.
+All outputs stay under artifacts/. Resolve local URLs relative to the containing
+HTML output, not the Run root or source directory: from artifacts/cabin/index.html
+to artifacts/seats/index.html use href="../seats/index.html", not
+href="artifacts/seats/index.html". Source and output mappings do not rewrite URLs.
 Researcher-discovered images are reference-only. User-specified existing works
 can be imported unchanged with user_asset_import and mapped directly from
 inputs/user-assets/; do not regenerate originals merely to deliver them. For new
@@ -74,10 +86,12 @@ Example execution task (adapt coverage to the actual design):
 }
 ```
 
-Declare a matching deliverable with kind html_page, method html_generate, file
+Declare a matching deliverable with id, kind html_page, file
 artifacts/control-ui/index.html, purpose, acceptance_test, required, scope_id,
-category and skill_refs (names actually loaded for that scope). The manifest's
-presentation is `{"mode":"html","entry":"artifacts/control-ui/index.html"}`
+category and skill_refs (names actually loaded for that scope). In unified
+Context, method belongs only to the task; omit method and size from deliverables.
+
+The presentation field is `{"mode":"html","entry":"artifacts/control-ui/index.html"}`
 for page-first delivery. For mixed image/page delivery, mode gallery uses
 artifacts/00-gallery.html; Builder links the pages from it. One task may include
 multiple pages and shared files. Distinct tasks may depend on each other's assets.
@@ -114,16 +128,18 @@ For explicit cross-domain contributions to a page, bind contributing_scopes on
 one deliverable and keep one execution task for its HTML/CSS/JS. Each contribution
 has scope_id, category, skill_refs and purpose; do not duplicate output files.
 
-Before committing a Designer specification, runtime previews these exact sources
-and runs declared interactions at each applicable viewport. Failures identify
-the task, check, viewport, step and selector; correct the check or actual source
-before publishing. Generated image dependencies use private preview placeholders;
-this does not certify the final imagery or layout. Builder still runs full final
-validation with real assets. Unchanged source/checks reuse the preflight result.
+On Designer publication and Reviewer approval, runtime previews these exact
+sources and runs declared interactions at applicable viewports when a browser is
+available. Required-browser configuration blocks unavailable validation; otherwise
+the receipt reports it unverified. Failures identify task, check, viewport, step
+and selector; repair the actual source/check before publishing. Generated image
+dependencies use private preview placeholders, which do not certify final imagery
+or layout. Builder finalization checks approved bytes and file/resource integrity,
+without another browser or visual audit. Unchanged inputs reuse preflight results.
 
-For a page needing a designed hero image, declare an image deliverable and task
-(e.g. hero-image) with the full prompt/negative prompt, size, rationale and
-acceptance. Then add to the HTML task:
+For a page needing a designed hero image, declare an image task (e.g. hero-image)
+with full prompt/negative prompt, size and rationale, plus a matching deliverable
+with its output file and acceptance criterion. Then add to the HTML task:
 
 ```json
 {
@@ -138,7 +154,7 @@ references and declared interactions before approval. Builder only executes the
 approved producers/mappings and verifies file integrity/source equality.
 
 User-specified material exception: explicitly user-provided URLs and uploads may
-be reused unchanged. Orchestrator/Researcher/Designer calls user_asset_import
+be reused unchanged. Researcher/Designer calls user_asset_import
 before approval (sourcePageUrl only for an asset actually linked on the user's
 page). The tool returns a verified inputs/user-assets/<hash>.<ext> source. Designer
 maps it in resources to artifacts/<page>/assets/<file>; no image producer

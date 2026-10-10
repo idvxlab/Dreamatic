@@ -226,8 +226,9 @@ async function registeredTools(workspaceDir, options = {}) {
   const tools = new Map();
   const handlers = new Map();
   const factory = createDreamaticExtension({ workspaceDir, ...options });
-  factory({
+  await factory({
     on(event, handler) { handlers.set(event, handler); },
+    setActiveTools() {},
     registerTool(definition) { tools.set(definition.name, definition); },
   });
   return { tools, handlers };
@@ -236,6 +237,10 @@ async function registeredTools(workspaceDir, options = {}) {
 test("Builder can load its Showcase guide without mixing Designer Skills or requiring one to exist", async () => {
   const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-builder-skill-"));
   try {
+    const designerReceiptPath = join(workspaceDir, "runs/demo/.performance/skills-designer.json");
+    await mkdir(join(workspaceDir, "runs/demo/.performance"), { recursive: true });
+    const designerReceipt = JSON.stringify({ activeSkills: [{ name: "ui-web-design", scope: "ui", role: "primary" }] });
+    await writeFile(designerReceiptPath, designerReceipt);
     const context = { cwd: fileURLToPath(new URL("../../..", import.meta.url)) };
     const builder = await registeredTools(workspaceDir, { parentInvocation: { id: "builder", agent: "builder", runId: "demo" } });
     const catalog = JSON.parse((await builder.tools.get("list_skills").execute("catalog", {}, undefined, undefined, context)).content[0].text);
@@ -243,7 +248,10 @@ test("Builder can load its Showcase guide without mixing Designer Skills or requ
     assert.equal(catalog.skills.some((skill) => skill.audience === "designer"), false);
     const loaded = await builder.tools.get("use_skill").execute("guide", { name: "showcase-layout", role: "supporting" }, undefined, undefined, context);
     assert.equal(loaded.details.name, "showcase-layout");
-    assert.match(loaded.details.instruction, /do not modify Designer-owned specifications/);
+    assert.match(loaded.details.instruction, /do not modify Designer-owned Context or page sources/);
+    assert.equal(await readFile(designerReceiptPath, "utf8"), designerReceipt);
+    const builderReceipt = JSON.parse(await readFile(join(workspaceDir, "runs/demo/.performance/skills-builder.json"), "utf8"));
+    assert.ok(builderReceipt.activeSkills.some(skill => skill.name === "showcase-layout" && skill.role === "supporting"));
     const wrong = JSON.parse((await builder.tools.get("use_skill").execute("wrong", { name: "industrial-design" }, undefined, undefined, context)).content[0].text);
     assert.equal(wrong.ok, false);
     const designer = await registeredTools(workspaceDir, { parentInvocation: { id: "designer", agent: "designer", runId: "demo" } });
@@ -639,11 +647,11 @@ test("export_package rejects unapproved or unimplemented design context", async 
 });
 
 test("persona tool policies keep reasoning separate from execution", () => {
-  assert.throws(() => dreamaticPersonaTools("orchestrator", ["read", "user_asset_import", "user_material_extract", "websearch_batch", "html_generate", "image_generate"]), /disallowed: user_asset_import/);
-  const researcher = dreamaticPersonaTools("researcher", ["user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
-  const designer = dreamaticPersonaTools("designer", ["user_asset_import", "read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
-  const reviewer = dreamaticPersonaTools("reviewer", ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"]);
-  const builder = dreamaticPersonaTools("builder", ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"]);
+  assert.throws(() => dreamaticPersonaTools("orchestrator", ["read", "user_asset_import", "user_material_extract", "websearch_batch", "html_generate", "image_generate"]), /disallowed:.*user_asset_import/);
+  const researcher = dreamaticPersonaTools("researcher", ["update_design_context", "commit_design_context", "user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
+  const designer = dreamaticPersonaTools("designer", ["design_context_validate", "update_design_context", "commit_design_context", "user_asset_import", "read", "write", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
+  const reviewer = dreamaticPersonaTools("reviewer", ["update_design_context", "commit_design_context", "read", "design_bus_post", "design_bus_read", "design_context_read"]);
+  const builder = dreamaticPersonaTools("builder", ["read", "write", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"]);
   assert.equal(researcher.includes("view_image"), false);
   assert.equal(researcher.includes("research_asset_validate"), false);
   assert.equal(researcher.includes("bash"), false);
@@ -655,16 +663,16 @@ test("persona tool policies keep reasoning separate from execution", () => {
   assert.equal(designer.includes("view_image"), true);
   assert.equal(designer.includes("use_skill"), true);
   assert.equal(reviewer.includes("view_image"), false);
-  assert.equal(builder.includes("image_generate"), true);
-  assert.equal(builder.includes("image_generate_batch"), true);
-  assert.equal(builder.includes("image_edit"), true);
-  assert.equal(builder.includes("image_edit_batch"), true);
+  assert.equal(builder.includes("image_generate"), false);
+  assert.equal(builder.includes("image_generate_batch"), false);
+  assert.equal(builder.includes("image_edit"), false);
+  assert.equal(builder.includes("image_edit_batch"), false);
   assert.equal(builder.includes("use_skill"), true);
   assert.equal(builder.includes("view_image"), false);
   assert.equal(builder.includes("design_bus_post"), false);
   assert.equal(builder.includes("artifact_lint"), false);
   assert.throws(
-    () => dreamaticPersonaTools("designer", [...designer, "image_generate"]),
+    () => dreamaticPersonaTools("designer", ["design_context_validate", "update_design_context", "commit_design_context", ...designer, "image_generate"]),
     /disallowed: image_generate/,
   );
 });
@@ -789,7 +797,7 @@ test("runtime-owned state rejects structured overwrite without triggering a fall
       for (const toolName of ["write", "edit"]) {
         const blocked = await handlers.get("tool_call")({ toolName, input: { path: join(runDir, path), content: "{}" } });
         assert.equal(blocked.block, true);
-        assert.match(blocked.reason, /runtime-managed/);
+        assert.match(blocked.reason, /runtime-managed|named Context authoring/);
       }
     }
     assert.equal(await readFile(join(runDir, "design-context.json"), "utf8"), original);
@@ -1505,8 +1513,8 @@ test("research_fetch_batch saves relevant candidates without downloading page ut
     assert.equal(manifest.assets.length, 2);
     assert.equal(manifest.assets.find((asset) => asset.id === "place-ref").description, "Street context");
     assert.equal(manifest.assets[0].visual_review_status, "unreviewed");
-    assert.equal(result.results[0].excludedImageCandidates.length, 4);
-    assert.ok(result.results[0].excludedImageCandidates.some((candidate) => candidate.reason === "task_relevance_not_established"));
+    assert.equal(JSON.parse(await readFile(join(workspaceDir, result.resultDetailsPath), "utf8"))[0].excludedImageCandidates.length, 4);
+    assert.ok(JSON.parse(await readFile(join(workspaceDir, result.resultDetailsPath), "utf8"))[0].excludedImageCandidates.some((candidate) => candidate.reason === "task_relevance_not_established"));
     assert.equal(workflowReferencePaths(result, "demo").length, 2);
   } finally {
     globalThis.fetch = originalFetch;
@@ -1535,7 +1543,7 @@ test("reference batches exclude described logos and icons before download even w
     const result = JSON.parse((await tools.get("research_fetch_batch").execute("refs", {
       runId: "demo", sources: [{ url: "https://example.test/paper", saveLeadImageAs: "reference", referenceImageCount: 3, referenceFocusTerms: ["structure"], assetKind: "protected_reference" }],
     })).content[0].text);
-    assert.equal(result.results[0].excludedImageCandidates.length, 2);
+    assert.equal(JSON.parse(await readFile(join(workspaceDir, result.resultDetailsPath), "utf8"))[0].excludedImageCandidates.length, 2);
     assert.equal(requests.filter((url) => url.endsWith(".png")).length, 1);
     const manifest = JSON.parse(await readFile(join(runDir, "research/assets/manifest.json"), "utf8"));
     assert.equal(manifest.assets.length, 1);
@@ -2588,4 +2596,24 @@ test('JPEG editing and URL-delivered images keep agreed paths and store the actu
     const png=await tools.get('image_generate').execute('png',{runId:'demo',id:'as-png',intent:'Image',prompt:'Exact approved prompt',acceptanceCriteria:['Exists'],outputPath:'artifacts/as-png.png'});
     assert.equal(imageEncoding(await readFile(join(workspace,png.details.path))),'png');
   } finally {globalThis.fetch=oldFetch;if(oldKey===undefined)delete process.env.DREAMATIC_IMAGE_API_KEY;else process.env.DREAMATIC_IMAGE_API_KEY=oldKey;await rm(workspace,{recursive:true,force:true});}
+});
+
+test("permanent certificate failures beneath fetch wrappers stop after one attempt while connection timeouts retry", async () => {
+  const { isRetryableError } = await import('../dist/retry.js');
+  for (const code of ['DEPTH_ZERO_SELF_SIGNED_CERT', 'CERT_HAS_EXPIRED', 'ERR_TLS_CERT_ALTNAME_INVALID', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE']) {
+    const cause = Object.assign(new Error('TLS validation failed'), { code });
+    const wrapped = new Error('Research fetch failed', { cause: new TypeError('fetch failed', { cause }) });
+    assert.equal(isRetryableError(wrapped), false);
+    let attempts = 0;
+    await assert.rejects(withRetry(async () => { attempts++; throw wrapped; }, { sleep: async () => {} }), /Research fetch/);
+    assert.equal(attempts, 1);
+  }
+  const timeout = new TypeError('fetch failed', { cause: Object.assign(new Error('Connect Timeout Error'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+  assert.equal(isRetryableError(timeout), true);
+  let attempts = 0;
+  await assert.rejects(withRetry(async () => { attempts++; throw timeout; }, { sleep: async () => {} }), /fetch failed/);
+  assert.equal(attempts, 3);
+  assert.equal(isRetryableError(new Error('self-signed certificate')), false);
+  const loop = new Error('connection error'); loop.cause = loop;
+  assert.equal(isRetryableError(loop), true);
 });

@@ -25,8 +25,18 @@ export class RetryableHttpError extends Error {
 export function isRetryableError(error: unknown): boolean {
   if (error instanceof RetryableHttpError) return true;
   if (!(error instanceof Error)) return false;
+  // A generic fetch wrapper must not hide permanent TLS failures in its cause.
+  const seen = new Set<Error>();
+  let current: unknown = error;
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current);
+    const code = String((current as Error & { code?: unknown }).code ?? "");
+    if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|ERR_TLS_CERT_ALTNAME_INVALID/i.test(code)
+      || /self.signed certificate|certificate (?:has expired|verify failed|verification failed)|unable to verify.*certificate/i.test(current.message)) return false;
+    current = current.cause;
+  }
   const message = `${error.name} ${error.message} ${String((error as Error & { cause?: unknown }).cause ?? "")}`.toLowerCase();
-  return /connection error|fetch failed|terminated|timeout|timed out|econnreset|econnrefused|etimedout|eai_again|enotfound|socket|network/.test(message);
+  return /model output token limit reached|connection error|fetch failed|terminated|timeout|timed out|econnreset|econnrefused|etimedout|eai_again|enotfound|socket|network/.test(message);
 }
 
 async function defaultSleep(delayMs: number, signal?: AbortSignal): Promise<void> {

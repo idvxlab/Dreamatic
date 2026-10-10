@@ -13,14 +13,14 @@ export const DESIGN_CAPABILITIES = [
 ] as const;
 
 export interface SourceMapping { source: string; output: string }
-export interface InteractionStep { action: "click" | "fill" | "press" | "expect_visible" | "expect_hidden" | "expect_text" | "expect_value"; selector: string; value?: string; match?: "any" | "all" | "unique" }
+export interface InteractionStep { action: "click" | "fill" | "press" | "expect_visible" | "expect_hidden" | "expect_text" | "expect_value" | "expect_url" | "expect_in_viewport"; selector: string; value?: string; match?: "any" | "all" | "unique" }
 export interface HtmlTask {
   id: string;
   method: "html_generate";
   files: SourceMapping[];
   resources: SourceMapping[];
   dependencies: string[];
-  interaction_checks: Array<{ name: string; page?: string; viewport?: { min_width?: number; max_width?: number }; steps: InteractionStep[] }>;
+  interaction_checks: Array<{ name: string; requirement_id?: string; page?: string; viewport?: { min_width?: number; max_width?: number }; steps: InteractionStep[] }>;
   viewports: Array<{ width: number; height: number }>;
 }
 export const GALLERY_ENTRY = "artifacts/00-gallery.html";
@@ -154,10 +154,17 @@ export function designSpecificationProtocol(sizeCeiling: string) {
 }
 
 /** Canonical authoring protocol; execution schema versions are not storage versions. */
-export function unifiedDesignSpecificationProtocol(sizeCeiling: string) {
+export function unifiedDesignSpecificationProtocol(sizeCeiling: string, version = 1) {
   const { imageOnly: _legacy, typed, ...shared } = designSpecificationProtocol(sizeCeiling);
+  if (version === 2) return { ...shared,
+    storage: { path: CONTEXT_FILES.design, schemaVersion: 2, fields: ["system", "strategy", "deliverables", "presentation", "acceptanceNotes", "executionNotes"], rule: "One authored deliverable owns identity/scope/output. Runtime owns envelope and Skill selections. tasks is a read-only derived execution view. Existing Runs retain their original version unless explicitly upgraded in a revision." },
+    typed: { ...typed, imageTaskFields: typed.imageTaskFields.filter(field => !["id", "scope_id", "category"].includes(field)), schemaVersion: 2, imageTasks: "context/design.json.deliverables[].execution", rule: "Author execution:{method,...} inside each deliverable. execution.uses references other deliverable ids; dependencies and artifact resource mappings are derived. No repeated execution id/scope/category." },
+    resourcePolicy: { ...shared.resourcePolicy, pageImages: "Declare image deliverables with complete nested execution. HTML execution.uses lists their ids; optional resources maps different local URLs. Designer-authored SVG/CSS/JS belongs in execution.files.", builder: "Execute approved producers and HTML mappings; final validation checks actual resources, declared interactions and user access. Do not redesign approved intent." },
+    access: { production: "deliverables[].required", userRequested: "deliverables[].user_requested", presentation: "deliverables[].presentation:{required,access:embed|link|download,rationale}", rule: "User-requested outputs must be accessible from the presentation entry on declared viewports; required production alone is insufficient. Internal/supporting outputs need an explicit rationale." },
+    interaction: { checks: "execution.interaction_checks:[{name,viewport?:{min_width?,max_width?},page?,steps:[{action,selector?,value?}]}]", rule: "Declare meaningful user flows once in checks. CSS selectors are required except for expect_url. Put responsive bounds on the whole check; dimensions belong in execution.viewports. Static pages and native anchor navigation do not require a duplicate test specification. Optional interaction_requirements are descriptive design notes, not a second assertion language." },
+    validation: "Publish after a ready commit; publication performs source validation. design_context_validate is optional for targeted diagnostics, not required after each commit. Gallery access is validated after Builder creates Gallery; source preview validates only existing Designer HTML." };
   return { ...shared,
-    storage: { path: CONTEXT_FILES.design, schemaVersion: 1, fields: ["schemaVersion", "runId", "revision", "system", "strategy", "tasks", "deliverables", "presentation"], rule: "Save a single canonical document with write_json/patch_json. Positive increasing revision. No legacy files or design_system_ref. Method and size belong only to tasks; deliverables derive them from the same id." },
+    storage: { path: CONTEXT_FILES.design, schemaVersion: 1, fields: ["system", "strategy", "tasks", "deliverables", "presentation", "acceptanceNotes", "executionNotes"], rule: "Supply named role fields inside update_design_context.changes, then commit_design_context({}). Runtime owns schemaVersion/runId/revision and strategy.skill_selection; omit metadata from tool arguments and authored changes. Choose Skills with use_skill and rationale. Method and size belong only to tasks; scope category and missing task scope fields are derived from assigned scopes and the matching deliverable id. contributing_scopes contains additional scopes only; [] clears them. No legacy files or design_system_ref." },
     typed: { ...typed, schemaVersion: 1, imageTasks: "context/design.json.tasks", rule: "One task per deliverable with identical id. Manual tasks are allowed; other tasks follow the typed execution fields. No execution_plan/image_generation_plan arrays in the saved model." },
     presentation: { ...shared.presentation, rule: "Declare presentation.mode and entry explicitly in context/design.json. Mixed/manual outputs require an explicit choice; multiple HTML outputs require an explicit entry." },
   };
@@ -218,18 +225,18 @@ export function htmlTask(value: Record<string, unknown>): HtmlTask {
   const checks = value.interaction_checks;
   if (!Array.isArray(checks)) throw new Error(`HTML task ${id} needs interaction_checks (empty only for a static page)`);
   const interaction_checks = checks.map((item, checkIndex) => {
-    const check = record(item, "interaction check");
+    const check = record(item, `task ${id}.interaction_checks[${checkIndex}]`);
     const checkPath = `execution_plan.${id}.interaction_checks[${checkIndex}]`;
     if (check.min_width !== undefined || check.max_width !== undefined) throw new Error(`${checkPath}: put bounds inside check.viewport, not beside steps`);
-    if (!Array.isArray(check.steps) || !check.steps.length) throw new Error("Interaction checks need steps");
+    if (!Array.isArray(check.steps) || !check.steps.length) throw new Error(`${checkPath}.steps must be a nonempty array of action objects`);
     const steps = check.steps.map((item, stepIndex) => {
-      const step = record(item, "interaction step");
+      const step = record(item, `${checkPath}.steps[${stepIndex}]`);
       if (step.viewport !== undefined || step.min_width !== undefined || step.max_width !== undefined) throw new Error(`${checkPath}.steps[${stepIndex}]: viewport belongs on the whole interaction check, beside name and steps. Move viewport to ${checkPath}.viewport; step-level bounds are not supported and must not be silently ignored.`);
-      if (!["click", "fill", "press", "expect_visible", "expect_hidden", "expect_text", "expect_value"].includes(String(step.action))) throw new Error("Unsupported interaction action");
+      if (!["click", "fill", "press", "expect_visible", "expect_hidden", "expect_text", "expect_value", "expect_url", "expect_in_viewport"].includes(String(step.action))) throw new Error(`${checkPath}.steps[${stepIndex}].action: unsupported ${JSON.stringify(step.action)}; use click/fill/press/expect_visible/expect_hidden/expect_text/expect_value/expect_url/expect_in_viewport`);
       const action = step.action as InteractionStep["action"];
-      const selector = string(step.selector, "step.selector");
+      const selector = action === "expect_url" ? (typeof step.selector === "string" ? step.selector : "html") : string(step.selector, `${checkPath}.steps[${stepIndex}].selector`);
       if (step.match !== undefined && (!["any", "all", "unique"].includes(String(step.match)) || !action.startsWith("expect_"))) throw new Error("match applies only to assertions and must be any, all or unique");
-      if (["fill", "press", "expect_text", "expect_value"].includes(action) && typeof step.value !== "string") throw new Error(`${action} requires value`);
+      if (["fill", "press", "expect_text", "expect_value", "expect_url"].includes(action) && typeof step.value !== "string") throw new Error(`${action} requires value`);
       return { action, selector, ...(typeof step.value === "string" ? { value: step.value } : {}), ...(step.match ? { match: step.match as NonNullable<InteractionStep["match"]> } : {}) };
     });
     const viewport = check.viewport === undefined ? undefined : record(check.viewport, "check.viewport");
@@ -238,7 +245,7 @@ export function htmlTask(value: Record<string, unknown>): HtmlTask {
       for (const key of ["min_width", "max_width"]) if (viewport[key] !== undefined && (!Number.isInteger(viewport[key]) || Number(viewport[key]) < 240 || Number(viewport[key]) > 3840)) throw new Error(`${checkPath}.viewport.${key} must be 240–3840 pixels; omit min_width for an unbounded lower limit rather than using 0`);
       if (Number(viewport.min_width ?? 240) > Number(viewport.max_width ?? 3840)) throw new Error("Check viewport bounds are reversed");
     }
-    return { name: string(check.name, "check.name"), ...(check.page === undefined ? {} : { page: runPath(check.page, "artifacts") }), ...(viewport ? { viewport: viewport as { min_width?: number; max_width?: number } } : {}), steps };
+    return { name: string(check.name, `${checkPath}.name`), ...(check.requirement_id === undefined ? {} : { requirement_id: string(check.requirement_id, "check.requirement_id") }), ...(check.page === undefined ? {} : { page: runPath(check.page, "artifacts") }), ...(viewport ? { viewport: viewport as { min_width?: number; max_width?: number } } : {}), steps };
   });
   if (value.dependencies !== undefined && (!Array.isArray(value.dependencies) || value.dependencies.some((id) => typeof id !== "string"))) throw new Error("dependencies must be task ids");
   const viewports = value.viewports ?? [{ width: 1440, height: 900 }, { width: 390, height: 844 }];
@@ -247,6 +254,8 @@ export function htmlTask(value: Record<string, unknown>): HtmlTask {
     const width = Number(record(item, "viewport").width);
     return width >= (check.viewport?.min_width ?? 240) && width <= (check.viewport?.max_width ?? 3840);
   })) throw new Error(`Interaction check ${check.name} applies to no declared viewport`);
+  // interaction_requirements is optional design rationale. Executable assertions
+  // have a single owner in interaction_checks, not a duplicated second test DSL.
   return { id, method: "html_generate", files: mappings(value.files, false), resources: mappings(value.resources ?? [], true), dependencies: (value.dependencies ?? []) as string[], interaction_checks, viewports: viewports.map((item) => {
     const viewport = record(item, "viewport");
     for (const key of ["width", "height"]) if (!Number.isInteger(viewport[key]) || Number(viewport[key]) < 240 || Number(viewport[key]) > 3840) throw new Error("Viewport dimensions must be 240–3840 pixels");

@@ -39,12 +39,16 @@ export function App() {
   const { t } = useI18n();
   const initialized = useRef(false);
   const workspaceReady = useRef(false);
-  const awaitingRun = useRef(false);
-  const runIdsBeforePrompt = useRef<Set<string>>(new Set());
+  const selectionEpoch = useRef(0);
+  const promptRequests = useRef(new Map<string, symbol>());
   const [sessions, setSessions] = useState<SessionView[]>([]);
-  const [activeId, setActiveId] = useState<string>();
+  const [selection, setSelection] = useState<{ runId?: string | undefined; sessionId?: string | undefined }>({});
+  const selectedView = useRef(selection);
+  selectedView.current = selection;
+  const activateSelection = (next: typeof selection) => { selectedView.current = next; setSelection(next); };
+  const activeId = selection.sessionId;
+  const activeRunId = selection.runId;
   const [runs, setRuns] = useState<RunView[]>([]);
-  const [activeRunId, setActiveRunId] = useState<string>();
   const [assets, setAssets] = useState<Asset[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowEvent[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<string>();
@@ -58,8 +62,9 @@ export function App() {
     if (!textTimer.current) textTimer.current = setTimeout(() => { const text = textBuffer.current; textBuffer.current = ""; textTimer.current = undefined; setStreamingText((current) => current + text); }, 60);
   };
   useEffect(() => () => { if (textTimer.current) clearTimeout(textTimer.current); }, []);
-  const [running, setRunning] = useState(false);
-  const [stopping, setStopping] = useState(false);
+  const [runningSessions, setRunningSessions] = useState<Set<string>>(new Set());
+  const [stoppingSessions, setStoppingSessions] = useState<Set<string>>(new Set());
+  const stopping = Boolean(activeId && stoppingSessions.has(activeId));
   const [pendingAgentStatus, setPendingAgentStatus] = useState<string>();
   const [liveClarification, setLiveClarification] = useState<{ sessionId: string; request: ClarificationRequest }>();
   const [answeredClarificationId, setAnsweredClarificationId] = useState<string>();
@@ -79,7 +84,7 @@ export function App() {
   const activeRun = useMemo(() => runs.find((run) => run.id === activeRunId), [runs, activeRunId]);
   const publication = usePublication(activeRun?.id);
   const publicationLabel = !activeRun ? "No project" : publication.error ? "Publication status unavailable" : !publication.status ? "Checking publication…" : publication.status.inProgress ? "Publishing…" : publication.status.published ? "Published" : publication.status.mayExist ? "Publication unconfirmed" : "Not published";
-  const agentRunning = running || Boolean(active?.running);
+  const agentRunning = Boolean(activeId && runningSessions.has(activeId)) || Boolean(active?.running);
   const pendingClarification = liveClarification && liveClarification.sessionId === activeId ? liveClarification.request : active?.pendingClarification;
   const visibleClarification = pendingClarification?.id === answeredClarificationId ? undefined : pendingClarification;
   const visibleAssets = useMemo(
@@ -97,10 +102,12 @@ export function App() {
         const existingRuns = loadedRuns;
         setSessions(next);
         setRuns(existingRuns);
-        setActiveRunId((current) => current && existingRuns.some((run) => run.id === current) ? current : existingRuns[0]?.id);
-        setActiveId((current) => current && next.some((session) => session.id === current)
-          ? current
-          : existingRuns.length ? next.find((session) => session.id === existingRuns[0]?.sessionId)?.id ?? next[0]?.id : undefined);
+        setSelection(current => {
+          const run = existingRuns.find(run => run.id === current.runId) ?? existingRuns[0];
+          const session = next.find(session => session.id === current.sessionId && (session.projectId === run?.id || session.id === run?.sessionId))
+            ?? next.find(session => session.id === run?.sessionId || session.projectId === run?.id);
+          return { runId: run?.id, sessionId: session?.id };
+        });
         setAssets(initialAssets);
         setHealth(runtimeHealth);
         workspaceReady.current = true;
@@ -127,6 +134,7 @@ export function App() {
     let disposed = false;
     let fetching = false;
     let timer: ReturnType<typeof setTimeout>;
+    const epoch = selectionEpoch.current;
     const refresh = async () => {
       if (disposed || fetching) return;
       fetching = true;
@@ -135,34 +143,21 @@ export function App() {
           listRuns(), activeRunId ? listRunAssets(activeRunId) : listAssets(), listSessions(),
           activeRunId ? getRun(activeRunId).catch(() => undefined) : Promise.resolve(undefined),
         ]);
-        if (disposed) return;
+        if (disposed || epoch !== selectionEpoch.current) return;
         const recovering = !workspaceReady.current;
         setRuns(nextRuns.map((run) => run.id === detail?.id ? detail : run));
         setAssets(nextAssets);
         setSessions(nextSessions);
-        setActiveRunId((current) => {
-          if (current && nextRuns.some((run) => run.id === current)) return current;
-          if (current || recovering) return nextRuns[0]?.id;
-          return undefined;
-        });
-        setActiveId((current) => {
-          if (current && nextSessions.some((session) => session.id === current)) return current;
-          if (!current && !recovering) return undefined;
-          const firstRun = nextRuns[0];
-          return nextSessions.find((session) => session.id === firstRun?.sessionId)?.id ?? nextSessions[0]?.id;
+        setSelection(current => {
+          const run = nextRuns.find(run => run.id === current.runId) ?? (current.runId || recovering ? nextRuns[0] : undefined);
+          const session = run ? nextSessions.find(session => session.id === current.sessionId && (session.projectId === run.id || session.id === run.sessionId))
+            ?? nextSessions.find(session => session.id === run.sessionId || session.projectId === run.id) : undefined;
+          return { runId: run?.id, sessionId: session?.id };
         });
         workspaceReady.current = true;
         setConnectionError(undefined);
         setLoading(false);
-        if (awaitingRun.current) {
-          const owned = nextRuns.find((run) => run.sessionId === activeId);
-          const created = nextRuns.find((run) => !runIdsBeforePrompt.current.has(run.id) && run.sessionId === activeId);
-          if (owned || created) {
-            setActiveRunId((owned ?? created)!.id);
-            awaitingRun.current = false;
-          }
-        }
-      } catch (error) { if (!disposed) setConnectionError(error instanceof Error ? error.message : String(error)); }
+      } catch (error) { if (!disposed && epoch === selectionEpoch.current) setConnectionError(error instanceof Error ? error.message : String(error)); }
       finally {
         fetching = false;
         if (!disposed) timer = setTimeout(() => void refresh(), document.hidden ? 60_000 : agentRunning ? 3_000 : 15_000);
@@ -181,8 +176,9 @@ export function App() {
     }
     let disposed = false;
     setWorkflow([]);
+    const epoch = selectionEpoch.current;
     const closeStream = streamWorkflow(activeRunId, (message) => {
-      if (disposed) return;
+      if (disposed || epoch !== selectionEpoch.current) return;
       if (message.type === "snapshot") setWorkflow(message.workflow);
       else {
         setPendingAgentStatus(undefined);
@@ -196,14 +192,17 @@ export function App() {
   }, [activeRunId]);
 
   async function addSession() {
+    if (creating) return;
+    const epoch = selectionEpoch.current;
     setCreating(true);
     try {
       const session = await createSession();
       const nextRuns = await listRuns();
       setSessions((current) => [session, ...current]);
       setRuns(nextRuns);
-      setActiveId(session.id);
-      setActiveRunId(session.projectId);
+      if (epoch !== selectionEpoch.current) return;
+      selectionEpoch.current += 1;
+      activateSelection({ runId: session.projectId, sessionId: session.id });
       setWorkflow([]);
       setTimeline([]);
       resetStreamingText();
@@ -234,6 +233,7 @@ export function App() {
       setNavigationOpen(false);
       return;
     }
+    const epoch = ++selectionEpoch.current;
     setWorkflow([]);
     setTimeline([]);
     resetStreamingText();
@@ -241,19 +241,17 @@ export function App() {
     setLiveClarification(undefined);
     setAnsweredClarificationId(undefined);
     setSelectedAsset(undefined);
-    setActiveRunId(runId);
     const project = runs.find((run) => run.id === runId);
     const linked = project?.sessionId ? sessions.find((session) => session.id === project.sessionId) : undefined;
-    if (linked) {
-      setActiveId(linked.id);
-    } else if (project) {
+    activateSelection({ runId, sessionId: linked?.id });
+    if (!linked && project) {
       try {
         const session = await createSession(project.id, project.title);
         setSessions((current) => [session, ...current]);
         setRuns((current) => current.map((run) => run.id === project.id ? { ...run, sessionId: session.id } : run));
-        setActiveId(session.id);
+        if (epoch === selectionEpoch.current) activateSelection({ runId: project.id, sessionId: session.id });
       } catch (error) {
-        setConnectionError(error instanceof Error ? error.message : String(error));
+        if (epoch === selectionEpoch.current) setConnectionError(error instanceof Error ? error.message : String(error));
       }
     }
     setNavigationOpen(false);
@@ -265,7 +263,7 @@ export function App() {
       const [nextRuns, nextAssets] = await Promise.all([listRuns(), listAssets()]);
       setRuns(nextRuns);
       setAssets(nextAssets);
-      if (activeRunId === runId) { setActiveRunId(nextRuns[0]?.id); setActiveId(nextRuns[0]?.sessionId); }
+      if (selectedView.current.runId === runId) { selectionEpoch.current += 1; resetStreamingText(); setTimeline([]); setPendingAgentStatus(undefined); activateSelection({ runId: nextRuns[0]?.id, sessionId: nextRuns[0]?.sessionId }); }
       setNotice("Project moved to local Trash");
       window.setTimeout(() => setNotice(undefined), 2600);
     } catch (error) {
@@ -358,10 +356,12 @@ export function App() {
   }
 
   async function send(text: string, images: PendingImage[], presentation?: { userText?: string; waitingLabel?: string }) {
-    if (!activeId || !activeRun) return;
-    setRunning(true);
-    awaitingRun.current = true;
-    runIdsBeforePrompt.current = new Set(runs.map((run) => run.id));
+    if (!activeId || !activeRun || promptRequests.current.has(activeId)) return;
+    const sessionId = activeId, runId = activeRun.id;
+    const requestId = Symbol(sessionId);
+    promptRequests.current.set(sessionId, requestId);
+    const ownsView = () => selectedView.current.runId === runId && selectedView.current.sessionId === sessionId && promptRequests.current.get(sessionId) === requestId;
+    setRunningSessions(current => new Set(current).add(sessionId));
     resetStreamingText();
     const userText = presentation?.userText ?? text;
     setPendingAgentStatus(presentation?.waitingLabel ?? (activeRun?.status === "draft" ? "正在理解设计需求，并判断是否需要进一步澄清…" : "正在理解你的消息并决定下一步…"));
@@ -379,40 +379,44 @@ export function App() {
       setWorkflow((current) => [...current, localMessage]);
     }
     try {
-      await streamPrompt(activeId, text, images.map(({ name, data, mimeType }) => ({ name, data, mimeType })), receive, activeRunId);
+      await streamPrompt(sessionId, text, images.map(({ name, data, mimeType }) => ({ name, data, mimeType })), item => {
+        if (item.type === "snapshot" && item.session) setSessions(current => current.map(session => session.id === item.session?.id ? item.session : session));
+        else if (ownsView()) receive(item);
+      }, runId);
       const [nextRuns, nextAssets, persistedWorkflow, detail] = await Promise.all([
         listRuns(),
-        activeRunId ? listRunAssets(activeRunId) : listAssets(),
-        activeRunId ? getWorkflow(activeRunId) : Promise.resolve(undefined),
-        activeRunId ? getRun(activeRunId).catch(() => undefined) : Promise.resolve(undefined),
+        listRunAssets(runId),
+        getWorkflow(runId),
+        getRun(runId).catch(() => undefined),
       ]);
+      if (!ownsView()) return;
       setRuns(nextRuns.map((run) => run.id === detail?.id ? detail : run));
       setAssets(nextAssets);
       if (persistedWorkflow) setWorkflow(persistedWorkflow);
-      const ownedRun = nextRuns.find((run) => run.sessionId === activeId);
-      if (ownedRun) setActiveRunId(ownedRun.id);
     } catch (error) {
-      setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: t("Connection interrupted"), detail: error instanceof Error ? error.message : String(error) }]);
+      if (ownsView()) setTimeline((current) => [...current, { id: crypto.randomUUID(), kind: "error", label: t("Connection interrupted"), detail: error instanceof Error ? error.message : String(error) }]);
     } finally {
-      awaitingRun.current = false;
-      setRunning(false);
-      setPendingAgentStatus(undefined);
-      resetStreamingText();
+      if (ownsView()) { setPendingAgentStatus(undefined); resetStreamingText(); }
+      if (promptRequests.current.get(sessionId) === requestId) {
+        promptRequests.current.delete(sessionId);
+        setRunningSessions(current => { const next = new Set(current); next.delete(sessionId); return next; });
+      }
     }
   }
 
   async function stopAgent() {
     if (!activeId || !agentRunning || stopping) return;
-    setStopping(true);
+    const sessionId = activeId;
+    setStoppingSessions(current => new Set(current).add(sessionId));
     try {
-      const result = await abortSession(activeId);
-      setPendingAgentStatus(undefined);
+      const result = await abortSession(sessionId);
+      if (selectedView.current.sessionId === sessionId) setPendingAgentStatus(undefined);
       setNotice(result.interrupted ? "Stopping the current run…" : "The run has already stopped");
       window.setTimeout(() => setNotice(undefined), 2200);
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : String(error));
     } finally {
-      setStopping(false);
+      setStoppingSessions(current => { const next = new Set(current); next.delete(sessionId); return next; });
     }
   }
 

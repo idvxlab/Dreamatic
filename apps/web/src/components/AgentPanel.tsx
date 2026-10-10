@@ -73,7 +73,7 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
       </div>
     </div>;
   }
-  if (event.kind === "agent") return <div className={`workflow-node workflow-agent-node ${t(event.status)} ${nested ? "nested" : ""}`}>
+  if (event.kind === "agent") return <div className={`workflow-node workflow-agent-node ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot"><Bot size={13} /></span>
     <details className="workflow-agent-card" open={agentOpen} onToggle={(toggleEvent) => {
       const target = toggleEvent.currentTarget;
@@ -90,7 +90,7 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
     </details>
   </div>;
 
-  if (event.kind === "references") return <div className={`workflow-node workflow-reference-node ${nested ? "nested" : ""}`}>
+  if (event.kind === "references") return <div className={`workflow-node workflow-reference-node ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot"><ImagePlus size={13} /></span>
     <details className="workflow-reference-card"><summary><span><strong>{t(event.label)}</strong><small>{event.assets?.length ?? 0} {t("images")}{at ? ` · ${at}` : ""}</small></span><ChevronDown size={14} /></summary>
       <div><p>{event.detail}</p><div className="workflow-reference-grid">{event.assets?.map((asset) => <a key={asset.path} href={assetUrl(asset.path)} target="_blank" rel="noreferrer"><img src={assetUrl(asset.path)} alt="" /><span>{asset.label}<ExternalLink size={10} /></span></a>)}</div></div>
@@ -99,7 +99,7 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
 
   const expandable = Boolean(event.detail || event.input || event.output || event.artifactRefs?.length);
   const heading = <span className="workflow-label"><strong>{t(event.label)}</strong><small>{event.actor}{event.stage ? ` · ${event.stage}` : ""}{at ? ` · ${at}` : ""}</small></span>;
-  return <div className={`workflow-node kind-${event.kind} ${t(event.status)} ${nested ? "nested" : ""}`}>
+  return <div className={`workflow-node kind-${event.kind} ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot">{event.kind === "tool" ? <Wrench size={11} /> : event.status === "running" ? <LoaderCircle className="spin" size={13} /> : event.status === "error" || event.status === "interrupted" ? <X size={12} /> : <Check size={12} />}</span>
     {expandable ? <details className="workflow-event-card"><summary>{heading}<ChevronDown size={12} /></summary><WorkflowDetails event={event} /></details> : <div className="workflow-event-label">{heading}</div>}
   </div>;
@@ -202,7 +202,7 @@ export function AgentPanel({ disabled = false, connected = false, timeline, work
             {workflow.length > 0 ? <div className="workflow-stream">{workflow.map((event) => <WorkflowNode event={event} key={event.id} />)}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{t(pendingAgentStatus)}</strong><small>{t("Orchestrator · working")}</small><i><span /><span /><span /></i></div></div>}</div> : <div className="timeline">{timeline.map((item) => {
               const expandable = Boolean(item.detail || item.artifactRefs?.length);
               const heading = <span className="timeline-label"><strong>{t(item.label)}{item.retryCount && item.retryCount > 1 ? ` · ${item.retryCount} attempts` : ""}</strong>{item.stage && <span className="stage-pill">{item.stage}</span>}</span>;
-              return <div className={`timeline-item ${item.kind}`} key={item.id}>
+              return <div className={`timeline-item ${item.kind}${item.active ? " running" : ""}`} key={item.id}>
                 <span className="timeline-dot">{item.active ? <LoaderCircle className="spin" size={14} /> : item.kind === "error" ? <X size={13} /> : item.kind === "result" ? <Check size={13} /> : <Circle size={9} fill="currentColor" />}</span>
                 {expandable ? <details className="timeline-details"><summary>{heading}<ChevronDown size={12} /></summary><div className="timeline-expanded">{item.detail && <p>{item.detail}</p>}<ArtifactLinks paths={item.artifactRefs} /></div></details> : <div className="timeline-heading">{heading}</div>}
               </div>;

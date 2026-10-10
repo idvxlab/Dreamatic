@@ -1,6 +1,6 @@
 export { compactVisualSession, createDreamaticExtension, validateDreamaticPersonaContracts } from "./extension.js";
 export type { DreamaticExtensionOptions } from "./extension.js";
-export { createDreamaticSession, dreamaticSessionFailure, DREAMATIC_ACTIVE_TOOLS } from "./runtime.js";
+export { createDreamaticSession, dreamaticSessionFailure } from "./runtime.js";
 export type { CreateDreamaticSessionOptions } from "./runtime.js";
 export { prepareDreamaticPrompt } from "./prompt.js";
 export type { DreamaticPromptImage, PersistedReference } from "./prompt.js";
@@ -21,3 +21,5 @@ export { annotateModelUsage, collectModelUsage } from "./model-usage.js";
 export type { ModelUsage, ModelRecord } from "./model-usage.js";
 
 export { CONTEXT_FILES, CONTEXT_PROJECTIONS, hasUnifiedContext, syncProjectContext, readRunContext } from "./context-model.js";
+
+export { modelCapabilities } from "./provider.js";

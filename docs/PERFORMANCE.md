@@ -153,3 +153,63 @@ metrics rather than reporting zero. Pi tool updates expose the image, phase and
 attempt while work is pending; snapshots and live tool cards retain those updates.
 PNG/output/size validation precedes generation or editing requests. A failed
 structured image batch is shown as an error without discarding saved siblings.
+
+## Model response diagnosis and recovery
+
+Model telemetry uses Pi extension events and is written to
+`.performance/model-requests.jsonl` in the Run (or workspace before initialization).
+It records a local request id, request time, response-header time/status, first
+nonempty delta/text, completion, usage/cache counts, reasoning character counts,
+input character count and selected control values. It never logs request content,
+API keys, authorization headers or response bodies. Character counts are not token
+estimates. Request/header timestamps help distinguish provider waiting from
+streaming; they cannot independently distinguish gateway buffering and queueing.
+
+`DREAMATIC_MODEL_TURN_TIMEOUT_MS[_ROLE]` now limits waiting for first output.
+`DREAMATIC_MODEL_GENERATION_TIMEOUT_MS` independently limits generation after the
+first nonempty delta (default 300 seconds). The idle limit refreshes only on actual
+nonempty deltas. `DREAMATIC_MODEL_TOTAL_TIMEOUT_MS` bounds the complete response;
+its default is first-output limit plus generation limit, and an explicit value
+is bounded below by the first-output allowance. Tool execution retains
+its separate limits. User cancellation still propagates. The timer checks at
+15-second intervals, so enforcement may overshoot by up to one interval.
+
+Recoveries distinguish first-output waiting, connection/stall and long generation.
+Long generation recovery requests concise, complete domain content with source
+references, not repeated quotations or asset metadata. Partial/aborted JSON is
+never executed, completed or silently salvaged. Retry counts remain bounded.
+
+Endpoint reasoning capabilities can be configured by exact model id with
+`DREAMATIC_MODEL_CAPABILITIES`. For example, a verified Qwen-compatible endpoint
+can use `{"qwen3.7-plus":{"reasoning":true,"thinkingFormat":"qwen"}}` so Pi
+sends `enable_thinking:false` when thinking is off. Unknown endpoints preserve
+existing behavior; model names alone do not establish parameter support. Supported
+formats are openai, qwen, qwen-chat-template and zai. Validate the actual endpoint
+before enabling a format. Mock Pi request construction verifies parameter emission,
+not whether a live gateway honors it.
+
+Research fetch batches supply at most 6000 excerpt characters across their
+sources. Full text remains in cachedPath, and complete acquisition/candidate
+results remain at resultDetailsPath under research/batches. Model-facing asset
+records retain paths, provenance and key permissions without repeating complete
+sidecars and candidate lists. Compact Researcher Context reads omit the raw asset
+manifest unless full:true or its canonical path is explicitly requested; the
+reference inventory remains available. Reviewer still receives its required
+manifest. New Orchestrator prompts use unified rules before initialization, and
+unified specialist task text translates retired paths to canonical field references.
+
+Context authoring uses named role fields and runtime-managed versions to avoid
+model-generated JSON pointers and repeated hash exchanges. Strict sampling is
+opt-in through exact-model `supportsStrictMode:true`, only after endpoint
+verification. Unknown endpoints disable it; Pi's preferred strict conversion can
+fall back for open creative schemas. These changes reduce avoidable repair calls;
+end-to-end latency improvements require measurements on real runs.
+
+Request diagnostics now include loaded runtime fingerprint, actual Pi version,
+configured thinking level and whether thinking controls were actually emitted.
+Unknown capabilities are not proof that remote reasoning is disabled. `length`
+stops have bounded recovery distinct from network failures; partial JSON is never
+salvaged. `use_skill.bindings` validates multi-scope selections before mutation and
+returns a Skill body once per invocation. Source validation caches bind runtime,
+contract, browser and source bytes; final validation uses real assets and export
+rechecks required access. Tests establish behavior, not live-provider latency.

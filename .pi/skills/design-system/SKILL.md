@@ -61,14 +61,20 @@ and expressive density. Consistency is not uniform minimalism or identical layou
 
 ## Design Spec Contract
 
-When expressing the system as structured data, keep the contract compact and explicit. Include:
+When expressing the system as structured data, put these fields together inside
+the Designer's `system` object. In unified Runs submit
+`update_design_context({changes:{system:{...}}})`; runtime owns Run identity and
+versions. Keep the contract compact and include only useful decisions:
 
-- `runId`;
 - `system_thesis`;
 - palette and typography as objects with named roles;
 - `consistency_rules` and `asset_rules`;
 - at least one `consistency_anchor`;
 - `prohibited` treatments or transformations.
+
+`consistency_rules`, `asset_rules`, `consistency_anchor` and `prohibited` belong
+inside `changes.system`, alongside `system_thesis`, `palette` and `typography`.
+They are not siblings of `system` or fields of `strategy`.
 
 Add domain-specific fields only when they improve execution. Avoid copying research notes, workflow state, or review history into the design system.
 

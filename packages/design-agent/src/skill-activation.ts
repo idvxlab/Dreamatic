@@ -1,16 +1,24 @@
 import type { SkillMetadata } from "./skill-metadata.js";
 
 export interface SkillBinding {
-  name: string; role: "primary" | "supporting"; scope: string; sha256: string;
+  rationale?: string | undefined; name: string; role: "primary" | "supporting"; scope: string; sha256: string;
   version: string; supportedOutputs: string[]; designCategories: string[]; moduleType: string;
 }
 /** Invocation-local state. Persisted bindings are evidence, never proof of loaded knowledge. */
 export class SkillActivation {
   #bindings = new Map<string, SkillBinding>();
   #loaded = new Map<string, string>();
+  #retired = new Map<string, { name: string; scope: string }>();
+  checkpoint() {
+    const bindings = new Map(this.#bindings), loaded = new Map(this.#loaded), retired = new Map(this.#retired);
+    return () => { this.#bindings = bindings; this.#loaded = loaded; this.#retired = retired; };
+  }
+  deactivated() { return [...this.#retired.values()]; }
   all(): SkillBinding[] { return [...this.#bindings.values()]; }
-  activate(name: string, path: string, sha256: string, metadata: SkillMetadata, scope: string, requestedRole?: "primary" | "supporting", deactivate: string[] = [], reload = false) {
+  activate(name: string, path: string, sha256: string, metadata: SkillMetadata, scope: string, requestedRole?: "primary" | "supporting", deactivate: string[] = [], reload = false, rationale?: string) {
     const key = `${scope}\0${name}`;
+    for (const retired of deactivate) if (retired !== name) this.#retired.set(`${scope}\0${retired}`, { name: retired, scope });
+    this.#retired.delete(key);
     const role = requestedRole ?? this.#bindings.get(key)?.role ?? "supporting";
     const deactivated: string[] = [];
     for (const [existingKey, binding] of this.#bindings) {
@@ -20,7 +28,7 @@ export class SkillActivation {
     }
     const reused = !reload && this.#loaded.get(path) === sha256;
     this.#loaded.set(path, sha256);
-    this.#bindings.set(key, { name, role, scope, sha256, version: metadata.version, supportedOutputs: metadata.supportedOutputs, designCategories: metadata.designCategories, moduleType: metadata.moduleType });
+    this.#bindings.set(key, { rationale: rationale ?? this.#bindings.get(key)?.rationale, name, role, scope, sha256, version: metadata.version, supportedOutputs: metadata.supportedOutputs, designCategories: metadata.designCategories, moduleType: metadata.moduleType });
     return { role, scope, reused, deactivated, activeSkills: this.all().filter((binding) => binding.scope === scope).map(({ name, role }) => ({ name, role })) };
   }
 }

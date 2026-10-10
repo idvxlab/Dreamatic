@@ -1,3 +1,7 @@
+import { designTasks, designDeliverables } from "./design-context-v2.js";
+import { Check, Errors } from "typebox/value";
+import { serializeJsonWrite } from "./performance.js";
+import { roleContextSchema, contextSemanticIssues } from "./context-schema.js";
 import { mkdir, readFile, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -35,58 +39,25 @@ export function validateContextDocument(path: string, data: Record<string, unkno
     if (!value || typeof value !== "object" || Array.isArray(value)) return fail(pointer, "must be an object");
     return value as Record<string, unknown>;
   };
-  const str = (value: unknown, pointer: string) => { if (typeof value !== "string" || !value.trim()) fail(pointer, "must be a non-empty string"); };
-  const arr = (value: unknown, pointer: string): unknown[] => { if (!Array.isArray(value)) return fail(pointer, "must be an array"); return value; };
-  if (data.schemaVersion !== 1) fail("/schemaVersion", "must be 1; the internal execution schema version is not the document version");
+  if (data.schemaVersion !== 1 && !(path === CONTEXT_FILES.design && data.schemaVersion === 2)) fail("/schemaVersion", "unsupported Context document version");
   if (data.runId !== runId) fail("/runId", "must match the assigned Run");
   if (!Number.isSafeInteger(data.revision) || Number(data.revision) < 1) fail("/revision", "must be a positive integer");
-  const allowed: Record<string, string[]> = {
-    [CONTEXT_FILES.project]: ["brief"], [CONTEXT_FILES.research]: ["evidence", "findings", "usageConditions"],
-    [CONTEXT_FILES.design]: ["system", "strategy", "tasks", "deliverables", "presentation", "acceptanceNotes", "executionNotes"],
-    [CONTEXT_FILES.review]: ["assessment", "intentCoverage"],
-  };
-  if (!allowed[path]) fail("", "unknown Context document");
-  for (const key of Object.keys(data)) if (!["schemaVersion", "runId", "revision", ...allowed[path]!].includes(key)) {
-    const section = path === CONTEXT_FILES.review ? "assessment" : path === CONTEXT_FILES.research ? "evidence" : "system or strategy";
-    fail(`/${key}`, `unexpected root field; domain fields belong inside ${section}. For reviews move verdict/review_stage/round/summary/issues/risks into assessment and use assessment.scores for scores`);
+  if (path === CONTEXT_FILES.project) {
+    for (const key of Object.keys(data)) if (!["schemaVersion", "runId", "revision", "brief"].includes(key)) fail(`/${key}`, "unexpected root field");
+    obj(data.brief, "/brief"); return;
   }
-  if (path === CONTEXT_FILES.project) { obj(data.brief, "/brief"); return; }
-  if (path === CONTEXT_FILES.research) {
-    const evidence = obj(data.evidence, "/evidence");
-    str(evidence.target, "/evidence/target"); str(evidence.summary, "/evidence/summary");
-    arr(evidence.official_sources, "/evidence/official_sources"); arr(evidence.open_questions, "/evidence/open_questions");
-    str(data.findings, "/findings"); str(data.usageConditions, "/usageConditions"); return;
+  const role = CONTEXT_OWNERS[path];
+  if (!role) fail("", "unknown Context document");
+  const { schemaVersion: _schema, runId: _run, revision: _revision, ...domain } = data;
+  const schema = roleContextSchema(role!, Number(data.schemaVersion));
+  for (const key of Object.keys(domain)) if (!Object.hasOwn(schema.properties, key)) fail(`/${key}`, `unexpected root field; supply named role fields${role === "reviewer" ? " inside assessment" : ""}`);
+  if (!Check(schema, domain)) {
+    const error = [...Errors(schema, domain)][0]!;
+    const required = error.keyword === "required" ? error.params.requiredProperties[0] : undefined;
+    fail(`${error.instancePath}${required ? `/${required}` : ""}`, error.message);
   }
-  if (path === CONTEXT_FILES.review) {
-    const review = obj(data.assessment, "/assessment");
-    if (review.review_stage !== "design_context") fail("/assessment/review_stage", 'must be "design_context"');
-    if (!["pass", "fail"].includes(String(review.verdict))) fail("/assessment/verdict", 'must be "pass" or "fail"');
-    if (!Number.isSafeInteger(review.round) || Number(review.round) < 1) fail("/assessment/round", "must be a positive integer");
-    str(review.summary, "/assessment/summary"); obj(review.scores, "/assessment/scores");
-    const issues = arr(review.issues, "/assessment/issues").map((issue, index) => obj(issue, `/assessment/issues/${index}`));
-    arr(review.resolved_issue_ids, "/assessment/resolved_issue_ids"); arr(review.remaining_risks, "/assessment/remaining_risks");
-    if (review.verdict === "fail" && !issues.some(issue => issue.status === "open")) fail("/assessment/issues", "a failed review requires an open issue");
-    if (review.verdict === "pass" && issues.some(issue => ["blocking", "major"].includes(String(issue.severity)) && issue.status !== "resolved")) fail("/assessment/issues", "a passed review cannot contain an unresolved blocking or major issue");
-    return;
-  }
-  const system = obj(data.system, "/system"), strategy = obj(data.strategy, "/strategy");
-  str(system.system_thesis, "/system/system_thesis"); obj(system.palette, "/system/palette"); obj(system.typography, "/system/typography");
-  str(strategy.design_intent, "/strategy/design_intent");
-  const tasks = arr(data.tasks, "/tasks").map((task, index) => obj(task, `/tasks/${index}`));
-  for (const [index, task] of tasks.entries()) {
-    str(task.id, `/tasks/${index}/id`);
-    if (!["manual", "image_generate", "image_edit", "html_generate"].includes(String(task.method))) fail(`/tasks/${index}/method`, "must be manual, image_generate, image_edit or html_generate");
-  }
-  const deliverables = arr(data.deliverables, "/deliverables");
-  if (!deliverables.length) fail("/deliverables", "must not be empty");
-  for (const [index, entry] of deliverables.entries()) {
-    const item = obj(entry, `/deliverables/${index}`);
-    for (const key of ["id", "kind", "purpose", "acceptance_test", "file"]) str(item[key], `/deliverables/${index}/${key}`);
-    if (typeof item.required !== "boolean") fail(`/deliverables/${index}/required`, "must be boolean");
-  }
-  const presentation = obj(data.presentation, "/presentation");
-  if (!["html", "gallery"].includes(String(presentation.mode))) fail("/presentation/mode", "must be html or gallery");
-  str(presentation.entry, "/presentation/entry");
+  const semanticIssue = contextSemanticIssues(role!, domain)[0];
+  if (semanticIssue) fail(semanticIssue.pointer, semanticIssue.message);
 }
 
 /** Translate internal execution labels into actionable canonical JSON pointers. */
@@ -117,13 +88,13 @@ export function contextProjections(path: string, data: Record<string, unknown>, 
   if (path !== CONTEXT_FILES.design) throw new Error(`Unknown context document: ${path}`);
   const system = object(data.system, "design.system"), strategy = object(data.strategy, "design.strategy");
   for (const key of ["runId", "schemaVersion", "design_system_ref", "execution_plan", "image_generation_plan", "deliverables", "presentation"]) if (key in strategy) contextField(path, `/strategy/${key}`, "belongs to the root model, not strategy");
-  const tasks = array(data.tasks, "design.tasks");
+  const tasks = designTasks(data);
   const ids = new Set<string>();
   for (const task of tasks) { const id = text(task.id, "task.id"); if (ids.has(id)) contextField(path, "/tasks", `Duplicate task id: ${id}`); ids.add(id); }
-  const deliverables: Record<string, unknown>[] = array(data.deliverables, "design.deliverables").map((item) => {
+  const deliverables: Record<string, unknown>[] = data.schemaVersion === 2 ? designDeliverables(data) : array(data.deliverables, "design.deliverables").map((item) => {
     if ("method" in item || "size" in item) contextField(path, "/deliverables", "Deliverable method/size are derived from its task; maintain them only in tasks");
     const task = tasks.find((entry) => entry.id === item.id);
-    if (!task) contextField(path, "/tasks", `Deliverable ${String(item.id)} needs a task with the same id (manual tasks may contain only id/method)`);
+    if (!task) contextField(path, "/tasks", `Deliverable ${String(item.id)} needs a task with the same id`);
     return { ...item, method: task.method, ...(task.size === undefined ? {} : { size: task.size }) };
   });
   const plan = { ...strategy, runId, schemaVersion: 2, design_system_ref: "plan/design_system.json", execution_plan: tasks.filter((task) => task.method !== "manual") };
@@ -157,11 +128,17 @@ export async function writeContextFile(runDir: string, path: string, source: str
   finally { await unlink(temporary).catch(() => undefined); }
 }
 
+export function prepareContextDocument(runDir: string, path: string, data: Record<string, unknown>, runId: string) {
+  const document = structuredClone(data);
+  const projections = Object.freeze(contextProjections(path, document, runId));
+  const source = json(document);
+  return { projections, persist: async () => {
+    if (path === CONTEXT_FILES.project) await writeContextFile(runDir, "brief.json", projections["brief.json"]!);
+    await writeContextFile(runDir, path, source);
+  } };
+}
 export async function saveContextDocument(runDir: string, path: string, data: Record<string, unknown>, runId: string) {
-  const projections = contextProjections(path, data, runId);
-  // brief.json is runtime project metadata, not a specialist Context document.
-  if (path === CONTEXT_FILES.project) await writeContextFile(runDir, "brief.json", projections["brief.json"]!);
-  await writeContextFile(runDir, path, json(data));
+  await serializeJsonWrite(resolveInside(runDir, path), () => prepareContextDocument(runDir, path, data, runId).persist());
 }
 
 /** Read canonical data safely; unified runs never fall back to stale legacy Context files. */
@@ -198,6 +175,9 @@ export function unifiedContextPrompt(source: string): string {
     "review/design-review.md": "context/review.json (assessment.summary and issues)",
   };
   for (const [path, field] of Object.entries(fields)) source = source.replaceAll(path, field);
+
+  source = source.replace(/(?<![A-Za-z0-9_./-])research-findings\.md(?![A-Za-z0-9_./-])/gu, "context/research.json (findings)")
+    .replace(/(?<![A-Za-z0-9_./-])evidence\.json(?![A-Za-z0-9_./-])/gu, "context/research.json (evidence)");
   return source;
 }
 
@@ -207,14 +187,23 @@ export async function syncProjectContext(runDir: string, brief: Record<string, u
   await saveContextDocument(runDir, path, { schemaVersion: 1, runId: brief.runId, revision: Number(previous?.revision ?? 0) + 1, brief }, String(brief.runId));
 }
 
-export const UNIFIED_CONTEXT_INSTRUCTION = `This Run uses unified context schemaVersion 1. Author only context/research.json (Researcher), context/design.json (Designer), context/review.json (Reviewer) with write_json/patch_json. All documents have runId and positive revision. Research: evidence object (existing evidence schema), findings and usageConditions Markdown strings. Design: system object (existing design-system fields), strategy object (existing design-plan descriptive fields including design_intent and skill_selection), tasks array (existing schema-v2 execution tasks; manual tasks allowed), deliverables array (existing fields except method/size, derived from matching task id), presentation object, optional acceptanceNotes/executionNotes. Review: assessment contains review_stage:"design_context", verdict:"pass"|"fail", positive round, summary, scores object, issues/resolved_issue_ids/remaining_risks arrays; none of those fields belong at the root. Optional intentCoverage. A failed verdict needs an open issue. A pass requires blocking/major issues resolved. Project contains runtime-owned brief. Old research/plan/review documents do not exist for this Run. Never read/write them or maintain a second report. Read canonical documents with design_context_read; use full:true with paths for details. Descriptions of existing execution schemas are field-level guidance only: execution_plan maps to tasks, descriptive plan fields to strategy, system fields to system, review fields to assessment. Never place design_system_ref/schemaVersion/runId inside strategy. Deliverables must omit method/size; maintain those only in matching tasks. Save each role document once per revision, including all its fields; do not overwrite it separately for each report section. Author HTML sources under plan/html as before. All original source, resource, Skill, approval and execution gates still apply. Use canonical context paths in completion artifactRefs, or omit artifactRefs. Increment revision in the SAME save/patch as the change. patch_json updates must be an actual array of {pointer,value} objects, never a JSON string; add {pointer:"/revision",value:currentRevision+1}. Never invent user confirmation.`;
+// Shared mechanics have one source; domain requirements and capabilities are role-specific.
+export const UNIFIED_CONTEXT_INSTRUCTION = `Use the runtime's role-specific Context contract. design_context_read observes authoritative content without changing files. Expand canonical input with paths:["context/design.json"], select:{section:"tasks",ids:["actual-task-id"]}; follow files[].expansionReads/readArguments. Top-level section/ids/canonical select only your own working draft, never another role's input. Never write canonical Context through file tools, retired split files or companion reports. Preserve IDs, source paths, evidence and confirmed user requirements. Runtime owns project metadata, versions and completion receipts. Successful authoring commits do not publish completion or approve a design.`;
 
-/** Small valid nesting examples; content is illustrative, never evidence or approval. */
-export function contextAuthoringExample(role: string, runId: string) {
-  const envelope = { schemaVersion: 1, runId, revision: 1 };
-  if (role === "researcher") return { runId, path: CONTEXT_FILES.research, data: { ...envelope, evidence: { target: "Actual researched subject", summary: "Evidence-backed summary", official_sources: [], open_questions: [] }, findings: "Source-linked findings and gaps", usageConditions: "Actual provenance and scoped usage conditions" } };
-  if (role === "reviewer") return { runId, path: CONTEXT_FILES.review, data: { ...envelope, assessment: { review_stage: "design_context", verdict: "fail", round: 1, summary: "Illustrative diagnosis; replace with actual assessment", scores: {}, issues: [{ id: "example", severity: "major", status: "open", owner: "designer", diagnosis: "Replace with an actual issue" }], resolved_issue_ids: [], remaining_risks: [] } } };
-  return { runId, path: CONTEXT_FILES.design, instruction: "Illustrative manual task only; use the actual image/HTML task contract and assigned scope/Skill ids. This is not a deliverable count or method recommendation.", data: { ...envelope, system: { system_thesis: "Actual design thesis", palette: {}, typography: {} }, strategy: { design_intent: "Actual user-aligned intent", skill_selection: [] }, tasks: [{ id: "example", method: "manual" }], deliverables: [{ id: "example", kind: "image", purpose: "Actual purpose", acceptance_test: "Observable criterion", required: true, file: "artifacts/example.png" }], presentation: { mode: "gallery", entry: "artifacts/00-gallery.html" } } };
+export function unifiedContextInstruction(role: string, version = 1): string {
+  const base = UNIFIED_CONTEXT_INSTRUCTION;
+  if (role === "orchestrator") return `Read authoritative Context through design_context_read with audience:"orchestrator"; use paths:["context/research.json"], paths:["context/design.json"] or paths:["context/review.json"], with full:true for needed details. Follow returned readArguments/expansionReads. Specialists own research/design/review authoring and source paths. Handoffs name canonical inputs, objectives, constraints and completion conditions. Runtime persists progress, handoffs and stage events. Use todo_write for progress, run_brief_update for confirmed changes during an active Run, and run_revision after completion. Delegate material extraction/import to Researcher. Export after build_done. Do not author specialist content.`;
+  if (role === "builder") return `${base} Read with audience:"builder". Context is read-only for Builder; do not call authoring tools or select Designer Skills. Execute approved tasks and author only permitted artifacts/Gallery presentation. Use list_skills/use_skill to discover and load relevant Builder-compatible Gallery presentation Skills. Load showcase-layout as supporting knowledge before authoring a Gallery; Builder Skill receipts remain separate from Designer selections.`;
+  const authoring = ` Author only your bound role through update_design_context({changes:{...named role fields}}), then commit_design_context({}). Update arguments are changes and optional reset only; omit runId/path/schemaVersion/revision and hashes. No JSON pointers, full-save or pointer/value envelopes. Put ALL role fields inside changes; use small section/item updates rather than regenerating whole documents. Objects merge by field; ordinary arrays replace when supplied; [] clears arrays; omitted fields remain. unsetFields deletes optional fields. changes:{} inspects working content without writing. Check saved and readiness; repair named issues using section/ids reads for complete working objects. Runtime checks versions and rejects stale updates until reread and reconciled. reset:true discards working changes only after a complete canonical:true read. Publish after a successful commit; publication performs required validation. Completion events may omit artifactRefs; runtime attaches required outputs.`;
+  if (role === "researcher") return `${base}${authoring} Your fields are evidence, findings and usageConditions. No task/deliverable editing or Designer Skill loading belongs to Researcher. Tool-owned acquisition manifests remain separate.`;
+  if (role === "reviewer") return `${base}${authoring} Your fields are assessment and optional intentCoverage. assessment contains review_stage, verdict, round, summary, scores, issues, resolved_issue_ids and remaining_risks. Diagnose the current specification against current evidence; do not edit tasks, select/reload Designer Skills or author replacement designs.`;
+  if (role === "designer") {
+    const shape = version === 2
+      ? "Design contract v2: author system, strategy, deliverables, presentation and optional acceptanceNotes/executionNotes. Each deliverable owns id/scope_id/category/skill_refs/file/kind/purpose/acceptance_test/required/user_requested, execution:{method,...} and presentation:{required,access:embed|link|download,rationale}. required means production; presentation.required means user access. User-requested outputs require both. execution.uses references deliverable ids; runtime derives dependencies/resources. tasks is a read-only projection; never author tasks/removeTasks/replaceTasks or execution identity/scope. Put method/size only in execution. system owns typography/palette/consistency rules; strategy owns creative decisions. HTML outputs require kind:html_page, even when their purpose is a design document. Deliverables upsert by stable id; removeDeliverables deletes items, replaceDeliverables replaces a complete collection. Declare interactions once in execution.interaction_checks:[{name,viewport?:{min_width?,max_width?},steps:[{action,selector?,value?}]}]. No duplicate interaction_requirements/outcome assertions are required; optional requirements are descriptive notes. Commit ready content and publish; publication performs source validation. design_context_validate is an optional diagnostic, not an extra mandatory step after each commit. Source validation uses private placeholders and cannot replace final real-asset checks."
+      : "Historical design contract v1: author system, strategy, tasks, deliverables, presentation and optional acceptanceNotes/executionNotes. Tasks/deliverables upsert by stable id; removeTasks/removeDeliverables delete items; replaceTasks/replaceDeliverables replace complete collections. Tasks own method/size; deliverables omit them. Runtime derives category and missing matching task scope. Existing Runs do not upgrade implicitly.";
+    return `${base}${authoring} ${shape} Choose assigned scope_id and actually loaded skill_refs. contributing_scopes contains additional scopes only; [] clears it. Select Skills through use_skill with task-specific rationale; Every use_skill call loads exactly one name; all bindings:[{scopeId,role,rationale}] apply that same Skill to several scopes atomically, never different Skills. Runtime records skill_selection; never author it. Reload all retained primary/supporting Skills before committing in a fresh invocation. Persisted selections are evidence, not loaded knowledge.`;
+  }
+  throw new Error(`Unknown Context role: ${role}`);
 }
 
 export function legacyContextPrompt(source: string): string {

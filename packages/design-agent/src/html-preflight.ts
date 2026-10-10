@@ -22,7 +22,7 @@ export async function assertHtmlSourcePreflight(runDir: string, contract: Delive
   if (sourceIssues.length) throw failure(sourceIssues);
   const executable = await browserExecutable();
   if (!executable) {
-    if (process.env.DREAMATIC_HTML_REQUIRE_BROWSER === "true") throw new DeliveryBlocked("runtime", ["Required HTML source preflight browser is unavailable; configure DREAMATIC_HTML_BROWSER_EXECUTABLE"]);
+    if (process.env.DREAMATIC_HTML_REQUIRE_BROWSER === "true" || contract.deliverables.some(item => (item.presentation as { required?: boolean } | undefined)?.required)) throw new DeliveryBlocked("runtime", ["Required HTML source preflight browser is unavailable; configure DREAMATIC_HTML_BROWSER_EXECUTABLE"]);
     return { status: "unavailable", reused: false, reason: "HTML source interactions remain unverified; browser validation is unavailable" };
   }
   const bytesByOutput = new Map<string, Buffer>();
@@ -53,7 +53,7 @@ export async function assertHtmlSourcePreflight(runDir: string, contract: Delive
       await writeFile(output, bytes);
     }
     let report: BrowserReport;
-    try { report = await checkHtmlBrowser(previewDir, contract, signal, { interactionsOnly: true }); }
+    try { report = await checkHtmlBrowser(previewDir, contract, signal, { interactionsOnly: true, sourcePreview: true }); }
     catch (error) {
       signal?.throwIfAborted();
       throw new DeliveryBlocked("runtime", [`HTML source preflight browser failed: ${error instanceof Error ? error.message : String(error)}`]);

@@ -1,4 +1,18 @@
-import { readRunContext, unifiedContextPrompt, legacyContextPrompt, canonicalContextError, contextAuthoringExample, contextProjections, CONTEXT_FILES, CONTEXT_OWNERS, CONTEXT_PROJECTIONS, hasUnifiedContext, saveContextDocument, assertContextDocument, syncProjectContext, UNIFIED_CONTEXT_INSTRUCTION } from "./context-model.js";
+import { loadedRuntimeIdentity } from "./delivery-block.js";
+import { ORCHESTRATOR_TOOLS } from "./orchestrator-contract.js";
+import { upgradeDesignData } from "./design-context-v2.js";
+import { readFileSync } from "node:fs";
+import { checkHtmlBrowser } from "./html-delivery.js";
+import { designTasks } from "./design-context-v2.js";
+import { researchAcquisition, specialistStageContract } from "./workflow-contract.js";
+import { approvedImageTask, approvedImageFingerprint, recordApprovedImage, assertApprovedImageRequest, type ApprovedImageTask } from "./approved-image.js";
+import { registerContextAuthoring } from "./context-authoring.js";
+import { ContextFailureTracker } from "./context-failures.js";
+import { responseTimeoutReason, modelRecoveryTask, providerRequestSummary } from "./model-response-policy.js";
+import { contextFailureIdentity, contextChangesExample } from "./context-tools.js";
+import { roleContextSchema } from "./context-schema.js";
+import { selectContextSection } from "./context-draft.js";
+import { readRunContext, unifiedContextPrompt, legacyContextPrompt, canonicalContextError, writeContextFile, CONTEXT_FILES, CONTEXT_OWNERS, CONTEXT_PROJECTIONS, hasUnifiedContext, assertContextDocument, syncProjectContext, unifiedContextInstruction } from "./context-model.js";
 import { recordReasoningModel, collectModelUsage, annotateModelUsage } from "./model-usage.js";
 import {
   createAgentSession,
@@ -10,7 +24,7 @@ import {
   type ExtensionAPI,
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { Type, type Static } from "typebox";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, createWriteStream } from "node:fs";
 import { appendFile, cp, mkdir, readFile, readdir, realpath, rename, stat, unlink, writeFile } from "node:fs/promises";
@@ -85,11 +99,11 @@ const STAGE_REQUIRED_FILES: Record<string, string[]> = {
 };
 
 export const DREAMATIC_PERSONA_TOOL_POLICY = {
-  orchestrator: ["read", "write", "write_json", "patch_json", "edit", "ls", "grep", "find", "ask_user", "todo_write", "run_init", "run_revision", "spawn_agent", "design_bus_post", "design_bus_read", "export_package"],
-  researcher: ["user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
-  designer: ["user_asset_import", "read", "write", "write_json", "patch_json", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
-  reviewer: ["read", "write", "write_json", "patch_json", "ls", "design_bus_post", "design_bus_read", "design_context_read"],
-  builder: ["read", "write", "write_json", "patch_json", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "image_generate", "image_generate_batch", "image_edit", "image_edit_batch", "execute_image_plan", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"],
+  orchestrator: ORCHESTRATOR_TOOLS,
+  researcher: ["update_design_context", "commit_design_context", "user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
+  designer: ["design_context_validate", "update_design_context", "commit_design_context", "user_asset_import", "read", "write", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
+  reviewer: ["update_design_context", "commit_design_context", "read", "design_bus_post", "design_bus_read", "design_context_read"],
+  builder: ["read", "write", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"],
 } as const;
 
 const DREAMATIC_SPECIALISTS = new Set(Object.keys(DREAMATIC_PERSONA_TOOL_POLICY).filter((persona) => persona !== "orchestrator"));
@@ -97,7 +111,7 @@ const DREAMATIC_SPECIALISTS = new Set(Object.keys(DREAMATIC_PERSONA_TOOL_POLICY)
 export function specialistRunAssignment(workspaceDir: string, runId: string, agent: string): string {
   const assignedRunId = safeRunId(runId);
   const runDir = resolveInside(workspaceDir, join("runs", assignedRunId));
-  return `# Runtime-assigned Run\n\n${JSON.stringify({ agent, runId: assignedRunId, runDir })}\nThis is the authoritative assignment for this invocation, including recovery attempts. Use exactly this runId for every Run tool and this runDir for Run files. Never invent a Run id, derive it from a title, search sibling Runs, or substitute an older project with a similar subject. Start with design_context_read using this runId and your role. Missing plan outputs are normal before creation; they do not mean this assignment is wrong. If a tool rejects ownership, use the assigned id shown here rather than changing projects or retrying another write tool.`;
+  return `# Runtime-assigned Run\n\n${JSON.stringify({ agent, runId: assignedRunId, runDir })}\nThis is the authoritative assignment for this invocation, including recovery attempts. Use exactly this runId for tools that accept runId; Only update_design_context and commit_design_context omit runId and path. design_context_read uses this assigned runId; omission is filled by runtime for bound specialists. Use this assignment and this runDir for Run files. Never invent a Run id, derive it from a title, search sibling Runs, or substitute an older project with a similar subject. Start with design_context_read using this runId and your role. Missing plan outputs are normal before creation; they do not mean this assignment is wrong. If a tool rejects ownership, use the assigned id shown here rather than changing projects or retrying another write tool.`;
 }
 
 function runIdFromTask(task: string): string | undefined {
@@ -191,7 +205,7 @@ const workflowRefinements = new Map<string, string>();
 const workflowRequests = new Map<string, Set<string>>();
 
 function currentWorkflowCycle<T extends Record<string, unknown>>(events: T[]): T[] {
-  const start = events.findLastIndex((event) => event.type === "run_revision_started");
+  const start = events.findLastIndex((event) => ["run_revision_started", "run_brief_updated"].includes(String(event.type)));
   return events.slice(Math.max(0, start));
 }
 
@@ -201,7 +215,7 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
   const local = relative(runDir, path).replaceAll("\\", "/");
   const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json", "artifacts/model-usage.json", "plan/model-usage.json"]);
   const unified = await hasUnifiedContext(runDir);
-  if (unified && Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(local))) throw new Error(`${local} is a retired read-only Context path; no such file is generated. Edit the role-owned context document with write_json/patch_json.`);
+  if (unified && Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(local))) throw new Error(`${local} is a retired read-only Context path; no such file is generated. Use named update_design_context changes followed by commit_design_context {}.`);
   const roots: Record<string, string> = { researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" };
   if (agent === "builder") {
     const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
@@ -213,7 +227,7 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
   const isAllowed = (candidate: string) => !(unified && Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(candidate))) && !runtimeOwned.has(candidate) && (CONTEXT_OWNERS[candidate] === agent || (agent === "orchestrator"
     ? candidate === "plan/progress.json" || candidate.startsWith("plan/handoff/")
     : !!roots[agent] && candidate.startsWith(roots[agent]!) && candidate !== "plan/progress.json"));
-  if (!isAllowed(local)) throw new Error(`${agent} cannot write ${local}. Write only your role-owned outputs; runtime-managed state and other roles' files are protected.`);
+  if (!isAllowed(local)) throw new Error(`${agent} cannot write ${local}. ${agent === "designer" ? "HTML source must be plan/html/<scope-id>/index.html; map that source to artifacts/... in execution.files. Builder creates artifacts. " : ""}Write only your role-owned outputs; runtime-managed state and other roles' files are protected.`);
   const state = await readJsonRecord(runDir, "run-state.json").catch(() => undefined);
   if (state?.status === "complete") throw new Error("This Run is complete. Orchestrator must call run_revision with explicit user feedback before modifying it.");
   let ancestor = path;
@@ -516,7 +530,7 @@ function referenceReviewCoverage(manifest: Record<string, unknown> | undefined, 
   const warnings: string[] = [];
 
   if (unreviewedAdoptions.length) warnings.push(`Visual adoption requires inspection and observed features, not metadata alone: ${unreviewedAdoptions.join(", ")}.`);
-  return { retainedAssets: assets.length, missingAssetIds, unreviewedAdoptions, warnings, evidenceScope: "Declared screening coverage, not proof of actual visual reasoning" };
+  return { retainedAssets: assets.length, missingAssetIds, unreviewedAdoptions, warnings, coverageRequirement: "Record adopted or meaningfully considered references only. missingAssetIds lists unconsidered candidates, not mandatory corrections.", evidenceScope: "Declared screening coverage, not proof of actual visual reasoning" };
 }
 
 async function materializeDesignExecutionDocs(runDir: string): Promise<void> {
@@ -651,8 +665,10 @@ async function stageRequiredFiles(runDir: string, agent: string): Promise<string
     const required: string[] = [];
     if (agent === "researcher") required.push(CONTEXT_FILES.project, CONTEXT_FILES.research, "research/assets/manifest.json", "research/assets/validation.json");
     if (agent === "designer" || agent === "reviewer") {
-      required.push(CONTEXT_FILES.project, CONTEXT_FILES.research, CONTEXT_FILES.design, ".performance/skills-designer.json", ...await designSourceFiles(runDir));
-      if (agent === "reviewer") required.push(CONTEXT_FILES.review);
+      // Designer certifies its specification. Reviewer certifies that specification
+      // against the current evidence; evidence-only corrections need no republication.
+      required.push(CONTEXT_FILES.project, CONTEXT_FILES.design, ".performance/skills-designer.json", ...await designSourceFiles(runDir));
+      if (agent === "reviewer") required.push(CONTEXT_FILES.research, CONTEXT_FILES.review);
     }
     if (agent !== "builder") return [...new Set(required)];
   }
@@ -1107,6 +1123,10 @@ async function updateRunState(workspaceDir: string, runId: string, eventType: st
     state.stages.research = "completed";
     state.stages.design = "pending";
   }
+  if (eventType === "run_brief_updated") {
+    state.status = "active";
+    for (const stage of ["design", "review", "build", "export"] as const) state.stages[stage] = "pending";
+  }
   if (["design_spec_ready", "design_revision_ready"].includes(eventType)) {
     state.status = "active";
     state.stages.design = "completed";
@@ -1169,6 +1189,10 @@ async function updateDesignContextIndex(workspaceDir: string, runId: string, eve
   context.sections ??= structuredClone(RUN_CONTEXT_SECTIONS);
   context.sections.research = [...RUN_CONTEXT_SECTIONS.research];
   context.sections.reviewIssues = [...RUN_CONTEXT_SECTIONS.reviewIssues];
+  if (eventType === "run_brief_updated") {
+    context.status = "designing";
+    delete context.latestVerdict;
+  }
   if (["design_spec_ready", "design_revision_ready"].includes(eventType)) {
     context.sections ??= fallback.sections;
     context.sections.decisions = "plan/design_plan.json";
@@ -1399,9 +1423,38 @@ async function saveImageResponse(
   };
 }
 
+const loadedPiVersion: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.resolve("@earendil-works/pi-coding-agent")), "utf8")).version;
+
+export function orchestratorHandoffIssue(task: string): string | undefined {
+  for (const [role, paths] of Object.entries(CONTEXT_PROJECTIONS)) {
+    if (paths.some(path => task.includes(path))) {
+      const target = ({researcher:CONTEXT_FILES.research,designer:CONTEXT_FILES.design,reviewer:CONTEXT_FILES.review} as Record<string,string>)[role];
+      return `Handoff must reference ${target} through design_context_read and describe role-owned outputs. Correct the task before dispatch; no specialist was started.`;
+    }
+  }
+  if (/\b(?:write_json|patch_json|save_design_context|patch_design_context)\b/u.test(task)) return "Handoff must use the specialist's named Context contract and completion event. Correct the task before dispatch; no specialist was started.";
+  return undefined;
+}
+
 export function createDreamaticExtension(options: DreamaticExtensionOptions): ExtensionFactory {
   const workspaceDir = options.workspaceDir;
+  const coordinator = !options.parentInvocation && options.personaPath !== undefined && basename(options.personaPath) === "orchestrator.md";
+  const designerPersona = options.parentInvocation?.agent === "designer" || (options.personaPath !== undefined && basename(options.personaPath) === "designer.md");
+  const reviewerPersona = options.parentInvocation?.agent === "reviewer" || (options.personaPath !== undefined && basename(options.personaPath) === "reviewer.md");
+  const builderPersona = options.parentInvocation?.agent === "builder" || (options.personaPath !== undefined && basename(options.personaPath) === "builder.md");
   const assignedRunId = options.parentInvocation?.runId ? safeRunId(options.parentInvocation.runId) : undefined;
+  const builderToolsForRun = async (runId?: string): Promise<string[]> => {
+    const tools: string[] = [...DREAMATIC_PERSONA_TOOL_POLICY.builder];
+    if (!runId) return tools;
+    const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
+    const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+    if (plan?.schemaVersion !== 2) return tools;
+    const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
+    const contract = deliveryContract(plan, manifest);
+    const generated = new Set(contract.tasks.filter(task => task.method === "html_generate").flatMap(task => [...htmlTask(task).files, ...htmlTask(task).resources].map(file => file.output)));
+    const pureHtml = contract.presentation.mode === "html" && contract.deliverables.every(item => item.method !== "manual" || generated.has(String(item.file)));
+    return pureHtml ? tools.filter(name => !["write", "edit"].includes(name)) : tools;
+  };
   const assignment = assignedRunId ? specialistRunAssignment(workspaceDir, assignedRunId, options.parentInvocation!.agent) : "";
   const assertAssignedRun = (runId: string, operation: string) => {
     const projectRunId = options.projectId ? safeRunId(options.projectId) : undefined;
@@ -1410,12 +1463,20 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     if (assignedRunId && safeRunId(runId) !== assignedRunId) throw new Error(`${operation} must target the assigned Run. Assigned runId: ${assignedRunId}; runDir: ${resolveInside(workspaceDir, join("runs", assignedRunId))}. Use design_context_read with this id; do not search other projects or retry through a different write tool.`);
   };
   const assertAssignedRead = async (path: string, cwd: string) => {
-    if (!assignedRunId) return;
     const runsRoot = resolveInside(workspaceDir, "runs");
     const absolute = resolve(cwd, path);
+    const runLocal = relative(runsRoot, absolute).replaceAll("\\", "/");
+    if (!runLocal.startsWith("../") && !isAbsolute(runLocal)) {
+      const [readRunId, ...parts] = runLocal.split("/");
+      const retired = parts.join("/");
+      const owner = Object.entries(CONTEXT_PROJECTIONS).find(([, paths]) => (paths as readonly string[]).includes(retired))?.[0];
+      if (owner && readRunId && await hasUnifiedContext(resolveInside(runsRoot, readRunId))) {
+        const canonicalPath = ({ researcher: CONTEXT_FILES.research, designer: CONTEXT_FILES.design, reviewer: CONTEXT_FILES.review } as Record<string, string>)[owner];
+        throw new Error(`Retired Context path ${retired}. Unified Runs store this content in canonical Context instead. Use design_context_read ${JSON.stringify({runId: readRunId, audience: options.parentInvocation?.agent ?? "orchestrator", paths: [canonicalPath], full: true})}; do not recreate retired reports.`);
+      }
+    }
+    if (!assignedRunId) return;
     const assignedDir = resolveInside(workspaceDir, join("runs", assignedRunId));
-    const assignedLocal = relative(assignedDir, absolute).replaceAll("\\", "/");
-    if (Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(assignedLocal)) && await hasUnifiedContext(assignedDir)) throw new Error("Retired Context path. Read the role document in context/ with design_context_read; use paths and full:true for details.");
     const physicalRoot = await realpath(runsRoot).catch(() => runsRoot);
     const physicalPath = await realpath(absolute).catch(() => absolute);
     for (const [root, target] of [[runsRoot, absolute], [physicalRoot, physicalPath]]) {
@@ -1477,7 +1538,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       if (currentWorkflowCycle(bus).filter((event) => ["design_spec_ready", "design_revision_ready", "design_review_pass", "design_review_fail", "build_done"].includes(String(event.type))).at(-1)?.type !== "design_review_pass") throw new Error("Image execution requires a current approved specification");
     }
     const parsed = manifest ? JSON.parse(manifest) as Record<string, unknown> : undefined;
-    return parsed && Array.isArray(parsed.deliverables) ? { strict, deliverables: parsed.deliverables as Record<string, unknown>[] } : undefined;
+    return parsed && Array.isArray(parsed.deliverables) ? { strict, runId, tasks: imagePlan(plan), deliverables: parsed.deliverables as Record<string, unknown>[] } : undefined;
   };
   const bindImageOutput = <T extends { id: string; outputPath?: string }>(task: T, method: ImageToolName, plan: Awaited<ReturnType<typeof preflightBeforeImageTool>>): T => {
     if (!plan) return task;
@@ -1489,9 +1550,18 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     if (deliverable.method !== method) throw new Error(`Image ${task.id} method must match its declared ${String(deliverable.method)} executor`);
     const file = requiredString(deliverable, "file", `Deliverable ${task.id}`);
     if (task.outputPath !== undefined && task.outputPath !== file) throw new Error(`Image ${task.id} outputPath conflicts with the declared file ${file}; omit outputPath to use the manifest path. Do not generate another filename.`);
+    if (plan.strict) {
+      const entry = plan.tasks.find(item => item.id === task.id);
+      if (!entry) throw new Error(`Missing approved image task: ${task.id}`);
+      assertApprovedImageRequest(task as Record<string, unknown>, approvedImageTask(workspaceDir, plan.runId, entry, deliverable), workspaceDir);
+    }
     return { ...task, outputPath: file };
   };
-  const generateImage = (params: ImageGenerateTask, signal?: AbortSignal, onRetry?: (notice: RetryNotice) => void, onProgress?: (progress: ImageRequestProgress) => void): Promise<Record<string, unknown>> => enqueueImageOperation(async () => {
+  const generateImage = (params: ImageGenerateTask, signal?: AbortSignal, onRetry?: (notice: RetryNotice) => void, onProgress?: (progress: ImageRequestProgress) => void, approvedTask?: ApprovedImageTask): Promise<Record<string, unknown>> => enqueueImageOperation(async () => {
+    const contract = approvedTask ? undefined : await preflightBeforeImageTool(params.runId, signal);
+    params = bindImageOutput(params, "image_generate", contract);
+    const approved = approvedTask ?? (contract?.strict ? approvedImageTask(workspaceDir, params.runId, contract.tasks.find(task => task.id === params.id)!, contract.deliverables.find(item => item.id === params.id)!) : undefined);
+    const fingerprint = approved ? await approvedImageFingerprint(approved) : undefined;
     const size = params.size ?? imageSizeCeiling();
     assertImageSizeWithinCeiling(size, "image_generate.size");
     artifactOutputPath(workspaceDir, safeRunId(params.runId), safeRunId(params.id), "generated-images", params.outputPath);
@@ -1528,6 +1598,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       acceptanceCriteria: params.acceptanceCriteria,
       preserve: params.preserve ?? [],
     }, signal, onProgress);
+    if (approved && fingerprint) await recordApprovedImage(approved, fingerprint);
     return {
       ok: true,
       action: "image_generate",
@@ -1539,12 +1610,26 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       instruction: "The declared output file was created. Continue directly without a second visual audit.",
     };
   });
-  return (pi: ExtensionAPI) => {
+  return (api: ExtensionAPI) => {
+    const coordinatorTools = new Set<string>(ORCHESTRATOR_TOOLS);
+    const designerTools = new Set<string>(DREAMATIC_PERSONA_TOOL_POLICY.designer);
+    const reviewerTools = new Set<string>(DREAMATIC_PERSONA_TOOL_POLICY.reviewer);
+    let builderTools = new Set<string>(DREAMATIC_PERSONA_TOOL_POLICY.builder);
+    const pi: ExtensionAPI = coordinator || ((designerPersona || reviewerPersona || builderPersona) && options.personaPath !== undefined) ? { ...api, registerTool(tool) {
+      if ((coordinator ? coordinatorTools : reviewerPersona ? reviewerTools : builderPersona ? builderTools : designerTools).has(tool.name)) api.registerTool(tool);
+    } } : api;
     const userMaterialPrompts: string[] = [];
     let firstUserRequest: string | undefined;
     let requestAssignedRunId: string | undefined;
     if (options.personaPath || !options.parentInvocation || assignment) {
       pi.on("before_agent_start", async (event) => {
+        if (coordinator) pi.setActiveTools([...ORCHESTRATOR_TOOLS]);
+        else if (designerPersona) pi.setActiveTools([...DREAMATIC_PERSONA_TOOL_POLICY.designer]);
+        else if (reviewerPersona) pi.setActiveTools([...DREAMATIC_PERSONA_TOOL_POLICY.reviewer]);
+        else if (builderPersona) {
+          builderTools = new Set(await builderToolsForRun(assignedRunId ?? options.projectId));
+          pi.setActiveTools([...builderTools]);
+        }
         if (!options.parentInvocation && typeof event.prompt === "string") {
           userMaterialPrompts.push(event.prompt);
           const materialRunId = options.projectId ?? requestAssignedRunId;
@@ -1560,8 +1645,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const source = await readFile(options.personaPath!, "utf8");
         const { body } = parseFrontmatter(source);
         const promptRunId = options.parentInvocation?.runId ?? options.projectId ?? requestAssignedRunId;
-        const unifiedPrompt = promptRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", safeRunId(promptRunId))));
-        const block = dreamaticPersonaPromptBlock(unifiedPrompt ? unifiedContextPrompt(body) : body);
+        const unifiedPrompt = !promptRunId || await hasUnifiedContext(resolveInside(workspaceDir, join("runs", safeRunId(promptRunId)))) || !(await readJsonRecord(resolveInside(workspaceDir, join("runs", safeRunId(promptRunId))), "brief.json").catch(() => undefined));
+        const personaBody = coordinator || unifiedPrompt ? unifiedContextPrompt(body) : legacyContextPrompt(body);
+        const block = dreamaticPersonaPromptBlock(`${personaBody}${(coordinator || unifiedPrompt) && !options.parentInvocation ? `\n\n# Authoritative Context Contract\n${unifiedContextInstruction("orchestrator")}` : ""}`);
         const marker = /<!-- DREAMATIC_ACTIVE_PERSONA -->[\s\S]*?<!-- \/DREAMATIC_ACTIVE_PERSONA -->/g;
         const systemPrompt = marker.test(event.systemPrompt)
           ? event.systemPrompt.replace(marker, () => block)
@@ -1578,9 +1664,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     const profile = dreamaticProviderFromEnv();
     let activeRunId = options.parentInvocation?.runId;
     let workflowStopped = false;
-    pi.on("agent_start", () => { workflowStopped = false; });
     pi.on("message_end", async (event) => {
       const message = event.message;
+      if (message.role === "assistant") {
+        await recordProviderDiagnostic("provider_response_complete", {
+          stopReason: message.stopReason,
+          elapsedMs: providerRequestedAt ? Date.now() - providerRequestedAt : undefined,
+          reasoningChars: message.content.filter(item => item.type === "thinking").reduce((total, item) => total + (item.type === "thinking" ? item.thinking.length : 0), 0),
+          usage: message.usage,
+        });
+      }
       const runId = options.parentInvocation?.runId ?? options.projectId ?? requestAssignedRunId;
       if (runId && message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
         await recordReasoningModel(resolveInside(workspaceDir, join("runs", safeRunId(runId))), options.parentInvocation?.agent ?? "orchestrator", message.model, message.provider);
@@ -1590,11 +1683,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       if (enabled) workflowStopped = true;
       return { ...textResult(value), ...(enabled ? { terminate: true } : {}) };
     };
-    const contextFailures = new Map<string, number>();
-    pi.on("agent_start", () => { contextFailures.clear(); });
+    const contextFailures = new ContextFailureTracker();
+    pi.on("agent_start", () => { workflowStopped = false; contextFailures.clear(); });
     pi.on("tool_result", async (event) => {
       const runId = options.parentInvocation?.runId;
-      if (!runId || !["write_json", "patch_json", "design_bus_post", "read", "write", "edit"].includes(event.toolName)) return;
+      if (!runId || !["update_design_context", "commit_design_context", "save_design_context", "patch_design_context", "write_json", "patch_json", "design_bus_post", "read", "write", "edit"].includes(event.toolName)) return;
       const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
       if (!(await hasUnifiedContext(runDir))) return;
       if (!event.isError) {
@@ -1604,19 +1697,54 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       const raw = event.content.filter(item => item.type === "text").map(item => (item as { text: string }).text).join("\n");
       if (!/context|review\/design-review|research\/(?:evidence|research-findings|brand_lock)|plan\/(?:design_plan|design_system|deliverable_manifest)|patch_json|write_json|review_stage|verdict/i.test(raw)) return;
       const issue = canonicalContextError(raw);
-      const key = createHash("sha256").update(`${event.toolName}:${issue}`).digest("hex");
-      const attempts = (contextFailures.get(key) ?? 0) + 1;
-      contextFailures.set(key, attempts);
+      const identity = contextFailureIdentity(event.toolName, issue, event.input);
+      const key = createHash("sha256").update(identity.key).digest("hex");
+      const attempts = contextFailures.record(key, event.toolCallId);
       const blocked = attempts >= 3;
-      const recovery = { ok: false, blocked, retryable: false, repairOwner: options.parentInvocation!.agent, runId, attempts, issue,
-        instruction: blocked ? "Stop this specialist invocation and return the diagnosis to Orchestrator. Re-dispatch only for an actual canonical schema repair, never unchanged completion retries or legacy files." : "Repair the named canonical field. Do not switch tools or create legacy files. Use the exact nested authoringExample; patch updates must be objects and include the next /revision. No completion was committed.",
-        authoringExample: contextAuthoringExample(options.parentInvocation!.agent, runId) };
+      const draftTool = ["update_design_context", "commit_design_context"].includes(event.toolName);
+      const recovery = { ok: false, blocked, retryable: false, repairOwner: options.parentInvocation!.agent, runId, attempts, issue, errorCode: identity.code, field: identity.location,
+        instruction: blocked ? "Stop this specialist invocation and return the diagnosis to Orchestrator. Re-dispatch only for an actual canonical schema repair, never unchanged completion retries or legacy files." : draftTool ? "Repair the named working field. Read design_context_read; submit only named changes, then commit with {}. Runtime manages versions; never submit pointers, hashes or regenerate unrelated content." : "Repair the named canonical field. Do not create legacy files. Use named role fields in changes; versions are runtime-owned. No completion was committed.",
+        ...(draftTool ? {} : { authoringExample: contextChangesExample(options.parentInvocation!.agent) }) };
       if (blocked) workflowStopped = true;
       return { content: textResult(recovery).content, details: recovery, isError: !blocked };
     });
+    let providerRequestId: string | undefined;
+    let providerRequestedAt: number | undefined;
+    let providerFirstDelta = false;
+    let providerFirstText = false;
+    const recordProviderDiagnostic = async (type: string, data: Record<string, unknown>) => {
+      const runId = options.parentInvocation?.runId ?? options.projectId ?? requestAssignedRunId;
+      const runDir = runId ? resolveInside(workspaceDir, join("runs", safeRunId(runId))) : workspaceDir;
+      await mkdir(join(runDir, ".performance"), { recursive: true });
+      await appendFile(join(runDir, ".performance", "model-requests.jsonl"), `${JSON.stringify({ type, requestId: providerRequestId, role: options.parentInvocation?.agent ?? "orchestrator", at: new Date().toISOString(), ...data })}\n`);
+    };
+    pi.on("before_provider_request", async event => {
+      providerRequestId = randomUUID();
+      providerRequestedAt = Date.now();
+      providerFirstDelta = false;
+      providerFirstText = false;
+      await recordProviderDiagnostic("provider_request", { ...providerRequestSummary(event.payload), runtime: { ...loadedRuntimeIdentity, designContract: 2, runtimeFingerprint: await deliveryRuntimeStamp(), piVersion: loadedPiVersion }, configuredThinkingLevel: dreamaticThinkingLevel(options.parentInvocation?.agent ?? "orchestrator") ?? "off", capabilitySource: process.env.DREAMATIC_MODEL_CAPABILITIES?.trim() ? "explicit_configuration" : "unspecified" });
+    });
+    pi.on("after_provider_response", async event => { await recordProviderDiagnostic("provider_response_headers", { status: event.status, elapsedMs: providerRequestedAt ? Date.now() - providerRequestedAt : undefined }); });
+    pi.on("message_update", async event => {
+      const update = event.assistantMessageEvent;
+      if (!("delta" in update) || typeof update.delta !== "string" || !update.delta.length) return;
+      if (!providerFirstDelta) {
+        providerFirstDelta = true;
+        await recordProviderDiagnostic("provider_first_delta", { deltaType: update.type, elapsedMs: providerRequestedAt ? Date.now() - providerRequestedAt : undefined });
+      }
+      if (update.type === "text_delta" && !providerFirstText) {
+        providerFirstText = true;
+        await recordProviderDiagnostic("provider_first_text", { elapsedMs: providerRequestedAt ? Date.now() - providerRequestedAt : undefined });
+      }
+    });
     if (profile) pi.registerProvider(profile.providerId, profile.registration);
     pi.on("tool_call", async (event, context) => {
-        if (workflowStopped) return { block: true, terminate: true, reason: "This turn has committed completion, clarification or a blocking validation diagnosis. Stop; continue only in the next authorized turn." };
+        if (designerPersona && !designerTools.has(event.toolName)) return { block: true, reason: "Designer uses named Context authoring and permitted source tools only. Resume using the current role contract." };
+        if (coordinator && !coordinatorTools.has(event.toolName)) return { block: true, reason: "Orchestrator uses lifecycle tools and design_context_read only. Resume using the current role contract." };
+        if (workflowStopped) return { block: true, terminate: true, reason: "This turn has already committed completion, clarification or a blocking validation diagnosis. Stop; continue only in the next authorized turn." };
+        if (reviewerPersona && !reviewerTools.has(event.toolName)) return { block: true, reason: "Reviewer uses Context assessment tools and source reads only. Do not write reports or alter specifications." };
+        if (builderPersona && !builderTools.has(event.toolName)) return { block: true, reason: "Builder uses approved-plan execution and permitted presentation tools only. Do not restate image parameters or author Context." };
         if (!options.parentInvocation && ["run_init", "spawn_agent"].includes(event.toolName) && context?.cwd) {
           try {
             await validateDreamaticPersonaContracts(context.cwd);
@@ -1626,6 +1754,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           }
         }
         const input = event.input && typeof event.input === "object" ? event.input as Record<string, unknown> : {};
+        if (coordinator && event.toolName !== "run_init" && typeof input.runId === "string" && !(await hasUnifiedContext(resolveInside(workspaceDir, join("runs", safeRunId(input.runId)))))) return {block:true,reason:"This task requires canonical Context. Preserve the Run and request an explicit data migration before continuing."};
         if (options.projectId && typeof input.runId === "string") {
           try { assertAssignedRun(input.runId, event.toolName); }
           catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
@@ -1659,7 +1788,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             }
           }
         }
-        if (assignedRunId) {
+        if (assignedRunId || ["read", "ls", "grep", "find", "view_image", "compare_images"].includes(event.toolName)) {
           try {
             if (typeof input.runId === "string") assertAssignedRun(input.runId, event.toolName);
             if (["read", "ls", "grep", "find", "view_image", "compare_images"].includes(event.toolName)) {
@@ -1725,7 +1854,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           .then((source) => JSON.parse(source) as RunState)
           .catch(() => undefined);
         if (state?.status === "complete") {
-          if (["read", "ls", "grep", "find", "ask_user", "design_bus_read", "run_revision"].includes(event.toolName)) return undefined;
+          if (["read", "ls", "grep", "find", "ask_user", "design_bus_read", "design_context_read", "run_revision"].includes(event.toolName)) return undefined;
           return { block: true, reason: "This Run is complete. For explicit user-requested changes, call run_revision first; do not restart the workflow automatically." };
         }
         if (state?.lastEvent !== "build_done") return undefined;
@@ -1981,7 +2110,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       }),
       async execute(_id, params, signal) {
         const budget = await consumeWorkflowBudget(workspaceDir, params.runId, "sourceFetches", params.sources.length, params.refinementReason, params.sources.map((source) => source.url), params.sources.filter((source) => source.refresh).map((source) => source.url));
-        const maxTextChars = Math.floor(12_000 / params.sources.length);
+        const maxTextChars = Math.floor(6_000 / params.sources.length);
         const results: Array<Record<string, unknown>> = await mapWithConcurrency(params.sources, 3, async (source) => {
           signal?.throwIfAborted();
           let fetched: Record<string, unknown>;
@@ -2065,6 +2194,26 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           if (saved[0]?.ok === false) result.leadImageError = saved[0].error;
           else if (saved[0]) result.savedLeadImage = saved[0];
         }
+        const resultCache = join(resolveInside(workspaceDir, join("runs", safeRunId(params.runId))), "research", "batches", `${randomUUID()}.json`);
+        await mkdir(dirname(resultCache), { recursive: true });
+        await writeFile(resultCache, JSON.stringify(results, null, 2));
+        const resultDetailsPath = relative(workspaceDir, resultCache).replaceAll("\\", "/");
+        for (const result of results) {
+          delete result.referenceImageCandidates;
+          delete result.excludedImageCandidates;
+          delete result.leadImageCandidate;
+          const assets = result.savedReferenceImages;
+          if (Array.isArray(assets)) result.savedReferenceImages = assets.map(asset => {
+            const item = asset as Record<string, unknown>;
+            const compact = Object.fromEntries(["ok", "id", "path", "file", "error"].filter(key => key in item).map(key => [key, item[key]]));
+            if (item.asset && typeof item.asset === "object") {
+              const asset = item.asset as Record<string, unknown>;
+              compact.asset = Object.fromEntries(["id", "allowed_for_edit", "visual_review_status", "relevance_status", "source_page_url", "source_url"].filter(key => key in asset).map(key => [key, asset[key]]));
+            }
+            return compact;
+          });
+          if (Array.isArray(result.savedReferenceImages)) result.savedLeadImage = result.savedReferenceImages[0];
+        }
         const researchGaps = results.flatMap((result, index) => {
           const source = params.sources[index]!;
           const gaps: Array<{ url: string; kind: string; action: string }> = [];
@@ -2078,10 +2227,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         });
         return textResult({
           ...batchSummary(results),
+          resultDetailsPath,
           budget,
           researchGaps,
           nextAction: researchGaps.length ? "Assess these gaps and continue with targeted cached reading or changed-keyword/source search within remaining budget before declaring core coverage. Preserve successful acquisition; report unresolved gaps honestly." : "Assess semantic relevance and coverage; successful acquisition alone does not establish subject understanding.",
-          instruction: "Saved images are unreviewed candidates, not confirmed useful references. Page relevance is not image relevance. Source excerpts are bounded to 12000 characters across this batch; researchTerms select matching passages throughout the article, while complete text remains cached at cachedPath. Inspect matchedTerms, extractionMethod, core terminology and figure coverage before claiming research completion. If only opening excerpts or adjacent evidence are available, read a targeted cached passage or refine an unresolved core question within remaining budget. Do not pad missing images or treat a truncated excerpt as a full-paper reading. Write one canonical file per model response once material gaps are resolved or explicitly reported.",
+          instruction: "Saved images are unreviewed candidates, not confirmed useful references. Page relevance is not image relevance. Source excerpts are bounded to 6000 characters across this batch; full candidate and asset metadata are stored at resultDetailsPath; researchTerms select matching passages throughout the article, while complete text remains cached at cachedPath. Inspect matchedTerms, extractionMethod, core terminology and figure coverage before claiming research completion. If only opening excerpts or adjacent evidence are available, read a targeted cached passage or refine an unresolved core question within remaining budget. Do not pad missing images or treat a truncated excerpt as a full-paper reading. Write one canonical file per model response once material gaps are resolved or explicitly reported.",
         });
       },
     });
@@ -2243,8 +2393,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         }
         const taskRunId = runIdFromTask(params.task);
         const inferredRunId = params.runId ? safeRunId(params.runId) : taskRunId ?? (options.projectId ? safeRunId(options.projectId) : undefined);
+        if (coordinator) {
+          const issue = orchestratorHandoffIssue(params.task);
+          if (issue) return textResult({ok:false,retryable:false,repairOwner:"orchestrator",code:"invalid_context_handoff",instruction:issue});
+          if (!inferredRunId || !(await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId))))) return textResult({ok:false,retryable:false,repairOwner:"runtime",code:"context_migration_required",instruction:"This task requires canonical Context before dispatch. Preserve the Run and request an explicit data migration; no specialist was started."});
+        }
         if (inferredRunId) assertAssignedRun(inferredRunId, "spawn_agent");
         if (inferredRunId && taskRunId && taskRunId !== inferredRunId) throw new Error(`spawn_agent handoff disagrees with its Run assignment. Task refers to ${taskRunId}, canonical runId: ${inferredRunId}; runDir: ${resolveInside(workspaceDir, join("runs", inferredRunId))}. Correct the handoff paths before starting the specialist.`);
+        if (!inferredRunId || !(await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId))))) tools = tools.filter(name => !["update_design_context", "commit_design_context", "save_design_context", "patch_design_context"].includes(name));
+        if (inferredRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId)))) tools = tools.filter(name => !["save_design_context", "patch_design_context"].includes(name));
         const runAssignment = inferredRunId ? specialistRunAssignment(workspaceDir, inferredRunId, params.agent) : "";
         const sourceBrief = inferredRunId ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "brief.json").catch((error) => { throw new Error(`spawn_agent requires an initialized Run with brief.json: ${inferredRunId}. Use run_init's returned canonical runId; no specialist was started. ${error instanceof Error ? error.message : String(error)}`); }) : {};
         if (inferredRunId && typeof sourceBrief.runId === "string" && safeRunId(sourceBrief.runId) !== inferredRunId) throw new Error(`Run brief identity disagrees with ${inferredRunId}; repair the assignment before starting a specialist.`);
@@ -2259,26 +2416,19 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           return textResult({ ok: false, retryable: false, repairOwner: "orchestrator", draftReadiness,
             instruction: "The current draft is invalid. Replace this publish-only handoff with a repair task allowing source/plan reads and corrections, then reload retained Skills. Existing files do not establish readiness. No specialist was started." });
         }
-        const unifiedHandoff = inferredRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId))) ? `\n\n# Authoritative Unified Context Contract\n${UNIFIED_CONTEXT_INSTRUCTION}\nExact nesting example (illustrative content): ${JSON.stringify(contextAuthoringExample(params.agent, inferredRunId))}` : "";
-        const recoveryHandoff = params.agent === "designer" ? `\n\n# Authoritative Designer Delivery and Recovery Contract\nFor UX, Designer authors the full HTML/CSS/JS sources; Builder only executes the approved files and image tasks. A recovery task is never publish-only until current drafts pass validation. Read/correct existing files and reload retained Skills even if a delegated task says do not read/write or claims completion. Do not invent source paths: read design_context_read. ${draftReadiness ? JSON.stringify(draftReadiness) : "Create typed execution_plan tasks matching individual deliverable ids; image prompts remain unchanged."}` : "";
+        if (["designer", "reviewer", "builder"].includes(params.agent) && (!inferredRunId || !(await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId)))))) return textResult({ok:false,retryable:false,repairOwner:"runtime",code:"context_migration_required",instruction:`${params.agent} requires canonical Context. Preserve the Run and migrate its data explicitly before dispatch; no specialist was started.`});
+        const unifiedHandoff = inferredRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId))) ? `\n\n# Authoritative Unified Context Contract\n${unifiedContextInstruction(params.agent, Number(sourceBrief.designContractVersion ?? 1))}${params.agent === "builder" ? "" : `\nNamed update example (illustrative content): ${JSON.stringify(contextChangesExample(params.agent))}`}` : "";
+        const recoveryHandoff = params.agent === "designer" ? `\n\n# Authoritative Designer Delivery and Recovery Contract\nFor UX, Designer authors the full HTML/CSS/JS sources; Builder only executes the approved files and image tasks. A recovery task is never publish-only until current drafts pass validation. Read/correct existing files and reload retained Skills even if a delegated task says do not read/write or claims completion. Do not invent source paths: read design_context_read. ${draftReadiness ? JSON.stringify(draftReadiness) : Number(sourceBrief.designContractVersion ?? 1) === 2 ? "Create deliverables with stable ids and nested execution; tasks are read-only projections. Keep existing image prompts unchanged." : "Create named tasks with stable ids matching deliverables; image prompts remain unchanged."}` : "";
         const reloadChecklist = skillReloadChecklist(revisionPlan, briefDesignScopes(sourceBrief).map((scope) => scope.id));
-        const scopeHandoff = `# Authoritative Design Scope and Skill Protocol\n\n${JSON.stringify(designScopeSkillProtocol(briefDesignScopes(sourceBrief)))}${reloadChecklist.length ? `\n\n# Revision Skill Reload Checklist\n${JSON.stringify(reloadChecklist)}\nThis is a fresh invocation: earlier Skill receipts are not loaded knowledge. Before correcting the design, load every retained primary AND supporting Skill using these exact calls. You may autonomously change selections for this task, but update skill_selection and skill_refs to match actual loading. Do not publish until the full retained selection is loaded.` : ""}`;
-        const requestProvenance = `# User Request Provenance\n\n${JSON.stringify({ originalRequest: sourceBrief.originalRequest ?? null, originalRequestSource: sourceBrief.originalRequestSource ?? "unavailable", projectTitle: sourceBrief.title ?? null })}\noriginalRequest is the user's source text, not the project title or the Orchestrator's rewritten brief/task. Extract search terms from that text and confirmed user clarifications. Project titles are display labels, never original wording. When originalRequest is unavailable in a legacy Run, report the provenance gap and recover the actual user message through Orchestrator; do not invent or relabel a title as user input. Later confirmed revisions supplement the original request; they do not rewrite it.`;
+        const scopeHandoff = params.agent === "designer" ? `# Authoritative Design Scope and Skill Protocol\n\n${JSON.stringify(designScopeSkillProtocol(briefDesignScopes(sourceBrief)))}${reloadChecklist.length ? `\n\n# Revision Skill Reload Checklist\n${JSON.stringify(reloadChecklist)}\nThis is a fresh invocation: earlier Skill receipts are not loaded knowledge. Before correcting the design, load every retained primary AND supporting Skill using these exact calls. You may autonomously change selections for this task, but select through use_skill and update skill_refs to match actual loading. Do not publish until the full retained selection is loaded.` : ""}` : "";
+        const requestProvenance = `# User Request Provenance\n\n${JSON.stringify({ originalRequest: sourceBrief.originalRequest ?? null, originalRequestSource: sourceBrief.originalRequestSource ?? "unavailable", projectTitle: sourceBrief.title ?? null })}\noriginalRequest is the user's source text, not the project title or the Orchestrator's rewritten brief/task. Extract search terms from that text and confirmed user clarifications. Project titles are display labels, never original wording. When originalRequest is unavailable, report the provenance gap and recover the actual user message through Orchestrator; do not invent or relabel a title as user input. Later confirmed revisions supplement the original request; they do not rewrite it.`;
         const limits = inferredRunId
           ? await workflowBudget(resolveInside(workspaceDir, join("runs", inferredRunId)))
           : { profile: "compact" as const, budget: WORKFLOW_BUDGETS.compact };
         const runtimeLimits = `# DreamaticArt Runtime Limits\n\nWorkflow profile: ${limits.profile}. Initial research acquisition budgets: ${JSON.stringify(limits.budget)}. A specific material evidence/figure gap can enable one bounded reserve per resource via refinementReason, up to twice its initial budget. Change keywords/sources rather than repeating attempted requests. Cached-page rediscovery and selected-image downloads need no new source fetch. These budgets limit searches and source fetches only. Reference images have no per-page or per-Run count ceiling; ignore obsolete referenceAssets budgets in older Briefs or tasks. Choose useful reference coverage based on user intent and retain lightweight screening, provenance and file-safety checks; uncertain article-context candidates are for Designer to evaluate, not automatically reject. These budgets do not limit design deliverables. DREAMATIC_IMAGE_DEFAULT_SIZE is ${imageSizeCeiling()} and is the hard per-image size ceiling. Unless the user explicitly sets a quantity or requests fewer images, there is no total or per-stage generation-count ceiling. Designer must map significant design conclusions, developed alternatives, scenarios, states, details and applications to adequate visual deliverables. Do not treat compact profiles, Skill examples, retry budgets or concurrency limits as output quotas. Builder executes the complete approved deliverable set. Image-specific limits apply only to imagery; HTML pages use their approved viewport/interaction requirements. No planned or executed image may exceed the image-size envelope, including when orientation is swapped.`;
         const executionProfile = params.agent === "builder" && inferredRunId
           ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "plan/design_plan.json").then((plan) => plan.schemaVersion === 2 ? "\n\n# Approved Typed Execution\nUse execute_design_plan without ids first to execute all required tasks. ids selects a subset only; HTML presentation does not cancel required image tasks. HTML sources already contain the full design: do not reconstruct, copy by hand, write or edit their artifact files, even if the handoff says implement a page. Source resources and interactions are validated before approval. Do not perform another browser/visual/design audit or try image editing as a file-copy operation. Only mechanical generation/reuse and declared Gallery/manual output authoring belong to Builder." : "").catch(() => "") : "";
-        if (executionProfile && inferredRunId) {
-          const runDir = resolveInside(workspaceDir, join("runs", inferredRunId));
-          const plan = await readJsonRecord(runDir, "plan/design_plan.json");
-          const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
-          const generated = new Set(deliveryContract(plan, manifest).tasks.filter((task) => task.method === "html_generate").flatMap((task) => [...htmlTask(task).files, ...htmlTask(task).resources].map((file) => file.output)));
-          if (requiredRecord(manifest.presentation, "presentation").mode === "html" && requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable")).every((item) => item.method !== "manual" || generated.has(String(item.file)))) {
-            tools = tools.filter((name) => !["write", "edit", "write_json", "patch_json"].includes(name));
-          }
-        }
+        if (params.agent === "builder") tools = await builderToolsForRun(inferredRunId);
         const childLoader = new DefaultResourceLoader({
           cwd: context.cwd,
           agentDir: getAgentDir(),
@@ -2357,12 +2507,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         let responseFinishedAt: number | undefined;
         let committedDuringPrompt: string | undefined;
         let blockedDuringPrompt: Record<string, unknown> | undefined;
+        const preparationFailures = new ContextFailureTracker();
         let modelLastActivityAt = Date.now();
         let modelResponseChars = 0;
         let modelTimer: ReturnType<typeof setInterval> | undefined;
         let modelTimeoutError: Error | undefined;
+        let lastModelFailure: string | undefined;
         const modelTurnTimeoutMs = Math.max(30_000, Number(process.env[`DREAMATIC_MODEL_TURN_TIMEOUT_MS_${params.agent.toUpperCase()}`] ?? process.env.DREAMATIC_MODEL_TURN_TIMEOUT_MS ?? (params.agent === "researcher" ? 180_000 : 300_000)) || 300_000);
         const modelIdleTimeoutMs = Math.max(30_000, Number(process.env.DREAMATIC_MODEL_IDLE_TIMEOUT_MS ?? 120_000) || 120_000);
+        const modelGenerationTimeoutMs = Math.max(30_000, Number(process.env.DREAMATIC_MODEL_GENERATION_TIMEOUT_MS ?? 300_000) || 300_000);
+        const modelTotalTimeoutMs = Math.max(modelTurnTimeoutMs, Number(process.env.DREAMATIC_MODEL_TOTAL_TIMEOUT_MS ?? modelTurnTimeoutMs + modelGenerationTimeoutMs) || modelTurnTimeoutMs + modelGenerationTimeoutMs);
         const stopModelTimer = () => {
           if (modelTimer) clearInterval(modelTimer);
           modelTimer = undefined;
@@ -2411,7 +2565,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             modelTimer = setInterval(() => {
               const durationMs = Date.now() - (turnStartedAt ?? Date.now());
               const idleMs = Date.now() - modelLastActivityAt;
-              const timeoutReason = modelResponseTimeoutReason(durationMs, idleMs, firstDeltaAt !== undefined, modelTurnTimeoutMs, modelIdleTimeoutMs);
+              const timeoutReason = responseTimeoutReason(durationMs, idleMs, firstDeltaAt === undefined ? undefined : Date.now() - firstDeltaAt, { firstOutputMs: modelTurnTimeoutMs, idleMs: modelIdleTimeoutMs, generationMs: modelGenerationTimeoutMs, totalMs: modelTotalTimeoutMs });
               const progress = `${params.agent}: ${firstDeltaAt ? "generating the next response" : "waiting for the model"} · ${Math.round(durationMs / 1000)}s · ${modelResponseChars} streamed characters`;
               void emitLifecycle({ type: "agent_progress", output: progress, durationMs, responseChars: modelResponseChars, status: "running" });
               onUpdate?.({ content: [{ type: "text", text: progress }], details: { agent: params.agent, running: true } });
@@ -2454,9 +2608,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             return;
           }
           if (event.type === "message_update") {
-            modelLastActivityAt = Date.now();
             const update = event.assistantMessageEvent;
             if ("delta" in update && typeof update.delta === "string" && update.delta.length) {
+              modelLastActivityAt = Date.now();
               firstDeltaAt ??= Date.now();
               if (update.type === "text_delta") firstTextAt ??= Date.now();
               modelResponseChars += update.delta.length;
@@ -2506,8 +2660,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             const durationMs = Math.max(0, Date.now() - (toolStartedAt.get(event.toolCallId) ?? Date.now()));
             toolStartedAt.delete(event.toolCallId);
             const metric = toolMetrics.get(event.toolName) ?? { calls: 0, durationMs: 0, errors: 0 };
+            if (event.isError && !event.result.details?.errorCode && ["update_design_context", "commit_design_context", "save_design_context", "patch_design_context"].includes(event.toolName)) {
+              const issue = canonicalContextError(workflowObservation(event.result, 8_000));
+              const identity = contextFailureIdentity(event.toolName, issue, args);
+              const key = createHash("sha256").update(identity.key).digest("hex");
+              const attempts = preparationFailures.record(key, event.toolCallId);
+              if (attempts >= 3) blockedDuringPrompt = { ok: false, blocked: true, retryable: false, repairOwner: params.agent, attempts, issue, errorCode: identity.code, field: identity.location, instruction: "Correct the named input before re-dispatching. No stage completion was committed." };
+            }
             const validationBlocked = !event.isError && event.result.details && typeof event.result.details === "object" && (event.result.details as Record<string, unknown>).blocked === true;
-            const executionFailed = ["image_generate_batch", "image_edit_batch", "execute_image_plan", "execute_design_plan"].includes(event.toolName) && event.result.details?.ok === false;
+            const executionFailed = ["commit_design_context", "image_generate_batch", "image_edit_batch", "execute_image_plan", "execute_design_plan"].includes(event.toolName) && event.result.details?.ok === false;
             metric.calls += 1;
             metric.durationMs += durationMs;
             if (event.isError || validationBlocked || executionFailed) metric.errors += 1;
@@ -2540,18 +2701,21 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           try {
             await withRetry(async (attempt) => {
               try {
-                const stageTask = attempt === 1
-                  ? params.task
-                  : "The previous model response failed or timed out. Resume this stage from durable Run files and completed tool results. Use design_context_read once to identify existing and missing outputs; missing outputs are normal after interruption, so create them rather than reading nonexistent files. Preserve completed files and already loaded Skills. Keep the next response concise and write one file at a time. Do not repeat completed acquisition or create a new Run.";
+                const task = attempt === 1 ? params.task : modelRecoveryTask(lastModelFailure);
+                const stageTask = unifiedHandoff
+                  ? `${unifiedContextPrompt(task)}\n\n${specialistStageContract(params.agent, Number(sourceBrief.designContractVersion ?? 1))}\n\n# Research Acquisition Observations\n${JSON.stringify(await researchAcquisition(resolveInside(workspaceDir, join("runs", inferredRunId!))))}`
+                  : task;
                 await session.prompt(runAssignment ? `${runAssignment}\n\n# Stage Task\n\n${stageTask}` : stageTask);
               } catch (error) {
+                const failure = modelTimeoutError ?? error;
+                lastModelFailure = failure instanceof Error ? failure.message : String(failure);
                 throw modelTimeoutError ?? error;
               }
               signal?.throwIfAborted();
-              if (modelTimeoutError) throw modelTimeoutError;
+              if (modelTimeoutError) { lastModelFailure = modelTimeoutError.message; throw modelTimeoutError; }
               if (committedDuringPrompt || blockedDuringPrompt) return;
               const failure = dreamaticSessionFailure(session.messages);
-              if (failure) throw new Error(`Sub-agent ${params.agent} failed: ${failure}`);
+              if (failure) { lastModelFailure = failure; throw new Error(`Sub-agent ${params.agent} failed: ${failure}`); }
             }, {
               attempts: Math.max(1, Number(process.env.DREAMATIC_AGENT_RETRY_ATTEMPTS ?? 3)),
               ...(signal ? { signal } : {}),
@@ -2587,9 +2751,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             status: "completed",
             metrics: { durationMs: Date.now() - agentStartedAt, validationMs, tools: Object.fromEntries(toolMetrics), modelTurns },
           });
+          const guidance = { ...(committedEvent === "build_done" ? { nextAction: { tool: "export_package", arguments: { runId: inferredRunId } }, instruction: "Call export_package immediately. Do not inspect artifacts or start another specialist." } : {}),
+            ...(coordinator && committedEvent !== "build_done" ? {readArguments:{runId:inferredRunId,audience:"orchestrator",paths:[({researcher:CONTEXT_FILES.research,designer:CONTEXT_FILES.design,reviewer:CONTEXT_FILES.review} as Record<string,string>)[params.agent]],full:true}} : {}),
+            ...(inferredRunId ? { researchAcquisition: await researchAcquisition(resolveInside(workspaceDir, join("runs", inferredRunId))) } : {}) };
           return {
-            content: [{ type: "text", text: output || `${params.agent} completed without a text summary.` }],
-            details: { agent: params.agent, personaPath, runId: inferredRunId, childSessionDir, committedEvent },
+            content: [{ type: "text", text: `${output || `${params.agent} completed without a text summary.`}\n\nRuntime completion guidance: ${JSON.stringify(guidance)}` }],
+            details: { agent: params.agent, personaPath, runId: inferredRunId, childSessionDir, committedEvent, ...guidance },
           };
         } catch (error) {
           await lifecycleWrites;
@@ -2632,13 +2799,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     let lastSkillReceipt: string | undefined;
     const persistSkillReceipt = async () => {
       if (!assignedRunId || !options.parentInvocation) return;
-      const source = JSON.stringify({ runId: assignedRunId, agent: options.parentInvocation.agent, invocationId: options.parentInvocation.id, availableProfessionals, activeSkills: skillActivation.all() });
-      if (source === lastSkillReceipt) return;
       const path = resolveInside(workspaceDir, join("runs", assignedRunId, ".performance", `skills-${options.parentInvocation.agent}.json`));
-      await mkdir(dirname(path), { recursive: true });
-      const temporary = `${path}.${randomUUID()}.tmp`;
-      await writeFile(temporary, source); await rename(temporary, path);
-      lastSkillReceipt = source;
+      await serializeJsonWrite(path, async () => {
+        const source = JSON.stringify({ runId: assignedRunId, agent: options.parentInvocation!.agent, invocationId: options.parentInvocation!.id, availableProfessionals, activeSkills: skillActivation.all() });
+        if (source === lastSkillReceipt) return;
+        await mkdir(dirname(path), { recursive: true });
+        const temporary = `${path}.${randomUUID()}.tmp`;
+        await writeFile(temporary, source); await rename(temporary, path);
+        lastSkillReceipt = source;
+      });
     };
     const classifiedScopes = async () => assignedRunId
       ? briefDesignScopes(await readJsonRecord(resolveInside(workspaceDir, join("runs", assignedRunId)), "brief.json").catch(() => ({})))
@@ -2694,9 +2863,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "use_skill",
       label: "Load design skill",
-      description: "Load a Pi Skill for a design scope. A primary replaces only that scope's primary. Deactivate obsolete support explicitly. Unchanged bodies are reused within this invocation; reload restores compacted knowledge.",
-      parameters: Type.Object({
-        name: Type.String(), arguments: Type.Optional(Type.String()),
+      description: "Load exactly ONE named Pi Skill. Every bindings entry applies this SAME Skill to another assigned scope; bindings is not a batch of different Skills. Use separate calls for different Skill names. Bind shared knowledge atomically via bindings:[{scopeId,role,rationale}]. Single-scope arguments remain supported. All bindings validate before selection changes.  A primary replaces only that scope's primary. Deactivate obsolete support explicitly. Unchanged bodies are reused within this invocation; reload restores compacted knowledge.",
+      parameters: Type.Object({ rationale: Type.Optional(Type.String({ minLength: 1, description: "Task-specific reason for this Scope–Skill selection; runtime records it in draft skill_selection" })),
+        bindings: Type.Optional(Type.Array(Type.Object({ scopeId: Type.String({ minLength: 1 }), role: Type.Optional(Type.Union([Type.Literal("primary"), Type.Literal("supporting")])), rationale: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false }), { minItems: 1 })),
+        name: Type.String({ description: "One exact catalog Skill name. This same name applies to EVERY binding; do not put other Skills in the bindings rationale." }), arguments: Type.Optional(Type.String()),
         role: Type.Optional(Type.Union([Type.Literal("primary"), Type.Literal("supporting")])),
         deactivate: Type.Optional(Type.Array(Type.String())), reload: Type.Optional(Type.Boolean()),
         scopeId: Type.Optional(Type.String({ description: "Orchestrator-assigned design scope id" })),
@@ -2704,8 +2874,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       }),
       async execute(_id, params, _signal, _update, context) {
         if (params.scopeId && params.scope && params.scopeId !== params.scope) throw new Error("scopeId and scope must agree");
-        const { scopes, scope } = await scopeForSkill(params.scopeId ?? params.scope);
-        if (scopes.length && options.parentInvocation?.agent === "designer" && !(params.scopeId ?? params.scope)?.trim()) throw new Error(`Provide an assigned scopeId when loading Designer Skills for a classified Run. Valid task ids: ${scopes.map((item) => item.id).join(", ")}; name is the Skill name.`);
+        if (params.bindings) {
+          if (params.deactivate) throw new Error("For deactivation use a single-scope call; no selection changed");
+          if ((params.scopeId || params.scope) && !params.bindings.some(binding => binding.scopeId === (params.scopeId ?? params.scope))) throw new Error("Single scope disagrees with bindings; no selection changed");
+          if (params.role && params.bindings.some(binding => binding.role && binding.role !== params.role)) throw new Error("Single role disagrees with bindings; no selection changed");
+          params.bindings = params.bindings.map(binding => ({ ...binding, role: binding.role ?? params.role ?? "supporting", ...((binding.rationale ?? params.rationale) !== undefined ? { rationale: binding.rationale ?? params.rationale! } : {}) }));
+        }
+        if (params.bindings && new Set(params.bindings.map(item => item.scopeId)).size !== params.bindings.length) throw new Error("bindings requires unique assigned scope ids for the SAME named Skill; no selection changed. Use a separate use_skill call for each different name. Do not combine different Skills in rationale or duplicate scope ids");
+        const { scopes, scope } = await scopeForSkill(params.bindings?.[0]?.scopeId ?? params.scopeId ?? params.scope);
+        if (scopes.length && options.parentInvocation?.agent === "designer" && !params.bindings && !(params.scopeId ?? params.scope)?.trim()) throw new Error(`Provide an assigned scopeId when loading Designer Skills for a classified Run. Valid task ids: ${scopes.map((item) => item.id).join(", ")}; name is the Skill name.`);
         if (scopes.length && options.parentInvocation?.agent === "designer" && !scopes.some((item) => item.id === scope)) return textResult({ ok: false, error: "unknown_design_scope", requestedScopeId: scope, designScopes: scopes, scopeProtocol: designScopeSkillProtocol(scopes), instruction: "No Skill was loaded or switched. scopeId must be an exact Orchestrator-assigned task id; name is the Skill name. Call list_skills without scopeId to obtain valid per-scope load arguments, then choose the intended task." });
         let catalog = await discoverSkills(context.cwd);
         let skill = catalog.find((candidate) => candidate.name === params.name);
@@ -2716,15 +2893,28 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         catch (error) { skillCatalogs.delete(context.cwd); skillDescriptors = undefined; return textResult({ ok: false, name: params.name, error: error instanceof Error ? error.message : String(error), instruction: "Skill unavailable; retain the current selection and select another applicable module." }); }
         const metadata = skillMetadata(parseFrontmatter<{ metadata?: unknown }>(content).frontmatter.metadata);
         if (options.parentInvocation && metadata.audience !== "unspecified" && metadata.audience !== options.parentInvocation.agent) return textResult({ ok: false, name: params.name, instruction: `This Skill is for ${metadata.audience}, not ${options.parentInvocation.agent}. Select role-appropriate guidance; do not change the assigned design or retry this name.` });
+        const requested = params.bindings ?? [{ scopeId: scope, role: params.role, rationale: params.rationale }];
+        for (const binding of requested) {
+          if (scopes.length && options.parentInvocation?.agent === "designer" && !scopes.some(item => item.id === binding.scopeId)) throw new Error(`Unknown assigned scope ${binding.scopeId}; no selection changed`);
+          const category = scopes.find(item => item.id === binding.scopeId)?.category;
+          if (binding.role === "primary" && category && (metadata.moduleType !== "discipline" || !metadata.designCategories.includes(category))) throw new Error(JSON.stringify({ ok: false, code: "skill_scope_mismatch", name: skill.name, scopeId: binding.scopeId, category, selectionChanged: false,
+            eligiblePrimaryScopes: scopes.filter(item => metadata.moduleType === "discipline" && metadata.designCategories.includes(item.category)).map(item => item.id),
+            suggestedCalls: (await Promise.all(catalog.map(async candidate => ({ name: candidate.name, ...skillMetadata(parseFrontmatter<{ metadata?: unknown }>(await readFile(candidate.filePath, "utf8")).frontmatter.metadata) })))).filter(candidate => candidate.moduleType === "discipline" && candidate.designCategories.includes(category)).map(candidate => ({ name: candidate.name, scopeId: binding.scopeId, role: "primary" })),
+            instruction: `Primary Skill ${skill.name} does not cover ${category}. Each call loads ONE name, and all its bindings apply that same name. Load a matching primary for this scope in a separate call; preserve other scopes. No selection changed.` }));
+        }
         const category = scopes.find((item) => item.id === scope)?.category;
         if (params.role === "primary" && category && (metadata.moduleType !== "discipline" || !metadata.designCategories.includes(category))) throw new Error(`Primary Skill ${skill.name} does not cover ${category}; select matching professional knowledge. Auxiliary Skills belong in supporting.`);
         const hash = createHash("sha256").update(content).digest("hex");
-        const selection = skillActivation.activate(skill.name, skill.filePath, hash, metadata, scope, params.role, params.deactivate, params.reload);
-        await persistSkillReceipt();
+        const selection = await serializeJsonWrite(`${workspaceDir}/skill-activation/${options.parentInvocation?.id ?? "root"}`, async () => {
+          const rollback = skillActivation.checkpoint();
+          const selections = requested.map((binding, index) => skillActivation.activate(skill.name, skill.filePath, hash, metadata, binding.scopeId, binding.role, params.deactivate, index === 0 && params.reload, binding.rationale));
+          try { await persistSkillReceipt(); } catch (error) { rollback(); throw error; }
+          return { ...selections[0]!, bindings: selections, reused: selections.every(item => item.reused) };
+        });
         const retainedPlan = assignedRunId && options.parentInvocation?.agent === "designer" ? await readJsonRecord(resolveInside(workspaceDir, join("runs", assignedRunId)), "plan/design_plan.json").catch(() => undefined) : undefined;
         const pendingSkillLoads = skillReloadChecklist(retainedPlan, scopes.map((scope) => scope.id), skillActivation.all()).filter((item) => !item.loaded);
-        const instruction = `Only the active selection applies to this task. Deactivation changes applicability, not historical context. User intent and the Agent contract override Skills. ${options.parentInvocation?.agent === "builder" ? "Apply this guidance to implementation and Showcase only; do not modify Designer-owned specifications or task_breakdown.md." : "Record scope_id, name, role and rationale in skill_selection."} Persisted choices are not loaded knowledge; reload after compaction when needed.`;
-        return { content: [{ type: "text", text: `${JSON.stringify({ ...selection, scopeId: scope, category, pendingSkillLoads, instruction })}\nLoaded Skill: ${skill.name}\nBase directory: ${skill.baseDir}\n${params.arguments ? `Arguments: ${params.arguments}\n` : ""}${selection.reused ? "Unchanged Skill body already loaded in this invocation; reuse its earlier content." : content}` }], details: { name: skill.name, path: skill.filePath, sha256: hash, ...metadata, ...selection, scopeId: scope, pendingSkillLoads, instruction, source: "pi-resource-loader" } };
+        const instruction = `Only the active selection applies to this task. Deactivation changes applicability, not historical context. User intent and the Agent contract override Skills. ${options.parentInvocation?.agent === "builder" ? "Apply this guidance to implementation and Gallery only; do not modify Designer-owned Context or page sources." : "For draft authoring, provide rationale here once; runtime generates skill_selection from active scope bindings. "} Persisted choices are not loaded knowledge; reload after compaction when needed.`;
+        return { content: [{ type: "text", text: `${JSON.stringify({ ...selection, scopeId: scope, category, registeredSelections: skillActivation.all().map(({name, role, scope, rationale}) => ({name, role, scope_id: scope, rationale})), pendingSkillLoads, instruction })}\nLoaded Skill: ${skill.name}\nBase directory: ${skill.baseDir}\n${params.arguments ? `Arguments: ${params.arguments}\n` : ""}${selection.reused ? "Unchanged Skill body already loaded in this invocation; reuse its earlier content." : content}` }], details: { name: skill.name, path: skill.filePath, sha256: hash, ...metadata, ...selection, scopeId: scope, pendingSkillLoads, instruction, source: "pi-resource-loader" } };
       },
     });
 
@@ -2824,6 +3014,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           : originalRequest ? "pi_user_prompt" : "unavailable";
         const brief = {
           contextFormat: "unified-v1",
+          designContractVersion: 2,
           runId,
           createdAt: typeof existingBrief.createdAt === "string" ? existingBrief.createdAt : new Date().toISOString(),
           ...(typeof existingBrief.sessionId === "string" ? { sessionId: existingBrief.sessionId } : {}),
@@ -2856,7 +3047,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           scopeProtocol: designScopeSkillProtocol(scopes),
           contextFormat: "unified-v1",
           contextFiles: CONTEXT_FILES,
-          authoringContract: UNIFIED_CONTEXT_INSTRUCTION,
+          authoringContract: unifiedContextInstruction("orchestrator"),
+          ...(coordinator ? {readArguments:{runId,audience:"orchestrator"},finalDir:join(runDir,"final")} : {
           designContext: join(runDir, "design-context.json"),
           researchDir: join(runDir, "research"),
           researchAssetsDir: join(runDir, "research", "assets"),
@@ -2867,6 +3059,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           reviewDir: join(runDir, "review"),
           finalDir: join(runDir, "final"),
           bus: join(runDir, "bus.jsonl"),
+          }),
         });
       },
     });
@@ -2874,13 +3067,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "design_bus_post",
       label: "Post workflow event",
-      description: "Validate and publish a workflow result. Pass explicit runId, type, summary and role identity at the root. Runtime attaches existing canonical stage outputs after validation; artifactRefs is optional for additional existing Run files. Designer completion always routes to Reviewer, never directly to Builder. No event is published on validation failure.",
+      description: "Validate and publish a workflow result. Specialists report completion to Orchestrator: omit from/from_agent/to and let runtime bind identity and recipient, or use from_agent=<your role>, to=orchestrator. Designer's next stage is Reviewer, represented by requestedAction=review and runtime nextAgent, never by to=reviewer. Pass runId, type and summary at the root. artifactRefs is optional; runtime attaches validated canonical outputs. No event is published on validation failure.",
       parameters: Type.Object({
         runId: Type.String(),
         type: Type.String(),
         phase: Type.Optional(Type.String()),
         from: Type.Optional(Type.String()),
-        to: Type.Optional(Type.String()),
+        to: Type.Optional(options.parentInvocation ? Type.Literal("orchestrator", { description: "Completion recipient; omit to use the bound Orchestrator. This is not the next stage." }) : Type.String()),
         from_agent: Type.Optional(Type.String()),
         summary: Type.Optional(Type.String()),
         severity: Type.Optional(Type.String()),
@@ -2900,7 +3093,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const allowed = STAGE_COMPLETION_EVENTS[options.parentInvocation.agent] ?? [];
           if (!allowed.includes(params.type)) throw new Error(`${options.parentInvocation.agent} may only post ${allowed.join(" or ")}`);
           if (params.from_agent !== options.parentInvocation.agent) throw new Error(`from_agent must be ${options.parentInvocation.agent}`);
-          if (params.to !== "orchestrator") throw new Error("Specialist completion events must be addressed to orchestrator");
+          if (params.to !== "orchestrator") throw new Error('Specialist completion events must be addressed to orchestrator. Omit to or set to:"orchestrator"; use requestedAction:"review" for Designer follow-up. No event was published.');
           if (!params.summary?.trim()) throw new Error("Specialist completion events require a summary");
           if (params.artifactRefs && params.artifactRefs.some((path) => typeof path !== "string" || !path.trim())) throw new Error("artifactRefs entries must be nonempty existing Run-relative file paths; omit artifactRefs to attach validated canonical outputs automatically.");
         }
@@ -2970,6 +3163,51 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     });
 
     pi.registerTool({
+      name: "run_brief_update",
+      label: "Update confirmed active-run requirements",
+      description: "Orchestrator records explicit user clarifications or requirement changes during an initialized active Run. Preserve originalRequest. Invalidate previous design/review gates and route the delta to Designer, with Researcher first only if needed. Never use this for unconfirmed agent preferences. Completed Runs require run_revision.",
+      parameters: Type.Object({
+        runId: Type.String(),
+        feedback: Type.String({ minLength: 1, description: "The confirmed user clarification/change, preserving their meaning." }),
+        brief: Type.Optional(Type.String({ minLength: 1 })),
+        context: Type.Optional(Type.String()),
+        domainContext: Type.Optional(Type.String()),
+        designScopes: Type.Optional(Type.Array(Type.Object({ id: Type.String(), category: Type.String(), task: Type.String(), rationale: Type.Optional(Type.String()) }), { minItems: 1 })),
+      }),
+      async execute(_id, params) {
+        if (options.parentInvocation) throw new Error("Only Orchestrator may update confirmed requirements");
+        assertAssignedRun(params.runId, "run_brief_update");
+        if (currentSpecialistInvocation() || revisionOpening) throw new Error("Wait for the current workflow operation before updating requirements");
+        const scopes = params.designScopes ? designScopes(params.designScopes) : undefined;
+        if (!params.feedback.trim()) throw new Error("A confirmed user clarification is required");
+        revisionOpening = true;
+        try {
+          const runId = safeRunId(params.runId);
+          const runDir = resolveInside(workspaceDir, join("runs", runId));
+          const state = await readJsonRecord(runDir, "run-state.json");
+          if (state.status === "draft" || state.status === "complete" || (state.stages as Record<string, unknown> | undefined)?.build === "completed") throw new Error("Update only an initialized active Run before build_done; completed Runs require run_revision");
+          const brief = await readJsonRecord(runDir, "brief.json");
+          const at = new Date().toISOString();
+          const change = { id: randomUUID(), feedback: params.feedback.trim(), at };
+          const updated = { ...brief,
+            ...(params.brief !== undefined ? { brief: params.brief } : {}),
+            ...(params.context !== undefined ? { context: params.context } : {}),
+            ...(params.domainContext !== undefined ? { domainContext: params.domainContext } : {}),
+            ...(scopes ? { resolvedScope: { ...(brief.resolvedScope && typeof brief.resolvedScope === "object" ? brief.resolvedScope : {}), designScopes: scopes } } : {}),
+            confirmedUpdates: [...(Array.isArray(brief.confirmedUpdates) ? brief.confirmedUpdates : []), change],
+          };
+          if (await hasUnifiedContext(runDir)) await syncProjectContext(runDir, updated);
+          else await writeFile(join(runDir, "brief.json"), JSON.stringify(updated, null, 2));
+          await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify({ ...change, runId, type: "run_brief_updated", from_agent: "orchestrator", to: "designer", summary: change.feedback })}\n`);
+          await updateRunState(workspaceDir, runId, "run_brief_updated");
+          await updateDesignContextIndex(workspaceDir, runId, "run_brief_updated");
+          activeRunId = runId;
+          return textResult({ ok: true, runId, confirmedUpdate: change, instruction: "Read the updated project Context. Preserve unchanged work; route this confirmed delta to Designer (Researcher first only if needed). A new Designer completion and Reviewer approval are required before Builder." });
+        } finally { revisionOpening = false; }
+      },
+    });
+
+    pi.registerTool({
       name: "run_revision",
       label: "Open user-requested revision",
       description: "Reopen this completed project only for explicit user feedback. Archive the previous delivery, preserve research and design context, invalidate old approval gates, and hand the change request to Designer.",
@@ -2978,6 +3216,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         feedback: Type.String({ minLength: 1 }),
         preserve: Type.Optional(Type.Array(Type.String())),
         needsResearch: Type.Optional(Type.Boolean()),
+        upgradeDesignContract: Type.Optional(Type.Boolean({ description: "Explicitly upgrade a historical completed Run to design contract v2 within this archived revision. Never changes the archived delivery or its receipts; Designer must reconcile the converted draft and obtain new approval." })),
         designScopes: Type.Optional(Type.Array(Type.Object({ id: Type.String(), category: Type.String(), task: Type.String(), rationale: Type.Optional(Type.String()) }), { minItems: 1 })),
       }),
       async execute(_id, params) {
@@ -2993,6 +3232,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const runDir = resolveInside(workspaceDir, join("runs", runId));
           const state = await readJsonRecord(runDir, "run-state.json");
           if (state.status !== "complete") throw new Error("run_revision requires a completed Run; do not overlap active workflows");
+          if (params.upgradeDesignContract && !(await hasUnifiedContext(runDir))) throw new Error("Contract upgrade requires unified Context; no revision was opened");
+          if (params.upgradeDesignContract) {
+            const { schemaVersion: _s, runId: _r, revision: _v, ...domain } = await readJsonRecord(runDir, CONTEXT_FILES.design);
+            upgradeDesignData(domain); // Validate conversion before archiving/moving any delivery.
+          }
           const revisionId = randomUUID();
           const archive = resolveInside(runDir, join("history", revisionId));
           await mkdir(archive, { recursive: true });
@@ -3005,6 +3249,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const now = new Date().toISOString();
           const revisionRequest = { id: revisionId, feedback: params.feedback, preserve: params.preserve ?? [], needsResearch: params.needsResearch === true, baseSnapshot: relative(runDir, archive), requestedAt: now };
           const brief = await readJsonRecord(runDir, "brief.json");
+          if (params.upgradeDesignContract && Number(brief.designContractVersion ?? 1) !== 2) {
+            if (!(await hasUnifiedContext(runDir))) throw new Error("Contract upgrade requires unified Context; historical split-file Runs retain their original storage contract");
+            const source = await readFile(join(runDir, CONTEXT_FILES.design), "utf8");
+            const { schemaVersion: _schema, revision: _revision, runId: _run, ...domain } = JSON.parse(source);
+            const data = upgradeDesignData(domain);
+            const draftDirectory = join(runDir, ".performance");
+            await mkdir(draftDirectory, { recursive: true });
+            await writeContextFile(runDir, ".performance/context-draft-designer.json", JSON.stringify({ data, baseSha256: createHash("sha256").update(source).digest("hex") }));
+            brief.designContractVersion = 2;
+          }
           await writeFile(join(runDir, "brief.json"), JSON.stringify({ ...brief, ...(revisedScopes ? { resolvedScope: { ...(brief.resolvedScope && typeof brief.resolvedScope === "object" ? brief.resolvedScope : {}), designScopes: revisedScopes } } : {}), revisionRequest }, null, 2));
           if (await hasUnifiedContext(runDir)) await syncProjectContext(runDir, await readJsonRecord(runDir, "brief.json"));
           const index = await readJsonRecord(runDir, "design-context.json");
@@ -3026,22 +3280,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     const writeJsonToolUnlocked = defineTool({
       name: "write_json",
       label: "Write structured project data",
-      description: "Atomically serialize Run JSON. The argument envelope is {runId, path, data}: runId and path belong at the root; data is only the file content. Pass data as an object, not a serialized string. Designer manifests automatically fill a missing fixed Gallery entry or the sole declared HTML page entry before saving/hashing; mixed outputs need explicit mode and multiple HTML deliverables need explicit entry. Never write design-context.json or run-state.json: completion events update those runtime-owned files.",
+      description: "Atomically serialize permitted auxiliary Run JSON, or legacy split-file outputs. The envelope is {runId,path,data}; data is an object, not a serialized string. Never use this tool for canonical Context: use update_design_context({changes:{...named role fields}}), then commit_design_context({}). Runtime-owned manifests, state and indexes are protected. Legacy Designer manifests may derive a missing fixed presentation entry; mixed outputs require an explicit mode/entry.",
       parameters: Type.Object({
         runId: Type.String(),
-        path: Type.String({ description: "Run-relative JSON path; unified Runs use context/research.json, context/design.json or context/review.json" }),
+        path: Type.String({ pattern: "^(?!context/).+", description: "Permitted auxiliary or legacy Run-relative JSON path. Canonical context/* files require update_design_context and commit_design_context, not write_json." }),
         data: Type.Record(Type.String(), Type.Unknown()),
       }),
-      prepareArguments: (args) => {
-        try { return normalizeWriteJsonArguments(args, options.parentInvocation?.runId ?? options.projectId, workspaceDir); }
-        catch (error) {
-          const role = options.parentInvocation?.agent;
-          const runId = options.parentInvocation?.runId ?? options.projectId;
-          if (!role || !runId) throw error;
-          throw new Error(`${error instanceof Error ? error.message : String(error)}. Exact role argument example: ${JSON.stringify(contextAuthoringExample(role, runId))}. runId/path/data are TOOL arguments. schemaVersion/revision belong INSIDE data. Do not invent omitted document fields or change legacy storage contracts.`);
-        }
-      },
-      async execute(_id, params, signal) {
+      prepareArguments: (args) => normalizeWriteJsonArguments(args, options.parentInvocation?.runId ?? options.projectId, workspaceDir),
+      async execute(_id, params, signal, _onUpdate, _context) {
         const runId = safeRunId(params.runId);
         assertAssignedRun(runId, "write_json");
         if (["design-context.json", "run-state.json"].includes(params.path)) {
@@ -3054,21 +3300,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const path = resolveInside(runDir, params.path);
         await assertRoleWrite(workspaceDir, runId, options.parentInvocation?.agent ?? "orchestrator", path);
         const data = requiredRecord(params.data, params.path);
-        if (CONTEXT_OWNERS[params.path]) {
-          if (!(await hasUnifiedContext(runDir))) throw new Error("Unified context writes require a newly initialized unified Run; legacy projects retain their original contract");
-          const previous = await readFile(path, "utf8").then(JSON.parse).catch((error) => { if (error.code === "ENOENT") return undefined; throw error; });
-          if (previous && Number(data.revision) <= Number(previous.revision)) throw new Error(`${params.path}#/revision: Increment context revision before saving changed content. Current revision: ${previous.revision}; set revision to ${Number(previous.revision) + 1} in the same write or patch.`);
-          signal?.throwIfAborted();
-          const views = contextProjections(params.path, data, runId);
-          if (params.path === CONTEXT_FILES.design) {
-            if ((await classifiedScopes()).length) await persistSkillReceipt();
-            try { await validateDesignScopes(runDir, JSON.parse(views["plan/design_plan.json"]!), JSON.parse(views["plan/deliverable_manifest.json"]!)); }
-            catch (error) { throw new Error(`context/design.json#/deliverables: ${canonicalContextError(error instanceof Error ? error.message : String(error))}. Use assigned scope_id/category and Skills loaded in this invocation.`); }
-          }
-          await saveContextDocument(runDir, params.path, data, runId);
-          const source = await readFile(path, "utf8");
-          return textResult({ ok: true, path: relative(workspaceDir, path), bytes: Buffer.byteLength(source), sha256: createHash("sha256").update(source).digest("hex"), instruction: UNIFIED_CONTEXT_INSTRUCTION });
-        }
+        if (CONTEXT_OWNERS[params.path]) throw new Error("Unified Context uses update_design_context with named changes, then commit_design_context {}. Runtime manages versions.");
 
         const warnings: string[] = [], normalizedFields: Record<string, string> = {};
         if (options.parentInvocation?.agent === "designer") {
@@ -3146,13 +3378,53 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       },
     });
     pi.registerTool(writeJsonTool);
+    const role = options.parentInvocation?.agent;
+    const boundRunId = options.parentInvocation?.runId;
+    const contractVersion = (() => {
+      if (!boundRunId) return 1;
+      try { return Number(JSON.parse(readFileSync(resolveInside(workspaceDir, join("runs", boundRunId, "brief.json")), "utf8")).designContractVersion ?? 1); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return 1; throw error; }
+    })();
+    if (![1, 2].includes(contractVersion)) throw new Error(`Unsupported Run design contract version: ${contractVersion}`);
+    const readBoundContextDraft = role && boundRunId && ["researcher", "designer", "reviewer"].includes(role)
+      ? registerContextAuthoring(pi, { contractVersion, workspaceDir, role, boundRunId, skillActivation, classifiedScopes, availableProfessionals, persistSkillReceipt, assertRoleWrite, finishWorkflow })
+      : undefined;
+
+    const validationFailures = new ContextFailureTracker();
+    if (role === "designer" && boundRunId) pi.registerTool({
+      name: "design_context_validate", label: "Validate committed design",
+      description: "Validate committed structural/Skill/output requirements and exact HTML sources before publication. Optional diagnostic: publication runs the same checks automatically. Do not call after every small update. Returns execution evidence separately from draft readiness. Does not commit or publish. Repair only the exact Context field/source; cache invalidates on changed bytes/contracts/runtime.",
+      parameters: Type.Object({}, { additionalProperties: false }),
+      async execute(_id, _params, signal) {
+        const runDir = resolveInside(workspaceDir, join("runs", boundRunId));
+        const diagnose = (result: Record<string, unknown> & {issues:string[]}) => {
+          const attempts = validationFailures.record(JSON.stringify([...result.issues].sort()), _id);
+          const blocked = attempts >= 3;
+          const diagnosis = { ...result, attempts, blocked, repairOwner:"designer", instruction:blocked ? "Stop this invocation; the same unresolved diagnostic repeated three times. Return exact fields/sources to Orchestrator." : "Repair the exact named field/source. Do not regenerate the entire design or repeat commits of an unchanged invalid specification." };
+          return { ...finishWorkflow(diagnosis, blocked), details:diagnosis };
+        };
+        const readiness = await designerDraftReadiness(runDir);
+        if (!readiness.ok) return diagnose({ ok: false, structuralReadiness: "blocked", executionValidation: "not_run", issues: readiness.issues });
+        try {
+          const contract = deliveryContract(await readJsonRecord(runDir, "plan/design_plan.json"), await readJsonRecord(runDir, "plan/deliverable_manifest.json"));
+          const validation = await assertHtmlSourcePreflight(runDir, contract, signal);
+          validationFailures.clear();
+          return textResult({ ok: true, structuralReadiness: "ready", executionValidation: validation });
+        } catch (error) {
+          signal?.throwIfAborted();
+          return diagnose({ ok: false, structuralReadiness: "ready", executionValidation: "failed", issues: error instanceof DeliveryBlocked ? error.issues : [String(error)] });
+        }
+      },
+    });
+
     pi.registerTool({
       name: "patch_json",
       label: "Patch structured project data",
-      description: "Update changed JSON fields using JSON pointers; updates must be an actual array of {pointer,value} objects, never a JSON string. For unified Context include /revision=currentRevision+1 in the same patch. Review fields use /assessment/verdict, /assessment/review_stage, /assessment/scores, etc.; never root /verdict or /review_stage. /array/- appends one item. Pass the exact 64-character sha256 from a prior context read/save. All normal role and schema validation applies; never rewrite unrelated completed content.",
+      description: "Update changed JSON fields using JSON pointers; updates must be an actual array of {pointer,value} objects, never a JSON string. Canonical Context uses named update_design_context changes and commit_design_context {}; runtime manages versions. /array/- appends one item. Pass the exact 64-character sha256 from a prior context read/save. All normal role and schema validation applies; never rewrite unrelated completed content.",
       parameters: Type.Object({ runId: Type.String(), path: Type.String(), sha256: Type.String(), updates: Type.Array(Type.Object({ pointer: Type.String(), value: Type.Unknown() }), { minItems: 1 }) }),
       async execute(id, params, signal, onUpdate, context) {
-        if (!Array.isArray(params.updates) || params.updates.some(update => !update || typeof update !== "object" || Array.isArray(update))) throw new Error('patch_json updates must be an actual array of {pointer,value} objects, never a JSON string. Include {pointer:"/revision",value:currentRevision+1} for Context patches.');
+        if (!Array.isArray(params.updates) || params.updates.some(update => !update || typeof update !== "object" || Array.isArray(update))) throw new Error('patch_json updates must be an actual array of {pointer,value} objects, never a JSON string. Canonical Context uses named update_design_context changes and commit_design_context {}.');
+        if (CONTEXT_OWNERS[params.path]) throw new Error("Use update_design_context with named changes, then commit_design_context {} for canonical Context; omit paths and hashes.");
         assertAssignedRun(params.runId, "patch_json");
         const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
         const path = resolveInside(runDir, params.path);
@@ -3183,21 +3455,44 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       },
     });
 
+    const contextReadParameters = Type.Object({
+        runId: Type.String(),
+        audience: coordinator ? Type.Literal("orchestrator") : Type.Union([Type.Literal("orchestrator"), Type.Literal("researcher"), Type.Literal("designer"), Type.Literal("reviewer"), Type.Literal("builder")]),
+        paths: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
+        full: Type.Optional(Type.Boolean({ description: "Read complete selected JSON files only when omitted details are required." })),
+        select: Type.Optional(Type.Object({
+          section: Type.Union(["brief", "evidence", "findings", "usageConditions", "system", "strategy", "tasks", "deliverables", "presentation", "acceptanceNotes", "executionNotes", "assessment", "intentCoverage"].map(field => Type.Literal(field))),
+          ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "Select complete tasks/deliverables by stable id." })),
+        }, { additionalProperties: false, description: "Read a complete canonical section from exactly one paths entry. Cannot combine with draft section/ids/canonical. Returned content is read-only." })),
+        ...(["researcher", "designer", "reviewer"].includes(role ?? "") ? {
+        canonical: Type.Optional(Type.Boolean({ description: "Read the complete canonical role Context and observe its version before intentionally resetting a retained draft." })),
+        section: Type.Optional(Type.Union(Object.keys(roleContextSchema(role!, contractVersion).properties).map(field => Type.Literal(field)), { description: "A field of your own role's working draft. For another role's canonical content use paths and select instead." })),
+        ...(role === "designer" ? { ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "Stable ids within your working tasks or deliverables; requires section." })) } : {}),
+        } : {}),
+      }, { additionalProperties: false });
     pi.registerTool({
       name: "design_context_read",
       label: "Read compact Design Context",
-      description: "Read one role-specific, compact, hashed view of the authoritative Run files.",
-      parameters: Type.Object({
-        runId: Type.String(),
-        audience: Type.Union([Type.Literal("researcher"), Type.Literal("designer"), Type.Literal("reviewer"), Type.Literal("builder")]),
-        paths: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
-        full: Type.Optional(Type.Boolean({ description: "Read complete selected JSON files only when omitted details are required." })),
-      }),
+      description: coordinator ? "Read authoritative project, research, design, review and workflow state. Use audience:orchestrator. Expand needed details with paths:[context/research.json] (or context/design.json or context/review.json), full:true, or select:{section,ids?} for a single canonical document. Follow returned readArguments/expansionReads. Reading does not author or approve content." : "Bound specialists may omit runId; runtime supplies only the assigned identity. Read a compact authoritative Context overview. Expand canonical detail with paths:[context/design.json], select:{section:tasks,ids:[task-id]}; select reads only that document and never a working draft. Use paths with full:true for a complete file. Top-level section/ids/canonical read only the bound author's own draft. Follow each overview file's readArguments/expansionReads for omitted detail.",
+      parameters: contextReadParameters,
+      prepareArguments: args => {
+        const record = requiredRecord(args, "design_context_read arguments");
+        return { ...record, ...(record.runId === undefined && boundRunId ? { runId: boundRunId } : {}) } as Static<typeof contextReadParameters>;
+      },
       async execute(_id, params) {
+        if (coordinator && params.audience !== "orchestrator") throw new Error("Orchestrator Context reads require audience:orchestrator.");
         assertAssignedRun(params.runId, "design_context_read");
+        const draftParams = params as typeof params & { section?: string; ids?: string[]; canonical?: boolean };
         const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
+        const acquisition = await researchAcquisition(runDir);
+        if (coordinator && !(await hasUnifiedContext(runDir))) throw new Error("This task requires canonical Context. Preserve the Run and request an explicit data migration before reading or dispatching.");
+        if ((draftParams.section !== undefined || draftParams.ids !== undefined || draftParams.canonical !== undefined) && params.audience !== role) {
+          const target = ({ research: CONTEXT_FILES.research, design: CONTEXT_FILES.design, review: CONTEXT_FILES.review } as Record<string, string>)[draftParams.section ?? ""];
+          throw new Error(`Working Context section reads require your own bound role in a unified Run. For cross-role canonical reads, omit section/ids/canonical and use design_context_read ${JSON.stringify({runId: params.runId, audience: params.audience, ...(target ? {paths:[target]} : {}), full:true})}. Do not fall back to retired split files.`);
+        }
         const common = ["brief.json", "design-context.json", ".performance/user-materials.json"];
         let byAudience: Record<string, readonly string[]> = {
+          orchestrator: [...RUN_CONTEXT_SECTIONS.research, ...STAGE_REQUIRED_FILES.designer!, "review/design-review.json"],
           researcher: RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")),
           designer: [...RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")), "review/design-review.json", ...STAGE_REQUIRED_FILES.designer!],
           reviewer: [...RUN_CONTEXT_SECTIONS.research.filter((path) => !path.endsWith("validation.json")), "plan/design_system.json", "plan/design_plan.json", "plan/deliverable_manifest.json", "plan/acceptance_criteria.md", "plan/task_breakdown.md", "review/design-review.json"],
@@ -3207,18 +3502,56 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         if (unified) {
           common.splice(0, common.length, CONTEXT_FILES.project, "design-context.json", ".performance/user-materials.json");
           byAudience = {
+            orchestrator: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review],
             researcher: [CONTEXT_FILES.research, "research/assets/manifest.json"],
             designer: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review, "research/assets/manifest.json"],
             reviewer: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review, "research/assets/manifest.json"],
             builder: [CONTEXT_FILES.research, CONTEXT_FILES.design, CONTEXT_FILES.review],
           };
         }
-        const designScopeList = briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({})));
+        if (params.select) {
+          if (draftParams.section !== undefined || draftParams.ids !== undefined || draftParams.canonical !== undefined) throw new Error("Use canonical select or draft section/ids/canonical, not both.");
+          if (!unified || params.paths?.length !== 1) throw new Error("Canonical select requires a unified Run and exactly one paths entry.");
+          const path = params.paths[0]!;
+          if (![...common, ...byAudience[params.audience]!].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
+          const owner = ({ [CONTEXT_FILES.research]: "researcher", [CONTEXT_FILES.design]: "designer", [CONTEXT_FILES.review]: "reviewer" } as Record<string, string>)[path];
+          const allowed = owner ? Object.keys(roleContextSchema(owner).properties) : path === CONTEXT_FILES.project ? ["brief"] : [];
+          if (!allowed.includes(params.select.section)) throw new Error(`Canonical section ${params.select.section} is not available in ${path}. Available sections: ${allowed.join(", ")}`);
+          if (params.select.ids && !["tasks", "deliverables"].includes(params.select.section)) throw new Error("Canonical ids selects only tasks or deliverables.");
+          const source = await readFile(resolveInside(runDir, path), "utf8");
+          const document = requiredRecord(parseRunJson(source, path), path);
+          const content = owner ? selectContextSection(owner, owner === "designer" && document.schemaVersion === 2 ? { ...document, tasks: designTasks(document) } : document, params.select.section, params.select.ids) : { brief: document.brief };
+          return textResult({ ok: true, contextFormat: "unified-v1", runId: params.runId, audience: params.audience, researchAcquisition: acquisition,
+            files: [{ path, sha256: createHash("sha256").update(source).digest("hex"), content: JSON.stringify(content), complete: true, truncated: false, omittedPointers: [], selection: params.select }],
+            instruction: "Complete selected canonical content. No working draft was read or changed. Use your own role's draft read before authoring; do not treat this subset as a complete document." });
+        }
+        const briefForRead = await readJsonRecord(runDir, "brief.json").catch((): Record<string, unknown> => ({}));
+        const designVersion = Number(briefForRead.designContractVersion ?? 1);
+        const designScopeList = briefDesignScopes(briefForRead);
+        if (draftParams.canonical && (draftParams.section !== undefined || draftParams.ids !== undefined)) throw new Error("canonical:true reads the complete role Context; omit section/ids before reset.");
+        if (draftParams.section !== undefined || draftParams.ids !== undefined) {
+          if (!draftParams.section) throw new Error("ids requires a Context section");
+          if (params.paths) throw new Error("Use section/ids or paths, not both");
+          if (!unified || !readBoundContextDraft || params.audience !== role) throw new Error("Working Context section reads require your own bound role in a unified Run");
+          if (!Object.hasOwn(roleContextSchema(role!, contractVersion).properties, draftParams.section)) {
+            const designFields = Object.keys(roleContextSchema("designer").properties);
+            const target = designFields.includes(draftParams.section) ? CONTEXT_FILES.design : undefined;
+            const repairRead = { runId: params.runId, audience: params.audience, ...(target ? { paths: [target], select: { section: draftParams.section, ...(draftParams.ids ? { ids: draftParams.ids } : {}) } } : { full: true }) };
+            throw new Error(`Context section is not available to ${role}: ${draftParams.section}. This selector reads your own draft. For canonical input use design_context_read ${JSON.stringify(repairRead)}.`);
+          }
+          const draft = await readBoundContextDraft({ section: draftParams.section, canonical: draftParams.canonical === true, ...(draftParams.ids ? { ids: draftParams.ids } : {}) });
+          return textResult({ ok: true, contextFormat: "unified-v1", runId: params.runId, audience: params.audience, researchAcquisition: acquisition,
+            workingContext: { ...draft, section: draftParams.section, ...(draftParams.ids ? { ids: draftParams.ids } : {}), complete: true, omittedPointers: [] },
+            instruction: "Complete selected working Context. Unselected fields remain unchanged; omitted fields in updates are retained. No files were written." });
+        }
         const skillRecords = params.audience === "researcher" || !designScopeList.length ? [] : [".performance/skills-designer.json"];
         const sourcePaths = params.audience === "researcher" ? [] : await designSourceFiles(runDir).catch(() => []);
+        const ownContextPath = unified && readBoundContextDraft && params.audience === role
+          ? ({ researcher: CONTEXT_FILES.research, designer: CONTEXT_FILES.design, reviewer: CONTEXT_FILES.review } as Record<string, string>)[role!] : undefined;
         const files = [];
         const missingFiles: string[] = [];
-        for (const path of params.paths ?? [...common, ...byAudience[params.audience]!, ...skillRecords]) {
+        for (const path of params.paths ?? [...common, ...byAudience[params.audience]!.filter(path => params.audience !== "researcher" || params.full || path !== "research/assets/manifest.json"), ...skillRecords]) {
+          if (!params.paths && path === ownContextPath) continue;
           if (![...common, ...byAudience[params.audience]!, ...skillRecords, ...sourcePaths].includes(path)) throw new Error(`Context path is not available to ${params.audience}: ${path}`);
           const existing = await findRunDocument(runDir, path);
           const source = await readFile(existing?.absolutePath ?? resolveInside(runDir, path), "utf8").catch((error: NodeJS.ErrnoException) => {
@@ -3237,6 +3570,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             lines: source.split(/\r?\n/u).length,
             truncated: projected ? projected.omittedPointers.length > 0 : !params.full && !isJson && compactSource.length > limit,
             ...(projected ? { omittedPointers: projected.omittedPointers } : {}),
+            readArguments: { runId: params.runId, audience: params.audience, paths: [path], full: true },
+            ...(unified && projected?.omittedPointers.length && Object.values(CONTEXT_FILES).includes(path as typeof CONTEXT_FILES[keyof typeof CONTEXT_FILES]) ? {
+              expansionReads: [...new Set(projected.omittedPointers.map(pointer => pointer.split("/")[1]!))].map(section => ({ runId: params.runId, audience: params.audience, paths: [path], select: { section } })),
+            } : {}),
             content: !params.full && !isJson && compactSource.length > limit ? `${compactSource.slice(0, limit)}\n[truncated; use read for a targeted detail]` : compactSource,
           });
         }
@@ -3260,14 +3597,19 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               viewPath = resolveInside(resolveInside(runDir, "research/assets"), resolveInside(runDir, candidate));
             } catch { viewPath = undefined; }
           }
-          return { asset_id: asset.id, file, viewPath, visual_review_status: asset.visual_review_status ?? "unreviewed", relevance_status: asset.relevance_status ?? "uncertain", relevance_basis: asset.relevance_basis, likely_relevance: asset.likely_relevance ?? asset.description, instruction: viewPath ? "Use view_image(paths) for visual screening; metadata and lexical-match status are not visual evidence." : "Missing or invalid asset path; record the acquisition gap." };
+          return { asset_id: asset.id, file, viewPath, visual_review_status: asset.visual_review_status ?? "unreviewed", relevance_status: asset.relevance_status ?? "uncertain", relevance_basis: asset.relevance_basis, likely_relevance: asset.likely_relevance ?? asset.description, instruction: viewPath ? params.audience === "designer" ? "Use view_image(paths) for adopted or meaningfully considered references; metadata is not visual evidence." : "Designer owns visual reference inspection; acquisition metadata is not visual evidence." : "Missing or invalid asset path; record the acquisition gap." };
         }) : [];
-        const planRecord = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
-        const referenceReview = referenceReviewCoverage(referenceManifest, planRecord);
-        const skillLoading = params.audience === "designer" ? { selectionChecklist: skillReloadChecklist(planRecord, designScopeList.map((scope) => scope.id), skillActivation.all()),
-          instruction: "A new Designer invocation has no loaded Skills. Load all retained primary and supporting selections before correcting/publishing; or explicitly update the plan to match your new selection. This checklist does not activate knowledge." } : undefined;
-        return textResult({ ok: true, ...(unified ? { contextFormat: "unified-v1", authoringContract: UNIFIED_CONTEXT_INSTRUCTION, authoringExample: contextAuthoringExample(params.audience, params.runId), ...(params.audience === "designer" ? { associationContract: { assignedScopes: designScopeList, loadedSkills: skillActivation.all(), rule: "Every task and deliverable needs the exact assigned scope_id/category. Every deliverable needs loaded skill_refs from that scope. A unified design requires system, strategy, tasks, deliverables and presentation in the same saved document; never omit system on the first write." } } : {}) } : { contextFormat: "legacy" }), runId: params.runId, audience: params.audience, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: await designerDraftReadiness(runDir), outputContract: unified ? unifiedDesignSpecificationProtocol(imageSizeCeiling()) : designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), userMaterials: await userMaterialInventory(runDir), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, referenceInventory, referenceReview,
-          instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. For omitted JSON details, call design_context_read with paths containing only the needed file and full=true. Preserve all deliverable and reference identities; an overview is not the complete specification." });
+        const draft = unified && readBoundContextDraft && params.audience === role ? await readBoundContextDraft({ canonical: draftParams.canonical === true }) : undefined;
+        const draftData = draft?.data as Record<string, unknown> | undefined;
+        const canonicalPlan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
+        const guidancePlan = role === "designer" && draftData ? draftData.strategy as Record<string, unknown> | undefined : canonicalPlan;
+        const guidanceSource = role === "designer" && draft ? draft.source : (unified ? "canonical" : "legacy");
+        const referenceReview = { ...referenceReviewCoverage(referenceManifest, guidancePlan), source: guidanceSource };
+        const skillLoading = params.audience === "designer" ? { source: guidanceSource, selectionChecklist: skillReloadChecklist(guidancePlan, designScopeList.map((scope) => scope.id), skillActivation.all()),
+          instruction: "This checklist follows the current working selection and does not activate knowledge. Load retained primary and supporting Skills before commit; change selections through use_skill and update actual skill_refs." } : undefined;
+        const workingContext = draft ? (() => { const projection = params.full || draftParams.canonical ? undefined : projectContext(draft.data, 8000); return { ...draft, data: projection?.content ?? draft.data, ...(projection ? { omittedPointers: projection.omittedPointers } : {}) }; })() : undefined;
+        return textResult({ ok: true, ...(unified ? { contextFormat: "unified-v1", authoringContract: unifiedContextInstruction(params.audience, designVersion), ...(["researcher", "designer", "reviewer"].includes(params.audience) ? { authoringExample: contextChangesExample(params.audience) } : {}), ...(workingContext ? { workingContext } : {}), ...(params.audience === "designer" ? { associationContract: { assignedScopes: designScopeList, loadedSkills: skillActivation.all(), rule: designVersion === 2 ? "Deliverables own identity, scope, output and nested execution; tasks are derived read-only views. Declare production, user_requested and presentation access separately. Use execution.uses for deliverable references. " : "Tasks and deliverables share one stable id. New deliverables require kind,purpose,acceptance_test,required,file. Choose each deliverable's assigned scope_id and actually used skill_refs. Runtime derives category from that scope and task scope/category from the matching deliverable id; supplied conflicting values are rejected. contributing_scopes contains only additional scopes, excluding the primary; [] clears additional contributions. A unified design requires system, strategy, tasks, deliverables and presentation in the same saved document; runtime provides the section skeleton; supply actual content through named changes." } } : {}) } : { contextFormat: "legacy" }), runId: params.runId, audience: params.audience, researchAcquisition: acquisition, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: { ...await designerDraftReadiness(runDir), source: unified ? "canonical" : "legacy", purpose: "Publication/execution checks on committed specifications and sources; working readiness is separate." }, outputContract: unified ? unifiedDesignSpecificationProtocol(imageSizeCeiling(), designVersion) : designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), userMaterials: await userMaterialInventory(runDir), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, referenceInventory, referenceReview,
+          instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. For repairs to your working draft, use section and optional ids for complete affected objects. paths/full reads authoritative files; an overview may omit working fields. Preserve all deliverable and reference identities; an overview is not the complete specification." });
       },
     });
 
@@ -3355,8 +3697,6 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         size: Type.Optional(Type.String()),
       }),
       async execute(_id, params, signal, onUpdate) {
-        const contract = await preflightBeforeImageTool(params.runId, signal);
-        params = bindImageOutput(params, "image_generate", contract);
         const summary = await generateImage(params, signal, (notice) => onUpdate?.({
             content: [{ type: "text", text: `Image generation retry ${notice.nextAttempt}: ${notice.error}` }],
             details: { retry: notice },
@@ -3402,7 +3742,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           const itemStartedAt = performance.now();
           let result: Record<string, unknown>;
           try {
-            result = await generateImage(task, signal, notify, (progress) => onUpdate?.(imageRequestUpdate(progress)));
+            result = await generateImage(task, signal, notify, (progress) => onUpdate?.(imageRequestUpdate(progress)), contract?.strict ? approvedImageTask(workspaceDir, params.runId, contract.tasks.find(entry => entry.id === task.id)!, contract.deliverables.find(item => item.id === task.id)!) : undefined);
           } catch (error) {
             signal?.throwIfAborted();
             result = { ok: false, id: task.id, error: error instanceof Error ? error.message : String(error) };
@@ -3453,6 +3793,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const contract = await preflightBeforeImageTool(params.runId, signal);
         params = bindImageOutput(params, "image_edit", contract);
         approvedImageEdit(params);
+        const approved = contract?.strict ? approvedImageTask(workspaceDir, params.runId, contract.tasks.find(task => task.id === params.id)!, contract.deliverables.find(item => item.id === params.id)!) : undefined;
+        const fingerprint = approved ? await approvedImageFingerprint(approved) : undefined;
         return enqueueImageOperation(async () => {
         const size = params.size ?? imageSizeCeiling();
         assertImageSizeWithinCeiling(size, "image_edit.size");
@@ -3514,6 +3856,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             acceptanceCriteria: params.acceptanceCriteria,
           }, signal, (progress) => onUpdate?.(imageRequestUpdate(progress)),
         );
+        if (approved && fingerprint) await recordApprovedImage(approved, fingerprint);
         const summary = {
           ok: true,
           action: "image_edit",
@@ -3606,21 +3949,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const entries = imagePlan(plan);
         const deliverables = requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable"));
         if (new Set(params.ids).size !== params.ids.length) throw new Error("Plan ids must be unique");
-        const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : typeof value === "string" && value.trim() ? [value] : [];
-        const tasks = params.ids.map((taskId) => {
-          const entry = entries.find((item) => item.id === taskId);
-          const deliverable = deliverables.find((item) => item.id === taskId);
+        const tasks = params.ids.map(taskId => {
+          const entry = entries.find(item => item.id === taskId), deliverable = deliverables.find(item => item.id === taskId);
           if (!entry || !deliverable) throw new Error(`Unknown approved deliverable: ${taskId}`);
-          const method = entry.method ?? deliverable.method;
-          if (!["image_generate", "image_edit"].includes(String(method))) throw new Error(`Unsupported planned method: ${String(method)}`);
-          const prompt = requiredString(entry, "prompt_seed", `Plan ${taskId}`);
-          const negative = typeof entry.negative_prompt_seed === "string" ? entry.negative_prompt_seed.trim() : "";
-          const outputPath = requiredString(deliverable, "file", `Deliverable ${taskId}`);
-          const path = artifactOutputPath(workspaceDir, params.runId, taskId, method === "image_edit" ? "edits" : "generated-images", outputPath);
-          const edit = method === "image_edit" ? approvedImageEdit(entry) : undefined;
-          const referenceImagePaths = (edit?.referenceImagePaths ?? []).map((path) => isAbsolute(path) ? path : path.startsWith("runs/") ? resolveInside(workspaceDir, path) : resolveInside(runDir, path));
-          const acceptanceCriteria = approvedImageAcceptance(entry, deliverable);
-          return { id: taskId, method, path, outputPath, prompt: negative ? `${prompt}\n\nAvoid: ${negative}` : prompt, size: typeof entry.size === "string" ? entry.size : imageSizeCeiling(), intent: typeof entry.intent === "string" ? entry.intent : typeof deliverable.purpose === "string" ? deliverable.purpose : taskId, acceptanceCriteria, preserve: edit?.preserve ?? strings(entry.preserve ?? entry.preservation_rules ?? entry.preservation), referenceImagePaths, diagnosis: edit?.diagnosis ?? [], changes: edit?.changes ?? [] };
+          return approvedImageTask(workspaceDir, params.runId, entry, deliverable);
         });
         const pending = [...tasks];
         const results: Record<string, unknown>[] = [];
@@ -3634,21 +3966,20 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             let result: Record<string, unknown>;
             try {
               if (task.referenceImagePaths.some((path) => unsuccessful.has(path))) throw new Error("Required source generation failed");
-              const referenceHashes = await Promise.all(task.referenceImagePaths.map(async (path) => { await assertAssignedRead(path, context?.cwd ?? workspaceDir); return createHash("sha256").update(await readFile(path)).digest("hex"); }));
-              const fingerprint = createHash("sha256").update(JSON.stringify({ task, referenceHashes })).digest("hex");
+              for (const path of task.referenceImagePaths) await assertAssignedRead(path, context?.cwd ?? workspaceDir);
+              const fingerprint = await approvedImageFingerprint(task);
               const sidecar = params.reuse !== false ? await readFile(`${task.path}.json`, "utf8").then((text) => JSON.parse(text) as Record<string, unknown>).catch(() => undefined) : undefined;
               const bytes = sidecar?.planFingerprint === fingerprint ? await readFile(task.path).catch(() => undefined) : undefined;
               if (bytes?.length && imageBytesMatchPath(bytes, task.outputPath) && createHash("sha256").update(bytes).digest("hex") === sidecar?.imageSha256) {
                 result = { ok: true, id: task.id, path: relative(workspaceDir, task.path), reused: true };
               } else {
-                if (task.method === "image_generate") result = await generateImage({ runId: params.runId, ...task }, signal, (notice) => onUpdate?.(textResult({ retry: notice, id: task.id })), (progress) => onUpdate?.(imageRequestUpdate(progress)));
+                if (task.method === "image_generate") result = await generateImage({ runId: params.runId, ...task }, signal, (notice) => onUpdate?.(textResult({ retry: notice, id: task.id })), (progress) => onUpdate?.(imageRequestUpdate(progress)), task);
                 else {
                   if (!task.referenceImagePaths.length || !task.diagnosis.length || !task.changes.length || !task.preserve.length) throw new Error(`Plan ${task.id} needs explicit referenceImagePaths, diagnosis, changes and preserve; request specification correction`);
                   const edited = await imageEditTool.execute(`${id}:${task.id}`, { runId: params.runId, ...task }, signal, onUpdate, context);
                   result = { ...(edited.details as Record<string, unknown>), id: task.id };
                 }
-                const current = JSON.parse(await readFile(`${task.path}.json`, "utf8")) as Record<string, unknown>;
-                await writeFile(`${task.path}.json`, JSON.stringify({ ...current, planFingerprint: fingerprint, imageSha256: createHash("sha256").update(await readFile(task.path)).digest("hex") }, null, 2));
+                await recordApprovedImage(task, fingerprint);
               }
             } catch (error) {
               signal?.throwIfAborted();
@@ -3913,7 +4244,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
           await updateRunState(workspaceDir, runId, "build_done");
           await updateDesignContextIndex(workspaceDir, runId, "build_done");
-          return finishWorkflow({ ok: true, runId, event, ...delivery }, process.env.DREAMATIC_STOP_AFTER_COMMIT?.trim().toLowerCase() !== "false");
+          return finishWorkflow({ ok: true, runId, event, ...delivery, nextAction: { tool: "export_package", arguments: { runId } }, instruction: "Build committed. Stop this specialist. Orchestrator must call export_package immediately without reading artifacts or starting a specialist." }, process.env.DREAMATIC_STOP_AFTER_COMMIT?.trim().toLowerCase() !== "false");
         }
         if (briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length) {
           await assertStageCommitted(workspaceDir, runId, "designer", 0, true);
@@ -4018,7 +4349,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         await appendFile(join(runDir, "bus.jsonl"), `${JSON.stringify(event)}\n`, "utf8");
         await updateRunState(workspaceDir, runId, "build_done");
         await updateDesignContextIndex(workspaceDir, runId, "build_done");
-        return finishWorkflow({ ok: true, runId, event, artifacts, lint }, process.env.DREAMATIC_STOP_AFTER_COMMIT?.trim().toLowerCase() !== "false");
+        return finishWorkflow({ ok: true, runId, event, artifacts, lint, nextAction: { tool: "export_package", arguments: { runId } }, instruction: "Build committed. Stop this specialist. Orchestrator must call export_package immediately without reading artifacts or starting a specialist." }, process.env.DREAMATIC_STOP_AFTER_COMMIT?.trim().toLowerCase() !== "false");
       },
     });
 
@@ -4062,13 +4393,16 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       description: "Package the finalized presentation, artifacts, plans, research and review. Preserve content and layout. HTML delivery keeps its actual page entry; Gallery delivery only adapts the resource base. Never generate replacement presentation content.",
       parameters: Type.Object({
         runId: Type.String(),
-        runDir: Type.String(),
+        runDir: Type.Optional(Type.String({ description: "Compatibility path; defaults to the canonical runs/<runId> directory and cannot target another Run." })),
         finalDir: Type.Optional(Type.String()),
         brief: Type.Optional(Type.String()),
       }),
       async execute(_id, params) {
         const runId = safeRunId(params.runId);
-        const runDir = resolveInside(workspaceDir, params.runDir);
+        assertAssignedRun(runId, "export_package");
+        const canonicalRunDir = resolveInside(workspaceDir, join("runs", runId));
+        const runDir = resolveInside(workspaceDir, params.runDir ?? join("runs", runId));
+        if (runDir !== canonicalRunDir) throw new Error("export_package runDir must match its canonical runId; no files were exported");
         const busEvents = (await readFile(join(runDir, "bus.jsonl"), "utf8").catch(() => ""))
           .split(/\r?\n/)
           .filter(Boolean)
@@ -4084,6 +4418,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const lint = await readJsonRecord(runDir, "artifacts/lint-report.json");
         if (lint.ok !== true) throw new Error(`Run ${runId} cannot be exported before Builder mechanical lint passes`);
         const builtManifest = await readJsonRecord(runDir, "artifacts/artifact-manifest.json").catch(() => undefined);
+        const exportContract = builtManifest?.schemaVersion === 2 ? deliveryContract(await readJsonRecord(runDir, "plan/design_plan.json"), await readJsonRecord(runDir, "plan/deliverable_manifest.json")) : undefined;
+        if (exportContract?.deliverables.some(item => (item.presentation as { required?: boolean } | undefined)?.required)) {
+          const validation = await checkHtmlBrowser(runDir, exportContract);
+          if (validation.status !== "completed") throw new DeliveryBlocked("runtime", [validation.reason ?? "Export presentation validation unavailable"]);
+          if (!validation.passed) throw new DeliveryBlocked("designer", validation.issues);
+        }
         const typedPresentation = builtManifest?.schemaVersion === 2 ? deliveryContract(await readJsonRecord(runDir, "plan/design_plan.json"), await readJsonRecord(runDir, "plan/deliverable_manifest.json")).presentation : undefined;
         if (typedPresentation || briefDesignScopes(await readJsonRecord(runDir, "brief.json").catch(() => ({}))).length) {
           await assertStageCommitted(workspaceDir, runId, "designer", 0);

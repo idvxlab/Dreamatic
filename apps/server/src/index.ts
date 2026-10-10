@@ -356,7 +356,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
     if (request.method === "POST" && publishMatch?.[1]) {
-      json(response, 201, await publishProject(workspaceDir, decodeURIComponent(publishMatch[1]), await body(request), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL, (await readRuntimeConfig(configRoot)).values));
+      json(response, 201, await publishProject(workspaceDir, decodeURIComponent(publishMatch[1]), await body(request), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL, { ...process.env }));
       return;
     }
     const exportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/export$/);

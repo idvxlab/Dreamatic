@@ -105,14 +105,10 @@ export async function renameRun(workspaceDir: string, unsafeRunId: string, unsaf
   const runDir = join(workspaceDir, "runs", runId);
   const info = await stat(runDir).catch(() => null);
   if (!info?.isDirectory()) throw new Error("Project not found");
-  const briefPath = join(runDir, "brief.json");
-  const brief: Record<string, unknown> = await readFile(briefPath, "utf8").then((source) => record(JSON.parse(source) as unknown)).catch(() => ({}));
-  brief.title = title;
-  brief.resolvedScope = { ...record(brief.resolvedScope), human_title: title };
-  const temporary = `${briefPath}.${process.pid}.tmp`;
-  await writeFile(temporary, JSON.stringify(brief, null, 2), "utf8");
-  await rename(temporary, briefPath);
-  if (await hasUnifiedContext(runDir)) await syncProjectContext(runDir, brief);
+  const metadataPath = join(runDir, "project-display.json");
+  const temporary = `${metadataPath}.${randomUUID()}.tmp`;
+  await writeFile(temporary, JSON.stringify({ title }, null, 2), "utf8");
+  await rename(temporary, metadataPath);
   return { id: runId, title };
 }
 
@@ -612,7 +608,7 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
     const documents = files
       .filter((path) => {
         const runPath = relative(runDir, path).replaceAll("\\", "/");
-        return !runPath.startsWith("final/") && !runPath.startsWith(".performance/") && !/\.(page-cache|acquisition-budget)\.json$/u.test(path) && /\.(md|json)$/i.test(path) && !/[\\/](brief|run-state)\.json$/i.test(path);
+        return !runPath.startsWith("final/") && !runPath.startsWith(".performance/") && !/\.(page-cache|acquisition-budget)\.json$/u.test(path) && /\.(md|json)$/i.test(path) && !/[\\/](brief|run-state|project-display)\.json$/i.test(path);
       })
       .map((path) => relative(runDir, path).replaceAll("\\", "/"));
     const session = options.summary && typeof brief.sessionId === "string" ? { sessionId: brief.sessionId, activity: [] } : await sessionActivity(workspaceDir, entry.name);
@@ -621,7 +617,8 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       .sort((a, b) => String(a.at ?? "").localeCompare(String(b.at ?? "")))
       .slice(-40);
     const rawBrief = typeof brief.brief === "string" ? brief.brief.trim() : "";
-    const title = [scope.human_title, brief.title, scope.run_name]
+    const display = await readFile(join(runDir, "project-display.json"), "utf8").then(source => record(JSON.parse(source))).catch(() => ({} as Record<string, unknown>));
+    const title = [display.title, scope.human_title, brief.title, scope.run_name]
       .find((value): value is string => typeof value === "string" && Boolean(value.trim()))
       ?? (rawBrief ? rawBrief.slice(0, 72) : entry.name);
     const stages = Object.fromEntries(Object.entries(record(state.stages)).filter((pair): pair is [string, string] => typeof pair[1] === "string"));

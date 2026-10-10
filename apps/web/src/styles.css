@@ -141,6 +141,7 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .timeline-item { position: relative; display: grid; grid-template-columns: 20px 1fr; gap: 6px; padding: 7px 0; }
 .timeline-item:not(:last-child)::after { content: ""; position: absolute; left: 9px; top: 29px; bottom: -7px; width: 1px; background: #dddcd5; }
 .timeline-dot { position: relative; z-index: 1; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; background: #e7e6df; color: #8a8c83; }
+.timeline-item.running .timeline-dot { color: #987b32; background: #f6edcf; }
 .timeline-item.result .timeline-dot { color: #638245; background: #e3ecd8; }
 .timeline-item.error .timeline-dot { color: #a34c3a; background: #f2ded7; }
 .timeline-item strong { display: block; padding-top: 2px; font-size: 10.5px; font-weight: 500; }
@@ -180,10 +181,9 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .workflow-node { position: relative; min-width: 0; display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 7px; padding: 6px 0; }
 .workflow-node:not(:last-child)::after { content: ""; position: absolute; z-index: 0; left: 10px; top: 28px; bottom: -9px; width: 1px; background: #dddcd5; }
 .workflow-dot { position: relative; z-index: 1; width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: #e6e5de; color: #85877f; }
-.workflow-node.completed > .workflow-dot, .workflow-node.kind-milestone > .workflow-dot { color: #638245; background: #e3ecd8; }
+.workflow-node.running > .workflow-dot { color: #987b32; background: #f6edcf; }
+.workflow-node.completed > .workflow-dot { color: #638245; background: #e3ecd8; }
 .workflow-node.error > .workflow-dot, .workflow-node.interrupted > .workflow-dot, .workflow-node.kind-error > .workflow-dot { color: #a34c3a; background: #f2ded7; }
-.workflow-agent-node > .workflow-dot { color: #607543; background: #dfe8d1; }
-.workflow-reference-node > .workflow-dot { color: #916632; background: #eee2cf; }
 .workflow-agent-card, .workflow-reference-card, .workflow-event-card { min-width: 0; }
 .workflow-agent-card > summary, .workflow-reference-card > summary, .workflow-event-card > summary { min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 7px; list-style: none; cursor: pointer; }
 .workflow-agent-card > summary::-webkit-details-marker, .workflow-reference-card > summary::-webkit-details-marker, .workflow-event-card > summary::-webkit-details-marker { display: none; }

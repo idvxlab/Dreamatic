@@ -1,7 +1,15 @@
 # Legacy parity matrix
 
-This matrix tracks the union of Atelier's `dev` and `dev-UI` branches. A checked
-item is implemented in the new architecture, not merely copied.
+Historical migration checklist for the union of Atelier's `dev` and `dev-UI`
+branches. Checkmarks record migration milestones, not current role permissions or
+workflow instructions. See [Architecture](ARCHITECTURE.md) and
+[Unified Design Context](DESIGN-CONTEXT.md) for current contracts.
+
+Current visual policy: Designer inspects reference images; Builder performs
+approved one-pass execution without generated-image comparison, selection or
+post-generation visual audits. Historical compare/selection tool implementations
+do not grant any active role permission to use them. Generated outputs are passed
+as persisted paths and metadata, not returned for a second visual approval loop.
 
 ## Runtime delegated to Pi
 
@@ -64,3 +72,13 @@ item is implemented in the new architecture, not merely copied.
 - [ ] Exact legacy artifact-manifest and gallery contracts
 - [x] Persona/subagent adapter matching the current five design roles
 - [x] Self-contained final package export
+
+## Design contract v2
+
+New Run initialization pins `designContractVersion: 2`. Existing unified/split-file
+Runs retain their version. An explicit completed unified Run revision can request
+`upgradeDesignContract:true`; conversion is checked before opening the revision,
+then a v2 draft is created against the original canonical hash after archival.
+Archived delivery/receipts and current canonical bytes stay unchanged until Designer
+reconciles and commits. New approval and build are mandatory. Split-file upgrades
+are rejected before archival; ordinary reads/revisions never migrate data.

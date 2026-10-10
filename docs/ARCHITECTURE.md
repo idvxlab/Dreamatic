@@ -38,8 +38,10 @@ User -> Orchestrator -> Researcher -> Designer -> Reviewer
 
 - Agents reason.
 - Design Context remembers through durable Run files.
-- Orchestrator owns routing, state, gates, and bounded loops.
-- Builder executes only an approved Design Context.
+- Orchestrator routes work and bounded loops through runtime lifecycle tools.
+- Runtime persists state and enforces ownership, approval and execution gates.
+- Builder executes approved deliverables and owns their Gallery presentation;
+  Designer owns deliverable HTML page design.
 - Reviewer challenges Designer's proposal and never becomes a second Designer.
 
 ## Ownership
@@ -64,14 +66,23 @@ HTML page sources. Reviewer approves that specification; Builder mechanically
 dispatches approved image/HTML tasks. Existing image execution is retained.
 HTML pages can be the presentation themselves; mixed Galleries link the pages.
 The server serves interactive previews on an isolated committed-file origin.
-See [v2.0.3 contracts and Skill mapping](V2.0.3.md) for ownership, compatibility,
-output contracts and extension points.
+See [Design Context](DESIGN-CONTEXT.md) for current authoring and approval contracts,
+and [v2.0.3](V2.0.3.md) for the versioned execution and Skill mapping background.
 
 ## Unified Design Context
 
-New Runs use four role-owned documents under `context/`: project, research, design
-and review. Execution and UI report views derive from those documents in memory;
+New Runs use four authoritative documents under `context/`: runtime-owned project
+metadata and specialist-authored research, design and review. Execution and UI
+report views derive from those documents in memory;
 new Runs never persist the old research/plan/review Context files.
 Legacy Runs retain their storage and approval contracts. See
 [Design Context](DESIGN-CONTEXT.md) for schema, ownership, derived reports,
 revision/hash rules and recovery behavior.
+
+New Runs pin design contract v2 in Brief. One authored deliverable owns identity,
+scope, output, production/user-access obligations and nested execution; task views
+are derived. Scoped Skill bindings are independent of invocation-local body loading.
+Structure, source preflight, final real-asset validation and user acceptance remain
+separate evidence. Presentation and interaction obligations gate publication,
+review, finalization and export; Reviewer severity cannot waive them. Explicit
+completed-Run revision upgrades create converted drafts behind archived receipts.

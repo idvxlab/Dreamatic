@@ -28,7 +28,8 @@ test("draft requests retain user text through clarification and artistic project
     const brief = JSON.parse(await readFile(join(workspace, "runs", run.id, "brief.json"), "utf8"));
     assert.equal(brief.originalRequest, original);
     assert.equal(brief.originalRequestSource, "server_user_input");
-    assert.equal(brief.title, "织忆新展");
+    assert.equal(brief.title, original.trim());
+    assert.equal((await runInventory(workspace))[0].title, "织忆新展");
     assert.equal(brief.brief, original.trim());
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -386,15 +387,20 @@ test("unified project metadata stays consistent through session attachment and r
     createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
     await tools.get("run_init").execute("init", { runIdOverride: "demo", projectTitle: "Academic work", brief: "Design a page", designScopes: [{ id: "ui", category: "ux", task: "Academic page" }] });
     await attachSessionToRun(workspace, "demo", "session-new");
+    const beforeProject = await readFile(join(workspace,"runs/demo/context/project.json"),"utf8");
+    const beforeBrief = await readFile(join(workspace,"runs/demo/brief.json"),"utf8");
     await renameRun(workspace, "demo", "Research studio");
+    assert.equal(await readFile(join(workspace,"runs/demo/context/project.json"),"utf8"),beforeProject);
+    assert.equal(await readFile(join(workspace,"runs/demo/brief.json"),"utf8"),beforeBrief);
     const runDir = join(workspace, "runs/demo");
     const project = JSON.parse(await readFile(join(runDir, "context/project.json"), "utf8"));
     const brief = JSON.parse(await readFile(join(runDir, "brief.json"), "utf8"));
     assert.deepEqual(project.brief, brief);
     assert.equal(project.brief.sessionId, "session-new");
-    assert.equal(project.brief.title, "Research studio");
+    assert.equal(project.brief.title, "Academic work");
+    assert.equal((await runInventory(workspace))[0].title, "Research studio");
     assert.equal(project.brief.originalRequest, null);
-    assert.equal(project.revision, 3);
+    assert.equal(project.revision, 2);
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 

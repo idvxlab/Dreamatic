@@ -148,11 +148,13 @@ For each planned image, provide:
 
 Width and height must not exceed the runtime ceiling supplied by the system from `DREAMATIC_IMAGE_DEFAULT_SIZE`. Treat that ceiling as dynamic; do not hard-code a model-specific maximum. Use the lowest adequate resolution for diagrams, supporting views, contact sheets, or exploratory assets, and reserve larger outputs for hero images or detail-critical views.
 
-For schemaVersion 2, every image is one `execution_plan` task with `id` matching
-its manifest deliverable, plus complete prompt_seed, negative_prompt_seed, size
-and size_rationale. Scheduling groups and `deliverable_id` do not replace these
-fields; prompts in a separate legacy array are not executed by schemaVersion 2.
-Declare one exact Run-relative output filename and matching sizes in the manifest.
+Use the runtime's injected design contract version. In unified v2, author one
+`deliverables` item per image: id/file/scope/skill_refs and acceptance belong on
+the deliverable; method, prompt_seed, negative_prompt_seed, size and size_rationale
+belong in its nested `execution`. Do not author tasks or repeat method/size at the
+root of the deliverable. In historical unified v1 these execution fields belong
+in the matching `tasks` item. Scheduling groups never replace individual
+outputs. Declare one exact Run-relative filename on each deliverable.
 Use PNG by default; JPG/JPEG are supported as lossy opaque delivery formats.
 The extension selects the saved encoding; b64_json/url describe transport only.
 Builder reads that same manifest path by id and must not invent another filename.

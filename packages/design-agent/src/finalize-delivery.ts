@@ -1,9 +1,10 @@
+import { approvedImageTask, approvedImageFingerprint } from "./approved-image.js";
 import { readRunContext, hasUnifiedContext, CONTEXT_FILES } from "./context-model.js";
 import { collectModelUsage, annotateModelUsage, writeModelPreview } from "./model-usage.js";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { deliveryContract, fileHash, htmlTask, physicalRunFile, validateDeliveryContract } from "./design-contract.js";
-import { lintGalleryPresentation, lintHtmlDelivery } from "./html-delivery.js";
+import { checkHtmlBrowser, lintGalleryPresentation, lintHtmlDelivery } from "./html-delivery.js";
 import { appendShowcaseReferences, annotateShowcasePrompts } from "./showcase.js";
 import { imageBytesMatchPath, imageOutputFormat } from "./image-output.js";
 import { resolveInside } from "./paths.js";
@@ -12,7 +13,7 @@ import { BuildIncomplete, DeliveryBlocked } from "./delivery-block.js";
 /** Presentation is a viewing entry, not a filter on the approved deliverables. */
 export async function pendingRequiredOutputs(runDir: string, contract: ReturnType<typeof deliveryContract>) {
   const pending: Array<{ id: string; method: string; files: string[] }> = [];
-  for (const deliverable of contract.deliverables.filter((item) => item.required === true)) {
+  for (const deliverable of contract.deliverables.filter((item) => item.required === true || (item.presentation as { required?: boolean } | undefined)?.required === true)) {
     const task = contract.tasks.find((item) => item.id === deliverable.id);
     const files = [String(deliverable.file), ...(task?.method === "html_generate" ? [...htmlTask(task).files, ...htmlTask(task).resources].map((file) => file.output) : [])];
     const missing: string[] = [];
@@ -37,6 +38,14 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
     if (!info?.size) { if (deliverable.required === true) throw new Error(`Required build output is missing or empty: ${path}`); continue; }
     const generatedImage = ["image_generate", "image_edit"].includes(String(deliverable.method));
     if (generatedImage && !imageBytesMatchPath(await readFile(await physicalRunFile(runDir, path)), path)) throw new DeliveryBlocked("runtime", [`Image encoding does not match the declared output path: ${path}. Use the image output encoder; do not rename bytes or change the approved manifest.`]);
+    if (generatedImage) {
+      const task = contract.tasks.find(task => task.id === deliverable.id);
+      if (!task) throw new Error(`Missing approved image task: ${String(deliverable.id)}`);
+      const approved = approvedImageTask(dirname(dirname(runDir)), runId, task, deliverable);
+      const sidecar = await readFile(`${approved.path}.json`, "utf8").then(source => JSON.parse(source)).catch(() => undefined);
+      if (sidecar?.planFingerprint !== await approvedImageFingerprint(approved) || sidecar?.imageSha256 !== await fileHash(runDir, path))
+        throw new DeliveryBlocked("runtime", [`Image ${String(deliverable.id)} has no matching approved execution evidence. Execute the approved task by id before finalizing.`]);
+    }
     const mimeType = generatedImage ? imageOutputFormat(path) === "png" ? "image/png" : "image/jpeg" : undefined;
     artifacts.push({ ...(mimeType ? { mimeType } : {}), deliverableId: deliverable.id, path, method: deliverable.method, scope_id: deliverable.scope_id, category: deliverable.category, skill_refs: deliverable.skill_refs, contributing_scopes: deliverable.contributing_scopes, bytes: info.size, sha256: await fileHash(runDir, path), provenance: { plan: await hasUnifiedContext(runDir) ? CONTEXT_FILES.design : "plan/design_plan.json" }, executionResult: "created" });
   }
@@ -63,13 +72,13 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
     lint.ok = lint.issues.length === 0;
   }
   if (!await physicalRunFile(runDir, contract.presentation.entry).then(async (path) => (await stat(path)).size > 0).catch(() => false)) { lint.ok = false; lint.issues.push("Presentation entry is missing or empty"); }
-  // Source interaction/viewport validation belongs to Designer publication and Reviewer approval.
-  // Builder validates exact approved output bytes and resource/file integrity only.
-  const browser = { status: "not_run", passed: false, issues: [] as string[], reason: "Builder performs integrity checks only; source interactions are validated before approval." };
+  const browser = await checkHtmlBrowser(runDir, completed, signal);
+  if (browser.status === "completed") { lint.issues.push(...browser.issues); lint.ok = lint.ok && browser.passed; }
+  else if (process.env.DREAMATIC_HTML_REQUIRE_BROWSER === "true" || contract.deliverables.some(item => (item.presentation as { required?: boolean } | undefined)?.required)) throw new DeliveryBlocked("runtime", [browser.reason ?? "Required presentation/interaction validation is unavailable"]);
   const lintReport = { runId, ...lint, browser };
   await writeFile(join(artifactsDir, "lint-report.json"), JSON.stringify(lintReport, null, 2));
   if (!lint.ok) throw new DeliveryBlocked("designer", lint.issues);
-  const artifactManifest = { modelUsage, ...(modelPreviewEntry ? { modelPreviewEntry } : {}), schemaVersion: 2, runId, generatedAt: new Date().toISOString(), presentation: contract.presentation, previewFiles: lint.files, htmlEntries: completed.tasks.filter((task) => task.method === "html_generate").flatMap((task) => htmlTask(task).files.filter((file) => file.output.endsWith(".html")).map((file) => file.output)), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "passed", interactions: "not_assessed", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts };
+  const artifactManifest = { modelUsage, ...(modelPreviewEntry ? { modelPreviewEntry } : {}), schemaVersion: 2, runId, generatedAt: new Date().toISOString(), presentation: contract.presentation, previewFiles: lint.files, htmlEntries: completed.tasks.filter((task) => task.method === "html_generate").flatMap((task) => htmlTask(task).files.filter((file) => file.output.endsWith(".html")).map((file) => file.output)), qualityEvidence: { designSpec: "reviewed", fileIntegrity: "passed", interactions: browser.status === "completed" ? "passed" : "unverified", visualFidelity: "not_assessed", engineeringFeasibility: "not_validated", userAcceptance: "pending" }, artifacts };
   await writeFile(join(artifactsDir, "artifact-manifest.json"), JSON.stringify(artifactManifest, null, 2));
   return { artifacts, lint: lintReport, presentation: contract.presentation, files: [...new Set(["artifacts/artifact-manifest.json", "artifacts/model-usage.json", "artifacts/lint-report.json", contract.presentation.entry, ...(modelPreviewEntry ? [modelPreviewEntry] : []), ...artifacts.map((item) => item.path), ...lint.files])] };
 }

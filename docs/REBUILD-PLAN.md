@@ -1,5 +1,10 @@
 # DreamaticArt rebuild plan
 
+Historical rebuild plan. Its directory layout describes the original split-file
+workflow. New Runs use [Unified Design Context](DESIGN-CONTEXT.md); legacy Runs
+retain their original contract. Current boundaries are in
+[Architecture](ARCHITECTURE.md), rather than this delivery checklist.
+
 ## Product outcome
 
 DreamaticArt turns one design brief into a durable, inspectable design package.
@@ -77,8 +82,8 @@ image payloads or duplicated documents.
 ## Asset and visual-context policy
 
 References and generated images are stored once and passed between stages as
-paths plus compact metadata. Researcher and Designer may inspect bounded
-reference previews while Run assets retain their original resolution. Builder
+paths plus compact metadata. Researcher screens acquisition metadata; Designer
+may inspect bounded reference previews while originals retain their resolution. Builder
 uses one-pass generation/editing and receives persisted paths rather than image
 payloads, so successful production does not trigger a second visual audit.
 Base64 image blocks are not copied into Design Bus events. Resumable stage

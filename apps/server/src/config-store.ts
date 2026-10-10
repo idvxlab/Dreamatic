@@ -1,3 +1,4 @@
+import { modelCapabilities } from "@dreamatic/design-agent";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,6 +6,9 @@ import { parseEnv } from "node:util";
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export const CONFIG_FIELDS: ConfigField[] = [
+  { key: "DREAMATIC_MODEL_GENERATION_TIMEOUT_MS", label: "Model generation timeout (ms)", module: "system", example: "300000", description: "Allowance after the first nonempty model output.", type: "number", defaultValue: "300000", min: 30000, max: 86400000 },
+  { key: "DREAMATIC_MODEL_TOTAL_TIMEOUT_MS", label: "Model total response timeout (ms)", module: "system", example: "600000", description: "Optional absolute cap, at least the first-output allowance. Blank uses first-output plus generation allowance.", type: "number", defaultValue: "", min: 30000, max: 86400000 },
+  { key: "DREAMATIC_MODEL_CAPABILITIES", label: "Endpoint model capabilities (JSON)", module: "reasoning", example: '{"qwen3.7-plus":{"reasoning":true,"thinkingFormat":"qwen"}}', description: "Exact model ids and verified capabilities. supportsStrictMode:true enables supported constrained tool schemas; keep unset until endpoint support is verified.", type: "text", defaultValue: "" },
   { key: "DREAMATIC_SITE_URL", label: "DreamaticSite URL", module: "system", example: "https://www.dreamatic.art/", description: "Official website for Publish. Use HTTPS; localhost HTTP is allowed for development. No login is required.", type: "url", defaultValue: "https://www.dreamatic.art/" },
   {
     "key": "DREAMATIC_SEARCH_PROVIDER",
@@ -307,7 +311,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "description": "Applied automatically after saving. The desktop app manages its local service port.",
     "type": "number",
     "defaultValue": "4310",
-    "min": 1,
+    "min": 0,
     "max": 65535,
     "restartRequired": false
   },
@@ -431,7 +435,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
   },
   {
     "key": "DREAMATIC_MODEL_TURN_TIMEOUT_MS",
-    "label": "Model turn timeout (ms)",
+    "label": "Model first output timeout (ms)",
     "module": "system",
     "example": "300000",
     "description": "",
@@ -442,7 +446,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
   },
   {
     "key": "DREAMATIC_MODEL_TURN_TIMEOUT_MS_RESEARCHER",
-    "label": "Researcher turn timeout (ms)",
+    "label": "Researcher first output timeout (ms)",
     "module": "system",
     "example": "180000",
     "description": "",
@@ -579,11 +583,11 @@ async function source(path: string) { return readFile(path, "utf8").catch((error
 export async function readRuntimeConfig(repoRoot: string, env: NodeJS.ProcessEnv = process.env) {
   const envPath = join(repoRoot, ".env"), disk = parseEnv(await source(envPath));
   // Explicit .env values win, including intentional blanks. Do not expose secret values.
-  for (const field of CONFIG_FIELDS) if (Object.hasOwn(disk, field.key)) env[field.key] = disk[field.key];
   const values = Object.fromEntries(CONFIG_FIELDS.filter((field) => field.type !== "secret").map((field) => [field.key, disk[field.key] ?? env[field.key] ?? field.defaultValue]));
   const secretConfigured = Object.fromEntries(CONFIG_FIELDS.filter((field) => field.type === "secret").map((field) => [field.key, Boolean((disk[field.key] ?? env[field.key])?.trim())]));
   const merged = { ...env, ...disk };
-  return { ...Object.fromEntries(Object.entries(LEGACY_KEYS).map(([field, key]) => [field, values[key] ?? ""])), envPath, modules: CONFIG_MODULES, fields: CONFIG_FIELDS, values, secretConfigured,
+  const pendingApply = CONFIG_FIELDS.some(field => Object.hasOwn(disk, field.key) && disk[field.key] !== (env[field.key] ?? field.defaultValue));
+  return { ...Object.fromEntries(Object.entries(LEGACY_KEYS).map(([field, key]) => [field, values[key] ?? ""])), envPath, pendingApply, modules: CONFIG_MODULES, fields: CONFIG_FIELDS, values, secretConfigured,
     textApiKeyConfigured: secretConfigured.DREAMATIC_API_KEY,
     searchApiKeyConfigured: secretConfigured.DREAMATIC_SEARCH_API_KEY || Boolean(merged.SERPER_API_KEY),
     imageApiKeyConfigured: secretConfigured.DREAMATIC_IMAGE_API_KEY || secretConfigured.DREAMATIC_API_KEY,
@@ -594,6 +598,12 @@ function validate(field: ConfigField, value: unknown): string {
   const trimmed = value.trim();
   if (field.options && !field.options.includes(trimmed)) throw new Error(`${field.label}: Unsupported option`);
   if (field.type === "url" && trimmed) { let url; try { url = new URL(trimmed); } catch { throw new Error(`${field.label}: Enter a complete HTTP(S) URL`); } if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(`${field.label}: Enter an HTTP(S) URL without embedded credentials`); }
+  if (field.key === "DREAMATIC_MODEL_CAPABILITIES" && trimmed) {
+    const capabilities: unknown = JSON.parse(trimmed);
+    if (!capabilities || typeof capabilities !== "object" || Array.isArray(capabilities)) throw new Error("Model capabilities must be a JSON object");
+    for (const id of Object.keys(capabilities)) modelCapabilities(id, trimmed);
+  }
+  if (field.type === "number" && !trimmed && field.defaultValue === "") return "";
   if (field.type === "number" && (!/^\d+$/u.test(trimmed) || !Number.isSafeInteger(Number(trimmed)) || Number(trimmed) < field.min! || Number(trimmed) > field.max!)) throw new Error(`${field.label}: Enter an integer between ${field.min} and ${field.max}`);
   return trimmed;
 }
@@ -630,12 +640,16 @@ export async function saveRuntimeConfig(repoRoot: string, input: Record<string, 
       else if (!written.has(key)) { lines.push(`${key}=${encoded.get(key)}`); written.add(key); }
     }
     for (const [key, value] of encoded) if (!written.has(key)) lines.push(`${key}=${value}`);
+    const nextText = `${lines.join("\n").replace(/\n+$/u, "")}\n`;
+    const persisted = parseEnv(nextText);
+    for (const field of CONFIG_FIELDS) if (Object.hasOwn(persisted, field.key)) validate(field, persisted[field.key]);
     const temporary = `${path}.${randomUUID()}.tmp`;
     try {
       const mode = await stat(path).then((info) => info.mode & 0o777).catch((error) => { if (error.code === "ENOENT") return 0o600; throw error; });
-      await writeFile(temporary, `${lines.join("\n").replace(/\n+$/u, "")}\n`, { mode });
+      await writeFile(temporary, nextText, { mode });
       await rename(temporary, path);
-      for (const [key, value] of updates) env[key] = value;
+      // Applying settings explicitly activates the entire persisted snapshot.
+      for (const field of CONFIG_FIELDS) if (Object.hasOwn(persisted, field.key)) env[field.key] = persisted[field.key];
       return await readRuntimeConfig(repoRoot, env);
     } finally { await rm(temporary, { force: true }); }
   });

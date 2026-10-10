@@ -40,9 +40,15 @@ test('desktop configuration applies to existing empty and continued conversation
     assert.equal((await (await request(`/api/sessions/${session.id}`)).json()).messages.length, firstMessages.length);
     const reached = new Promise(resolveReached => { called = resolveReached; });
     const pending = prompt(); await reached;
+    const activeDisk = await readFile(join(root,'.env'),'utf8');
+    await writeFile(join(root,'.env'),activeDisk.replace('DREAMATIC_MODEL=latest-model','DREAMATIC_MODEL=external-disk-model'));
+    const external = await (await request('/api/config')).json();
+    assert.equal(external.values.DREAMATIC_MODEL,'external-disk-model');assert.equal(external.pendingApply,true);
+    assert.equal((await (await request('/api/health')).json()).model,'latest-model');
     const busySave = await request('/api/config', 'PUT', { values: { DREAMATIC_MODEL: 'blocked-model' } });
     assert.equal(busySave.status, 409); assert.doesNotMatch(await readFile(join(root, '.env'), 'utf8'), /blocked-model/);
     release(); called = undefined; await pending; assert.equal(calls.at(-1).model, 'latest-model');
+    await writeFile(join(root,'.env'),activeDisk);
     const changed = await (await request('/api/config', 'PUT', { values: { DREAMATIC_WORKSPACE: './other-workspace' } })).json();
     assert.equal(changed.applied.workspaceChanged, true);
     assert.equal((await (await request('/api/health')).json()).workspaceDir, join(root, 'other-workspace'));
