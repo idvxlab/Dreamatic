@@ -11,88 +11,52 @@ metadata:
 
 # Industrial Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Resolve hardware architecture, ergonomics, CMF, assembly and service intent.
 
-## Professional reasoning
-Establish the actual product category and interaction loop before borrowing a
-familiar product architecture. Separate direct competitors, adjacent interaction
-devices and general construction references. For emerging categories, derive
-functional blocks from observed tasks and compare alternative architectures;
-do not assume that a category name containing "keyboard" requires a standard
-typing layout. Honor explicit user specifications while keeping unsupported
-layout assumptions open. Existing hardware supplies precedent, not a template.
+## Start from use and architecture
 
-Create alternative functional layouts before surface styling: integrated versus
-modular, concealed versus exposed, different actuation or service architectures.
-Decompose a precedent into load/support paths, human contact, interfaces and
-process choices; recombine around the new use case. Transfer a mechanism from
-another industry only after considering scale, operating forces and maintenance.
-Explain part relationships, critical clearances, assembly order, service access
-and material/process compatibility. Approximate dimensions need a basis; identify
-validation needs rather than invent tolerances, tooling prices or strength
-calculations. Compare part/tooling variety, finishing operations and assembly
-complexity as cost drivers when quotes are absent.
-Start from how the object is held, operated, supported, serviced and stored.
-Translate functional needs into architecture: functional blocks, interfaces,
-enclosure, controls, access and load paths. Compare architectures before
-settling the silhouette; an expressive form can still have intelligible
-construction.
+Identify the actual category and interaction loop. Separate competitors, adjacent
+interaction devices and construction references; category names are not automatic
+layout requirements. Honor explicit specifications while leaving unsupported
+architecture assumptions open.
 
-Specify human contact zones, reach, posture, grip, handedness, visual feedback,
-cleaning and maintenance. Identify the dimension assumptions that determine fit;
-do not invent population measurements or certified safety performance.
+Explore integrated/modular, concealed/exposed and alternative actuation/service
+arrangements before styling. Trace functional blocks, human contact, load/support,
+interfaces and access. Transfer mechanisms only after considering scale, operating
+forces and maintenance. Explain part relationships, clearances, assembly order and
+service access; dimensions need a basis, not invented tolerances or strength claims.
 
-## Scientific components and advanced materials
+Specify reach, posture, grip, handedness, feedback, cleaning and fit assumptions.
+Compare tooling/part variety, finishing and assembly complexity as cost drivers
+without fictional quotations or certified performance.
 
-For a mechanism or material inside a product, begin with the component rather
-than the host silhouette. Read the research handoff's terminology and separate
-active actuation, passive compliance/support and biological inspiration. Compare
-candidate principles by motion, load path, attachment, material/process,
-operating environment and integration needs; a prototype demonstrates its own
-conditions, not automatic feasibility in a new product.
+## Understand scientific components
 
-Read relevant paper figures together with captions: identify unit cells,
-connections, layers, before/after states and the demonstrated scale. Decompose
-the useful principle, then explore alternative arrangements for the intended
-body, interface or use. Explain what is retained, adapted or invented. Plan
-detail, sectional or state-sequence views where they answer questions an overall
-render cannot. Keep uncertain manufacturing, durability and performance as
-validation needs; do not turn them into arbitrary limits on conceptual creativity.
+Begin with the component principle rather than the host silhouette. Separate
+active actuation, passive support/compliance and biological inspiration. Read
+paper figures with captions for unit cells, layers, connections, states and scale.
+Compare motion, load path, attachment, material/process and environment.
 
-## Form, material and production
+Adapt the principle to the intended body or interface; state what is retained,
+changed or invented. A research prototype does not establish feasibility in another
+product. Use details, sections or state views where overall renders cannot explain
+relationships. Record durability and manufacturing tests as future validation.
 
-For new concepts, use precedents to understand function, ergonomics and process,
-then independently resolve architecture, silhouette, interfaces and CMF. Do not
-equate originality with arbitrary deformation or loss of useful category cues.
-For an existing-product visualization or authorized redesign, identify the
-geometry to retain and the changes actually requested before exploring form.
-Distinguish source-image reuse from observed engineering or material principles;
-do not treat every familiar mechanism or proportion as a prohibited feature.
-Develop proportion, mass distribution, transitions, parting lines and control
-semantics together. Define CMF by part and role: substrate, surface process,
-texture, gloss, wear, cleaning and replaceability. Distinguish structural
-materials from cosmetic treatments. Consider process implications such as
-molding direction, bends, seams, fasteners and service access only as far as
-they affect the concept; mark engineering validation needs explicitly.
+## Resolve form and production intent
 
-Balance desirability with durability, repair, disassembly and material recovery.
-Do not make sustainability claims solely from a natural-looking finish.
+For new products independently develop architecture, silhouette, controls and CMF.
+For depiction or authorized redesign preserve the identifying geometry and change
+only the intended elements. Observed mechanisms are distinct from source-image reuse.
 
-## Communicating the design
-Choose views from the questions the object raises: overall form, contextual
-use, human scale, controls, alternative orientations, internal relationships,
-assembly concept, critical interface and material transitions. Preserve geometry
-and part relationships across views. An exploded concept should communicate
-relationships without implying CAD accuracy.
+Connect proportion, transitions, parting lines and controls. Assign substrate,
+finish, texture, gloss, wear and cleaning by part; distinguish structure from cosmetics.
+Consider molding, bending, fastening, repair and recovery at concept depth. A natural
+finish alone does not prove sustainability.
 
-Carry critical proportions, interface locations, CMF assignments, reference
-roles and unresolved engineering assumptions into the existing Design Spec.
-Plan enough distinct views to explain the object; image count is task-dependent.
-This module is independently usable; it does not require product-design.
+## Make relationships visible
 
-## Quality judgment
-Look for a coherent relationship between use, architecture, form and material.
-Encourage unfamiliar forms when their use and construction logic remain clear.
-A rendering supports design communication; it does not establish feasibility.
+Choose overall, contextual, human-scale, control, multi-angle, architecture,
+assembly and material-detail views from actual questions. Keep part relationships
+consistent; exploded concepts do not imply CAD accuracy. Carry proportions, CMF,
+reference roles and unresolved engineering needs into the specification. Judge use,
+architecture, form and material together; rendering does not prove feasibility.

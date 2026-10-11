@@ -184,25 +184,31 @@ test("discoverable Skills have matching names and role-specific audiences", asyn
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const skillsRoot = join(repoRoot, ".pi", "skills");
   const expected = [
+    "accessible-interface",
     "architecture-space",
     "brand-identity",
+    "concept-showcase-storytelling",
     "design-system",
     "digital-product-design",
     "editorial-design",
     "exhibition-wayfinding",
     "fashion-textile-design",
     "game-experience-design",
+    "generative-art",
     "html-interface",
+    "icon-system",
     "image-prompting",
     "industrial-design",
     "information-design",
+    "interaction-motion",
+    "interface-writing",
     "illustration-art-direction",
     "media-motion-design",
     "packaging-design",
     "poster-advertising",
     "product-design",
     "service-design",
-    "showcase-layout",
+    "typographic-detail",
     "ui-web-design",
     "ux-design",
     "visual-composition",
@@ -214,7 +220,7 @@ test("discoverable Skills have matching names and role-specific audiences", asyn
     if (!source) continue;
     const { frontmatter } = parseFrontmatter(source);
     assert.equal(frontmatter.name, folder);
-    assert.equal(frontmatter.metadata?.audience, folder === "showcase-layout" ? "builder" : "designer");
+    assert.equal(frontmatter.metadata?.audience, "designer");
     assert.ok(String(frontmatter.description ?? "").trim());
     discovered.push(folder);
   }
@@ -234,38 +240,13 @@ async function registeredTools(workspaceDir, options = {}) {
   return { tools, handlers };
 }
 
-test("Builder can load its Showcase guide without mixing Designer Skills or requiring one to exist", async () => {
-  const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-builder-skill-"));
+test("managed Builder exposes no Skill or presentation authoring tools", async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-builder-executor-"));
   try {
-    const designerReceiptPath = join(workspaceDir, "runs/demo/.performance/skills-designer.json");
-    await mkdir(join(workspaceDir, "runs/demo/.performance"), { recursive: true });
-    const designerReceipt = JSON.stringify({ activeSkills: [{ name: "ui-web-design", scope: "ui", role: "primary" }] });
-    await writeFile(designerReceiptPath, designerReceipt);
-    const context = { cwd: fileURLToPath(new URL("../../..", import.meta.url)) };
-    const builder = await registeredTools(workspaceDir, { parentInvocation: { id: "builder", agent: "builder", runId: "demo" } });
-    const catalog = JSON.parse((await builder.tools.get("list_skills").execute("catalog", {}, undefined, undefined, context)).content[0].text);
-    assert.ok(catalog.skills.some((skill) => skill.name === "showcase-layout" && skill.audience === "builder"));
-    assert.equal(catalog.skills.some((skill) => skill.audience === "designer"), false);
-    const loaded = await builder.tools.get("use_skill").execute("guide", { name: "showcase-layout", role: "supporting" }, undefined, undefined, context);
-    assert.equal(loaded.details.name, "showcase-layout");
-    assert.match(loaded.details.instruction, /do not modify Designer-owned Context or page sources/);
-    assert.equal(await readFile(designerReceiptPath, "utf8"), designerReceipt);
-    const builderReceipt = JSON.parse(await readFile(join(workspaceDir, "runs/demo/.performance/skills-builder.json"), "utf8"));
-    assert.ok(builderReceipt.activeSkills.some(skill => skill.name === "showcase-layout" && skill.role === "supporting"));
-    const wrong = JSON.parse((await builder.tools.get("use_skill").execute("wrong", { name: "industrial-design" }, undefined, undefined, context)).content[0].text);
-    assert.equal(wrong.ok, false);
-    const designer = await registeredTools(workspaceDir, { parentInvocation: { id: "designer", agent: "designer", runId: "demo" } });
-    const designerCatalog = JSON.parse((await designer.tools.get("list_skills").execute("designer-catalog", {}, undefined, undefined, context)).content[0].text);
-    assert.equal(designerCatalog.skills.some((skill) => skill.name === "showcase-layout"), false);
-    const wrongRole = JSON.parse((await designer.tools.get("use_skill").execute("wrong-role", { name: "showcase-layout" }, undefined, undefined, context)).content[0].text);
-    assert.equal(wrongRole.ok, false);
-    const unavailable = JSON.parse((await builder.tools.get("use_skill").execute("removed", { name: "showcase-layout" }, undefined, undefined, { cwd: workspaceDir })).content[0].text);
-    assert.equal(unavailable.ok, false);
-    assert.match(unavailable.instruction, /continue.*do not.*block/su);
+    const builder = await registeredTools(workspaceDir, { personaPath: fileURLToPath(new URL("../../../.pi/agents/builder.md", import.meta.url)), parentInvocation: { id: "builder", agent: "builder", runId: "demo" } });
+    for (const name of ["list_skills", "use_skill", "showcase_template", "write", "edit"]) assert.equal(builder.tools.has(name), false);
     assert.equal(builder.tools.has("build_finalize"), true);
-  } finally {
-    await rm(workspaceDir, { recursive: true, force: true });
-  }
+  } finally { await rm(workspaceDir, { recursive: true, force: true }); }
 });
 
 test("run initialization preserves actual user wording separately from titles and resolved briefs", async () => {
@@ -651,7 +632,7 @@ test("persona tool policies keep reasoning separate from execution", () => {
   const researcher = dreamaticPersonaTools("researcher", ["update_design_context", "commit_design_context", "user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
   const designer = dreamaticPersonaTools("designer", ["design_context_validate", "update_design_context", "commit_design_context", "user_asset_import", "read", "write", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
   const reviewer = dreamaticPersonaTools("reviewer", ["update_design_context", "commit_design_context", "read", "design_bus_post", "design_bus_read", "design_context_read"]);
-  const builder = dreamaticPersonaTools("builder", ["read", "write", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"]);
+  const builder = dreamaticPersonaTools("builder", ["read", "ls", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "build_finalize"]);
   assert.equal(researcher.includes("view_image"), false);
   assert.equal(researcher.includes("research_asset_validate"), false);
   assert.equal(researcher.includes("bash"), false);
@@ -667,7 +648,7 @@ test("persona tool policies keep reasoning separate from execution", () => {
   assert.equal(builder.includes("image_generate_batch"), false);
   assert.equal(builder.includes("image_edit"), false);
   assert.equal(builder.includes("image_edit_batch"), false);
-  assert.equal(builder.includes("use_skill"), true);
+  assert.equal(builder.includes("use_skill"), false);
   assert.equal(builder.includes("view_image"), false);
   assert.equal(builder.includes("design_bus_post"), false);
   assert.equal(builder.includes("artifact_lint"), false);
@@ -965,7 +946,7 @@ test("build_finalize creates deterministic delivery metadata and commits build_d
     await writeFile(join(runDir, "research/assets/manifest.json"), JSON.stringify({ assets: [{ id: "reference", file: "reference.png", description: "交互设备参考", source_page_url: "https://example.com/reference" }] }));
     await writeFile(join(runDir, "research/evidence.json"), JSON.stringify({ sources: [{ title: "输入设备研究", url: "https://example.com/study" }] }));
     const { tools } = await registeredTools(workspaceDir, { parentInvocation: { id: "builder-1", agent: "builder", runId } });
-    await assert.rejects(() => tools.get("build_finalize").execute("missing-showcase", { runId }), /Builder must author artifacts\/00-gallery.html/);
+    await assert.rejects(() => tools.get("build_finalize").execute("missing-showcase", { runId }), /Existing Gallery entry is missing/);
     await writeFile(join(runDir, "artifacts/00-gallery.html"), "   ");
     await assert.rejects(() => tools.get("build_finalize").execute("empty-showcase", { runId }), /Showcase|empty/);
     assert.equal((await readFile(join(runDir, "bus.jsonl"), "utf8")).includes("build_done"), false);
@@ -1068,8 +1049,8 @@ test("all five Agent files match the runtime tool policy", async () => {
     const source = await readFile(join(repoRoot, ".pi", "agents", `${persona}.md`), "utf8");
     const { frontmatter } = parseFrontmatter(source);
     const tools = dreamaticPersonaTools(persona, frontmatter.allowed_tools);
-    assert.equal(tools.includes("use_skill"), ["designer", "builder"].includes(persona));
-    assert.equal(tools.includes("list_skills"), ["designer", "builder"].includes(persona));
+    assert.equal(tools.includes("use_skill"), persona === "designer");
+    assert.equal(tools.includes("list_skills"), persona === "designer");
   }
 });
 
@@ -2439,9 +2420,7 @@ test("approved plan executes by id, reuses verified images and rejects a stale g
     assert.equal(requests, 1);
     await writeFile(join(runDir, 'artifacts/hero.png'), 'modified');
     await execute(); assert.equal(requests, 2);
-    await tools.get('showcase_template').execute('showcase', { runId: 'demo', title: '<Concept>', sections: [{ title: 'Concept', items: [{ id: 'hero', caption: 'Approved intent' }] }] });
-    assert.match(await readFile(join(runDir, 'artifacts/00-gallery.html'), 'utf8'), /&lt;Concept&gt;/);
-    await assert.rejects(tools.get('showcase_template').execute('missing', { runId: 'demo', title: 'Concept', sections: [{ title: 'Concept', items: [] }] }), /omits required/);
+    assert.equal(tools.has('showcase_template'), false);
     await writeFile(join(runDir, 'bus.jsonl'), JSON.stringify({ type: 'design_revision_ready' }) + '\n', { flag: 'a' });
     await assert.rejects(execute(), /approved specification/);
   } finally {

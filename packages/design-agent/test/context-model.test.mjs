@@ -996,6 +996,26 @@ test('canonical writing and specialist recipient schemas reject the observed inv
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
+test('Context read schema requires exactly one path for canonical selection across roles', async () => {
+  const { Check } = await import('typebox/value');
+  for (const role of ['orchestrator', 'researcher', 'designer', 'reviewer', 'builder']) {
+    const reader = harness('/tmp/dreamatic-context-read-schema', role === 'orchestrator' ? undefined : role).tools.get('design_context_read');
+    const overview = { runId: 'demo', audience: role };
+    const selection = { ...overview, select: { section: 'deliverables', ids: ['luna-hero'] } };
+    assert.equal(Check(reader.parameters, overview), true, `${role}: overview`);
+    assert.equal(Check(reader.parameters, { ...overview, paths: ['context/design.json', 'context/review.json'], full: true }), true, `${role}: full multi-file read`);
+    assert.equal(Check(reader.parameters, selection), false, `${role}: omitted path`);
+    assert.equal(Check(reader.parameters, { ...selection, paths: [] }), false, `${role}: empty paths`);
+    assert.equal(Check(reader.parameters, { ...selection, paths: ['context/design.json', 'context/review.json'] }), false, `${role}: ambiguous selection`);
+    assert.equal(Check(reader.parameters, { ...selection, paths: ['context/design.json'] }), true, `${role}: single-file selection`);
+    if (['researcher', 'designer', 'reviewer'].includes(role)) {
+      assert.equal(Check(reader.parameters, { ...overview, canonical: true }), true, `${role}: own canonical read`);
+      const section = { researcher: 'findings', designer: 'deliverables', reviewer: 'assessment' }[role];
+      assert.equal(Check(reader.parameters, { ...overview, section }), true, `${role}: own draft section`);
+    }
+  }
+});
+
 test('Reviewer expands compact design tasks through canonical select without observing or changing its draft', async () => {
   const { Check } = await import('typebox/value');
   const { workspace, runDir } = await setup();

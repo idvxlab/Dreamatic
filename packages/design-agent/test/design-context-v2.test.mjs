@@ -56,6 +56,15 @@ test('new Run authoring owns one deliverable; scoped multi-bind reads one body a
     await designer.call('use_skill', { name: 'ui-web-design', scopeId: 'ui', role: 'primary', rationale: 'Concept page hierarchy' });
     await designer.call('use_skill', { name: 'information-design', scopeId: 'campaign', role: 'primary', rationale: 'Communicate the concept' });
     const { schemaVersion, runId, revision, ...data } = document();
+    // Complete local modules are durable checkpoints under one page deliverable.
+    const pageSource = html.replace('</head>', '<link rel="stylesheet" href="style.css"></head>').replace('</body>', '<button id="inspect">Inspect application</button><p id="status">Ready</p><script src="app.js"></script></body>');
+    const style = '#status { color: rgb(0, 128, 0); }';
+    const script = 'document.querySelector("#inspect").addEventListener("click", () => { document.querySelector("#status").textContent = "Application inspected"; });';
+    await writeFile(join(runDir, 'plan/html/ui/index.html'), pageSource);
+    await writeFile(join(runDir, 'plan/html/ui/style.css'), style);
+    await writeFile(join(runDir, 'plan/html/ui/app.js'), script);
+    data.deliverables[0].execution.files.push({ source: 'plan/html/ui/style.css', output: 'artifacts/ui/style.css' }, { source: 'plan/html/ui/app.js', output: 'artifacts/ui/app.js' });
+    data.deliverables[0].execution.interaction_checks = [{ name: 'Inspect application', steps: [{ action: 'click', selector: '#inspect' }, { action: 'expect_text', selector: '#status', value: 'Application inspected' }] }];
     data.deliverables[0].contributing_scopes = [{ scope_id: 'campaign', skill_refs: ['information-design'], purpose: 'Information hierarchy' }];
     const result = await designer.call('update_design_context', { changes: data });
     assert.equal(result.readiness, 'ready', JSON.stringify(result));
@@ -86,6 +95,9 @@ test('new Run authoring owns one deliverable; scoped multi-bind reads one body a
     await reviewer.call('design_bus_post', { runId: 'demo', type: 'design_review_pass', summary: 'Approved' });
     const builder = harness(workspace, 'builder');
     assert.equal((await builder.call('execute_design_plan', { runId: 'demo' })).succeeded, 1);
+    for (const [file, expected] of [['index.html', pageSource], ['style.css', style], ['app.js', script]]) {
+      assert.equal(await readFile(join(runDir, 'artifacts/ui', file), 'utf8'), expected);
+    }
     assert.equal((await builder.call('build_finalize', { runId: 'demo' })).ok, true);
     await assert.rejects(root.call('export_package', { runId: 'demo', runDir: join(workspace, 'runs/foreign') }), /must match its canonical runId/);
     await root.call('export_package', { runId: 'demo' });
@@ -112,6 +124,46 @@ test('producer references derive dependencies/resources and invalid references c
   data.deliverables[0].execution.uses = [];
   data.deliverables[1].presentation.required = false;
   assert.throws(() => contractOf(data), /User-requested outputs must be accessible/);
+});
+
+test('HTML Skill page example commits through current Context authoring', async () => {
+  const { workspace, runDir } = await fixture();
+  try {
+    const source = await readFile(join(cwd, '.pi/skills/html-interface/SKILL.md'), 'utf8');
+    const example = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(source)[1]);
+    const designer = harness(workspace, 'designer');
+    await designer.call('use_skill', { name: 'ui-web-design', scopeId: 'ui', role: 'primary', rationale: 'Page design' });
+    await designer.call('use_skill', { name: 'html-interface', scopeId: 'ui', role: 'supporting', rationale: 'Page expression' });
+    await designer.call('use_skill', { name: 'information-design', scopeId: 'campaign', role: 'primary', rationale: 'Communication' });
+    example.scope_id = 'ui';
+    example.skill_refs = ['ui-web-design', 'html-interface'];
+    example.contributing_scopes = [{ scope_id: 'campaign', skill_refs: ['information-design'], purpose: 'Communication hierarchy' }];
+    example.execution.files[0].source = 'plan/html/ui/index.html';
+    const { schemaVersion, runId, revision, ...data } = document();
+    data.deliverables = [example];
+    data.presentation.entry = example.file;
+    const updated = await designer.call('update_design_context', { changes: data });
+    assert.equal(updated.readiness, 'ready', JSON.stringify(updated));
+    const committed = await designer.call('commit_design_context');
+    assert.equal(committed.committed, true, JSON.stringify(committed));
+    const canonical = JSON.parse(await readFile(join(runDir, 'context/design.json')));
+    assert.equal(canonical.deliverables[0].execution.method, 'html_generate');
+    assert.equal(canonical.presentation.entry, example.file);
+    assert.equal('tasks' in canonical, false);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('HTML Skill hero example derives producer ordering through the current deliverable contract', async () => {
+  const source = await readFile(join(cwd, '.pi/skills/html-interface/SKILL.md'), 'utf8');
+  const section = source.slice(source.indexOf('For a page needing a designed hero image'));
+  const example = JSON.parse(/```json\n([\s\S]*?)\n```/.exec(section)[1]);
+  const data = document();
+  Object.assign(data.deliverables[0].execution, example);
+  data.deliverables.push({ id: 'hero-image', scope_id: 'ui', kind: 'image', purpose: 'Hero', acceptance_test: 'Visible hero', required: true, user_requested: true, file: 'artifacts/hero-image.png', presentation: { required: true, access: 'embed' }, execution: { method: 'image_generate', prompt_seed: 'Original hero', negative_prompt_seed: 'No watermark', size: '512x512', size_rationale: 'Page illustration' } });
+  const contract = contractOf(data);
+  const task = contract.tasks.find(task => task.id === 'page');
+  assert.deepEqual(task.dependencies, ['hero-image']);
+  assert.ok(task.resources.some(mapping => mapping.source === example.resources[0].source && mapping.output === example.resources[0].output));
 });
 
 test('required cutaway omission and hidden elements fail; descriptive goals do not duplicate interaction tests', async () => {

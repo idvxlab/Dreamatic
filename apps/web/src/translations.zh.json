@@ -326,5 +326,7 @@
   "Could not open project folder": "无法打开项目文件夹",
   "Opening folders requires the desktop app or a locally hosted web app.": "打开文件夹需要使用桌面应用或在本机运行网页版。",
   "Copy and open published project": "复制并打开官网作品链接",
-  "The configuration file has changes waiting to be applied. Save to apply them.": "配置文件有尚未生效的修改，保存后应用。"
+  "The configuration file has changes waiting to be applied. Save to apply them.": "配置文件有尚未生效的修改，保存后应用。",
+  "View project": "查看成果",
+  "Download project": "下载项目"
 }

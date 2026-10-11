@@ -11,54 +11,39 @@ metadata:
 
 # Editorial and Publication Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Connect content architecture, typography and reading rhythm across publications
+and presentations.
 
-## Reading architecture
-Clarify audience, publication purpose, content types, reading mode and delivery
-medium. Model the structure: sections, chapters, navigation, recurring elements,
-captions, notes and data. Distinguish continuous reading from reference lookup,
-scanning and spoken presentation.
+## Establish the reading argument
 
-Create a hierarchy that supports the content rather than forcing all material
-into identical boxes. Develop pacing through density, contrast, whitespace,
-image scale and changes in layout while preserving a recognizable system.
+Clarify audience, purpose, content types, medium and reading mode: continuous
+reading, lookup, scanning or spoken presentation. Organize sections, navigation,
+recurring elements, captions, notes and data around that mode.
 
-## Typography and layout
+Compare content-led, image-led or reference-oriented structures using the same
+demanding material. Extract pacing and reading relationships from precedents;
+develop a content-specific hierarchy rather than copying spreads or boxing
+everything identically.
 
-Explore different editorial arguments and reading rhythms, not just alternate
-fonts. Compare a content-led, image-led or reference-oriented structure using
-the same demanding material. Decompose useful precedents into pacing and reading
-relationships rather than copy their spreads. Develop selected typographic and
-grid rules across dense and sparse content; track image rights, font availability,
-binding/export assumptions and print/digital cost drivers without claiming a
-generated page is a production-ready publication.
-Specify format, margins, columns, baseline intent and text roles. Account for
-language, script, line length, leading, alignment, figure-ground contrast and
-hierarchy. For bilingual material, define relationships between languages and
-their ordering rather than treating translation as decorative filler.
+## Resolve typography and layout
 
-Plan image crops, captions, credits, tables and navigation. Consider binding,
-gutter, trim and print production assumptions only for physical publications;
-verify supplier-specific parameters before treating them as final requirements.
+Specify format, margins, columns, baseline intent and text roles. Tune line length,
+leading, alignment and contrast to the script and density. Establish bilingual
+ordering and optical relationships; translation is not decorative filler.
+Use image scale, whitespace and density to vary pace within a recognizable system.
 
-## Proposal coverage
-Choose representative pages or spreads across content types and density,
-including transitions and navigation when they shape the experience. For
-presentations, connect the slide sequence to the argument and delivery context.
+Plan crops, captions, credits, tables and navigation. Track image conditions and
+font availability. Physical binding, gutter, trim and print parameters require
+supplier confirmation before becoming production requirements.
 
-Keep exact copy and data in structured content. Generated page images are
-also allowed to include the intended headline, body excerpts, captions and
-page-navigation text: put literal wording and typography hierarchy in their
-prompts instead of requesting blank layouts. For long publications, choose
-representative readable content appropriate to the image's purpose without
-claiming that one generated spread is a complete editable publication. Generated
-layouts do not by themselves prove typographic fidelity, pagination or print
-readiness. Current DreamaticArt delivery may include publication visualizations
-and production specifications, not an unimplemented editable publication.
+## Show representative material
 
-## Quality judgment
-Look for sustained readability, clear hierarchy, variation with consistency,
-and a relationship between editorial voice and visual rhythm. Expressive
-layouts remain valid when the intended reading route is understandable.
+Choose readable pages/spreads across content types, density and transitions.
+For presentations, relate sequence to the argument and delivery context. Preserve
+exact copy and data; include literal headlines, excerpts, captions and typography
+in relevant image prompts rather than requesting blank layouts.
+
+Generated views communicate publication concepts; they do not prove exact glyphs,
+pagination, print readiness or editable publication files. Use authored HTML when
+long exact text needs deterministic reading. Judge sustained readability, hierarchy,
+pacing and the relationship between editorial voice and visual rhythm.

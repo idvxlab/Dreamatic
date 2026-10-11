@@ -64,12 +64,17 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   const at = timeLabel(event.at);
   const [agentOpen, setAgentOpen] = useState(event.status === "running");
   if (event.kind === "message") {
+    const entry = event.stage === "completion" ? event.artifactRefs?.[0] : undefined;
+    const runId = entry?.match(/^runs\/([^/]+)\//u)?.[1];
     const user = event.actor === "User / CLI" || event.actor === "User";
     return <div className={`workflow-message-row ${user ? "user" : "assistant"}`}>
       <div className="workflow-message-bubble">
         <small>{user ? t("You") : event.actor}{at ? ` · ${at}` : ""}</small>
         {event.detail && <p>{event.detail}</p>}
-        <ArtifactLinks paths={event.artifactRefs} />
+        {entry && runId ? <div className="workflow-file-links">
+          <a href={assetUrl(entry)} target="_blank" rel="noreferrer">{t("View project")}<ExternalLink size={10} /></a>
+          <a href={`/api/runs/${encodeURIComponent(runId)}/export`}>{t("Download project")}</a>
+        </div> : <ArtifactLinks paths={event.artifactRefs} />}
       </div>
     </div>;
   }

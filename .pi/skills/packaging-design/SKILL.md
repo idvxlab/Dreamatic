@@ -11,58 +11,37 @@ metadata:
 
 # Packaging Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Connect containment, use, structure and shelf communication.
 
-## Package experience
-Clarify product, quantity, distribution channel, storage, retail context and
-use sequence. Distinguish primary containment, secondary presentation and
-transport packaging. Link protection, carrying, opening, dispensing, resealing
-and disposal to the user's situation.
+## Resolve the package experience
 
-Explore structural concepts before decorating surfaces. Explain material,
-closure, access, assembly intent and product fit. State dimensional and testing
-assumptions; a generative rendering does not establish seal performance or
-transport protection.
+Identify product, quantity, distribution, storage and use. Distinguish primary
+containment, secondary presentation and transport packaging. Explore protection,
+carrying, opening, dispensing, resealing and disposal before surface styling.
 
-## Communication and identity
+Compare the same purchase/open/use episode across structures, considering product
+fit, intuitive opening, material diversity, assembly and handling. Explain folds,
+panels, closures, graphic wrap and finishing intent. Treat seal, transport, drop
+and supplier tests as future validation; renders are not exact dielines or protection
+evidence. Discuss cost drivers without invented tooling quotations.
 
-Explore containment, opening, dispensing, carrying and reuse as independent
-functional choices before selecting a structure. Recombine mechanisms from
-adjacent packaging/use categories only when compatible with product protection
-and distribution. Compare concepts through the same purchase/open/use episode,
-including intuitive opening, product fit, material diversity, assembly and
-handling. Develop the selected panel/fold/closure relationships, graphic wrap
-and finishing intent; identify sealing, drop/transport or supplier tests as
-future validation, not claims from a rendering. Explain cost drivers without
-inventing tooling quotations or exact untested dielines.
-Specify information hierarchy by visible panel and use stage: recognition,
-variant differentiation, product explanation, instructions and required copy.
-Separate supplied mandatory information from proposed claims. Preserve exact
-legal or ingredient copy as structured text; request missing authoritative
-information rather than inventing it.
-Include approved product names, key claims, instructions and applicable labels
-in the generation prompt with their exact wording and visible-panel placement.
-Generate complete labelled packaging, not blank packages plus gallery copy.
-Do not invent missing regulatory information; generated text does not by itself
-prove print accuracy or legal compliance.
+## Design the communication
 
-Design relationships across variants, sizes and languages. Consider how
-graphics wrap around folds, seams, closures and curved surfaces. Specify
-material and finish behavior as part of the concept.
+Specify hierarchy by panel and use stage: recognition, variant, explanation,
+instructions and required copy. Preserve supplied mandatory text and distinguish
+it from proposed claims. Request missing authoritative ingredients or regulatory
+information instead of inventing it.
 
-## Proposal coverage
-Use distinct views to communicate shelf impact, panel hierarchy, structure,
-opening sequence, contents and reuse or end-of-life where relevant. A flat
-graphic concept and a physical mockup answer different questions.
+Include approved names, claims, instructions and labels with literal wording and
+panel placement in relevant prompts. Captions cannot replace labelled packaging.
+Relate graphics to seams, folds, curves and openings; develop family rules across
+sizes, variants and languages. Generated lettering does not prove print accuracy.
 
-Write structural relationships, panel content, material assumptions and opening
-intent into the Design Spec. Dielines, barcodes and precise production graphics
-require deterministic authoring; never present generated mockups as verified
-production files.
+## Show the proposal
 
-## Quality judgment
-Evaluate recognition, intelligibility, use, protection intent and structural
-coherence. Avoid unsubstantiated environmental claims; lower material volume
-alone does not prove a better lifecycle outcome.
+Choose shelf, panel, structure, opening, contents and reuse/end-of-life views where
+useful. Flat graphics and physical mockups answer different questions. Record
+structure, content and material assumptions in the specification. Exact production
+graphics, barcodes and dielines need verified deterministic authoring, not generated
+mockups. Judge recognition, use and structural coherence; reduced material volume
+alone does not establish a better lifecycle.

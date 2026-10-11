@@ -10,7 +10,7 @@ import { serializeJsonWrite } from "./performance.js";
 import { contextSkeleton, draftHash, assembleContextDraft, mergePreparedContextChanges, contextReadiness, selectContextSection } from "./context-draft.js";
 import { roleContextPath, roleContextSchema, prepareContextCommit, prepareContextChanges, roleContextChangesSchema, contextFailureIdentity } from "./context-tools.js";
 import { canonicalContextError, CONTEXT_FILES, hasUnifiedContext, prepareContextDocument, unifiedContextInstruction } from "./context-model.js";
-import { validateDesignScopes } from "./design-scope-validation.js";
+import { diagnoseProjectPresentation, validateDesignScopes } from "./design-scope-validation.js";
 import type { SkillActivation } from "./skill-activation.js";
 import { ContextFailureTracker } from "./context-failures.js";
 
@@ -108,6 +108,10 @@ export function registerContextAuthoring(pi: ExtensionAPI, dependencies: {
   };
   const assemble = async (data: Record<string, unknown>) => {
     const diagnosis = assembleContextDraft(role, data, skillActivation.all(), await classifiedScopes(), skillActivation.deactivated(), availableProfessionals, version);
+    if (role === "designer") {
+      const brief = JSON.parse(await readFile(join(workspaceDir, "runs", boundRunId, "brief.json"), "utf8"));
+      diagnosis.issues.push(...diagnoseProjectPresentation(brief, diagnosis.data));
+    }
     const issues = diagnosis.issues.map(issue => {
       const section = issue.pointer.split("/")[1];
       const repairRead = section && Object.hasOwn(roleContextSchema(role, version).properties, section)

@@ -11,8 +11,20 @@ export function presentationRequirements(contract: DeliveryContract) {
   });
 }
 /** Use rendered accessibility, not source references or the mere existence of an artifact. */
-export async function observePresentation(page: Page, contract: DeliveryContract) {
-  return page.evaluate(requirements => {
+export async function observePresentation(page: Page, contract: DeliveryContract, explore = false) {
+  const requirements = presentationRequirements(contract);
+  const snapshot = () => page.evaluate(requirements => {
+    const elements = [...document.querySelectorAll("body *")];
+    const label = (element: Element) => `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${[...element.classList].slice(0, 2).map(value => `.${value}`).join("")}`;
+    const hiddenReason = (element: Element) => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (node.hasAttribute("hidden") || node.getAttribute("aria-hidden") === "true") return `${label(node)} has hidden/aria-hidden`;
+        if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") return `${label(node)} has ${style.display === "none" ? "display:none" : `visibility:${style.visibility}`}`;
+        if (Number(style.opacity) === 0) return `${label(node)} has opacity:0`;
+      }
+      return element.getClientRects().length ? "not rendered visibly" : `${label(element)} has no rendered box`;
+    };
     const visible = (element: Element) => {
       if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
       const style = getComputedStyle(element);
@@ -20,12 +32,50 @@ export async function observePresentation(page: Page, contract: DeliveryContract
     };
     const path = (url: string) => { try { const parsed = new URL(url, document.baseURI); return parsed.origin === location.origin ? decodeURIComponent(parsed.pathname.slice(1)) : ""; } catch { return ""; } };
     const links = [...document.querySelectorAll<HTMLAnchorElement>('a[href]')].filter(visible).map(element => path(element.href));
-    const satisfied = requirements.filter(requirement => requirement.access === "embed" && requirement.paths.includes(path(location.href)) || [...document.querySelectorAll("body *")].some(element => {
-      if (!visible(element)) return false;
-      if (requirement.access !== "embed") return element.tagName === "A" && requirement.paths.includes(path((element as HTMLAnchorElement).href)) && (requirement.access !== "download" || element.hasAttribute("download"));
-      if (element.tagName === "A") return false;
-      return [element.getAttribute("src"), element.getAttribute("data"), ...[...getComputedStyle(element).backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/g)].map(match => match[1])].some(url => url && requirement.paths.includes(path(url)));
-    })).map(requirement => requirement.id);
-    return { satisfied, links };
-  }, presentationRequirements(contract));
+    const references = elements.map((element, index) => ({ element, index,
+      link: element.tagName === "A" ? path((element as HTMLAnchorElement).href) : null,
+      paths: element.tagName === "A" ? [] : [element.getAttribute("src"), element.getAttribute("data"), ...[...getComputedStyle(element).backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/g)].map(match => match[1])].filter((url): url is string => Boolean(url)).map(path),
+    }));
+    const candidates = requirements.flatMap(requirement => references.flatMap(({ element, index, link, paths }) => {
+      const matches = requirement.access !== "embed"
+        ? link !== null && requirement.paths.includes(link) && (requirement.access !== "download" || element.hasAttribute("download"))
+        : paths.some(path => requirement.paths.includes(path));
+      return matches ? [{ id: requirement.id, index, element: label(element), reason: visible(element) ? null : hiddenReason(element) }] : [];
+    }));
+    const satisfied = requirements.filter(requirement => requirement.access === "embed" && requirement.paths.includes(path(location.href)) || candidates.some(candidate => candidate.id === requirement.id && candidate.reason === null)).map(requirement => requirement.id);
+    return { satisfied, links, candidates };
+  }, requirements);
+  let observation = await snapshot();
+  if (!explore) return observation;
+  // Inspect only unmatched references, without clicking controls or changing CSS.
+  // Permanent hiding and infinite animations must not consume a timeout per item.
+  const deadline = Date.now() + 3000;
+  for (const candidate of observation.candidates) {
+    if (observation.satisfied.includes(candidate.id) || Date.now() >= deadline) continue;
+    const element = await page.locator("body *").nth(candidate.index).elementHandle();
+    if (!element) continue;
+    try {
+      await element.evaluate(async node => {
+        if (node.getClientRects().length) node.scrollIntoView({ behavior: "instant", block: "center" });
+        // Allow IntersectionObserver to start its reveal before inspecting animations.
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      });
+      await page.waitForFunction(node => {
+        if (!node?.isConnected) return true;
+        for (let current: Element | null = node; current; current = current.parentElement) {
+          if (current.getAnimations().some(animation => {
+            const end = animation.effect?.getComputedTiming().endTime;
+            return typeof end === "number" && Number.isFinite(end) && (animation.pending || animation.playState === "running");
+          })) return false;
+        }
+        return true;
+      }, element, { timeout: Math.max(1, Math.min(1500, deadline - Date.now())), polling: 50 }).catch(error => {
+        if (error instanceof Error && error.name === "TimeoutError") return;
+        throw error;
+      });
+      const current = await snapshot();
+      observation = { ...current, satisfied: [...new Set([...observation.satisfied, ...current.satisfied])], links: [...new Set([...observation.links, ...current.links])] };
+    } finally { await element.dispose(); }
+  }
+  return observation;
 }

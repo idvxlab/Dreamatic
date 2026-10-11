@@ -40,7 +40,7 @@ User -> Orchestrator -> Researcher -> Designer -> Reviewer
 - Design Context remembers through durable Run files.
 - Orchestrator routes work and bounded loops through runtime lifecycle tools.
 - Runtime persists state and enforces ownership, approval and execution gates.
-- Builder executes approved deliverables and owns their Gallery presentation;
+- Designer owns the project HTML presentation; Builder executes approved deliverables without page authoring or Skill loading;
   Designer owns deliverable HTML page design.
 - Reviewer challenges Designer's proposal and never becomes a second Designer.
 

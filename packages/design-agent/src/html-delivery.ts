@@ -193,14 +193,14 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
     const abort = () => { void browser?.close(); };
     signal?.addEventListener("abort", abort, { once: true });
     try {
-      const observations = new Map<number, Map<string, { satisfied: string[]; links: string[] }>>();
+      const observations = new Map<number, Map<string, Awaited<ReturnType<typeof observePresentation>>>>();
       const observe = async (page: import("playwright-core").Page, width: number) => {
         if (!checkAccess || !presentationRequirements(contract).length) return;
-        const observation = await observePresentation(page, contract);
+        const observation = await observePresentation(page, contract, true);
         const path = decodeURIComponent(new URL(page.url()).pathname.slice(1));
         const byPage = observations.get(width) ?? new Map();
         const previous = byPage.get(path);
-        byPage.set(path, { satisfied: [...new Set([...(previous?.satisfied ?? []), ...observation.satisfied])], links: [...new Set([...(previous?.links ?? []), ...observation.links])] });
+        byPage.set(path, { ...observation, satisfied: [...new Set([...(previous?.satisfied ?? []), ...observation.satisfied])], links: [...new Set([...(previous?.links ?? []), ...observation.links])] });
         observations.set(width, byPage);
       };
       for (const task of tasks) {
@@ -242,9 +242,15 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
                   await page.waitForURL(url => url.href.endsWith(step.value!), { timeout: 5000 });
                 }
                 else if (step.action === "expect_in_viewport") {
+                  const deadline = Date.now() + 5000;
                   await target.waitFor({ state: "visible" });
-                  const box = await target.boundingBox();
-                  if (!box || box.x + box.width <= 0 || box.y + box.height <= 0 || box.x >= viewport.width || box.y >= viewport.height) throw new Error(`${step.selector} is outside the viewport`);
+                  while (true) {
+                    signal?.throwIfAborted();
+                    const box = await target.boundingBox();
+                    if (box && box.x + box.width > 0 && box.y + box.height > 0 && box.x < viewport.width && box.y < viewport.height) break;
+                    if (Date.now() >= deadline) throw new Error(`${step.selector} is outside the viewport after waiting 5000ms`);
+                    await new Promise((resolve) => setTimeout(resolve, Math.min(100, Math.max(0, deadline - Date.now()))));
+                  }
                 }
                 else if (step.action === "click") await target.click();
                 else if (step.action === "fill") await target.fill(step.value!);
@@ -287,7 +293,14 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
           for (const path of reachable) for (const link of byPage.get(path)?.links ?? []) if (byPage.has(link) && !reachable.has(link)) { reachable.add(link); changed = true; }
         }
         const satisfied = new Set([...reachable].flatMap(path => byPage.get(path)?.satisfied ?? []));
-        for (const requirement of presentationRequirements(contract)) if (!satisfied.has(requirement.id)) issues.push(`Presentation ${requirement.id}: required ${requirement.access} access is missing or hidden from entry at ${width}px`);
+        for (const requirement of presentationRequirements(contract)) if (!satisfied.has(requirement.id)) {
+          const references = [...reachable].flatMap(path => (byPage.get(path)?.candidates ?? []).filter(candidate => candidate.id === requirement.id).map(candidate => `${path}: ${candidate.element} (${candidate.reason ?? "visible"})`));
+          const elsewhere = [...byPage].filter(([path, observation]) => !reachable.has(path) && observation.satisfied.includes(requirement.id)).map(([path]) => path);
+          const reason = references.length ? `declared reference remains hidden after scrolling and bounded animation wait: ${[...new Set(references)].join("; ")}`
+            : elsewhere.length ? `visible only on pages unreachable from entry: ${elsewhere.join(", ")}`
+            : `no matching ${requirement.access} reference on inspected reachable pages; expected ${requirement.paths.join(" or ")}`;
+          issues.push(`Presentation ${requirement.id}: required ${requirement.access} access is missing or hidden from entry at ${width}px; ${reason}${options.sourcePreview ? "; generated images use private preview placeholders. Do not create artifact files to repair this access check" : ""}`);
+        }
       }
     } finally { signal?.removeEventListener("abort", abort); }
     signal?.throwIfAborted();

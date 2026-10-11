@@ -11,61 +11,40 @@ metadata:
 
 # User Experience Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Resolve tasks, information architecture, behavior and usability hypotheses.
 
-## Task and mental model
-Start from actors, goals, context, frequency, consequences of error and the
-information available to users. Distinguish observed behavior from inferred
-needs. Identify the user's mental model and avoid exposing internal system
-structure when it does not help the task.
+## Understand the task
 
-Map an end-to-end journey with decisions, dependencies, interruptions and
-handoffs. Use scenarios grounded in research; do not invent user interview
-quotes, validated personas or usability-test results.
+Identify actors, goals, context, frequency, error consequences and available
+information. Separate observed behavior from inferred needs. Model decisions,
+interruptions and handoffs across the journey; do not invent interview quotations,
+validated personas or usability findings.
 
-## Information and interaction
+## Compare interaction models
 
-Explore different mental models and task sequences before drawing screens:
-guided versus direct manipulation, object versus activity organization, or
-different physical/digital handoffs where appropriate. Compare candidates using
-the same realistic task, first-use comprehension, effort, interruptions and
-error recovery. Challenge an existing convention through a specific user benefit,
-not novelty for its own sake. Develop the selected state-transition model and
-identify what a task-based prototype would test; a walkthrough is a reasoned
-hypothesis, not evidence of observed usability.
-Define information grouping, navigation, labels and progressive disclosure.
-Prefer recognition where recall creates unnecessary effort. Explain object
-states and transitions: action, prerequisites, feedback, success and recovery.
-Account for undo, cancellation, partial progress and destructive actions when
-their consequences warrant it.
+Explore guided/direct, object/activity or physical/digital approaches before
+screens. Compare the same realistic task through first use, effort, interruptions
+and recovery. Challenge conventions through a user benefit, not novelty alone.
+Develop a state model and identify what a task-based prototype would test.
 
-Consider keyboard, touch, pointer, assistive technology, language, cognition
-and situational constraints. Match error prevention and confirmation to actual
-risk rather than adding confirmation everywhere.
+Define grouping, navigation, labels, prerequisites, feedback, success and recovery.
+Support undo, cancellation and partial progress where warranted. Consider keyboard,
+touch, assistive technology, language and situational constraints. Match prevention
+and confirmation to actual consequences rather than adding confirmation everywhere.
 
-## Design evidence
-Specify key journeys, interaction sequences, wireframe logic and edge states
-according to coverage needs. Link each view to a task or decision. An attractive
-screen does not demonstrate that a journey works.
+## Make the experience inspectable
 
-For UI/page tasks, develop these decisions into actual HTML/CSS/JS sources
-under plan/html/<scope-id>/, not only screen-image prompts. Choose UI/Web and
-HTML expression support as the task warrants. Declare observable primary-flow
-checks; Builder generates the approved page design. Preserve the conceptual
-status of hypotheses and future research.
+Link journeys, interaction sequences and edge states to specific user decisions.
+For UI tasks author actual HTML/CSS/JS under `plan/html/<scope-id>/`; screen images
+alone do not demonstrate a working flow. Use UI/Web knowledge for composition and
+html-interface for execution. Builder materializes approved behavior.
 
-Write behavior and content rules into the existing Design Spec. Include a
-proposed evaluation approach: realistic tasks, participant needs, observable
-success, errors or friction and the assumptions being tested. Proposed tests
-are future validation, not completed evidence.
-
-## Quality judgment
-Assess comprehension, discoverability, task continuity, feedback and recovery.
-Allow novel interaction when its learning and use remain understandable.
-Do not equate visual familiarity with usability.
+Retain exact behavior/content rules and proposed evaluation in the specification:
+realistic tasks, participant needs, observable success, friction and assumptions.
+A walkthrough is a hypothesis; proposed studies are not completed evidence. Judge
+comprehension, discoverability, continuity and recovery, without equating familiarity
+with usability.
 
 ## Knowledge source
-W3C explains how accessibility, usability and inclusion complement each other:
-https://www.w3.org/WAI/fundamentals/accessibility-usability-inclusion/
+
+[W3C: accessibility, usability and inclusion](https://www.w3.org/WAI/fundamentals/accessibility-usability-inclusion/).

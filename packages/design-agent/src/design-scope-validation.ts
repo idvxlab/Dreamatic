@@ -10,6 +10,17 @@ export interface ScopeIssue {
   deliverableId?: string;
 }
 
+/** New projects have a designed entry; existing project contracts remain readable. */
+export function diagnoseProjectPresentation(brief: Record<string, unknown>, design: Record<string, unknown>): ScopeIssue[] {
+  if (brief.presentationPolicy !== "designer_html" || Number(brief.designContractVersion ?? 1) !== 2) return [];
+  const presentation = design.presentation as { mode?: string; entry?: string } | undefined;
+  const deliverables = Array.isArray(design.deliverables) ? design.deliverables : [];
+  const entry = deliverables.find(item => item && item.file === presentation?.entry);
+  if (presentation?.mode === "html" && entry?.kind === "html_page" && entry.required === true
+    && (entry.execution?.method ?? entry.method) === "html_generate") return [];
+  return [{ code: "missing_project_html", pointer: "/presentation", message: "Declare one required Designer-authored html_page entry with html_generate and presentation.mode:html. Use an existing product page or a project-sized showcase; Builder cannot author a Gallery." }];
+}
+
 /** Pure diagnostics shared by editable drafts and commit/publication adapters. */
 export function diagnoseDesignScopes(scopes: { id: string; category: string }[], bindings: SkillBinding[], plan: Record<string, unknown>, manifest: Record<string, unknown>, availableProfessionals: Record<string, unknown> = {}): ScopeIssue[] {
   if (!scopes.length) return [];
@@ -74,6 +85,8 @@ export function diagnoseDesignScopes(scopes: { id: string; category: string }[],
 export async function validateDesignScopes(runDir: string, plan: Record<string, unknown>, manifest: Record<string, unknown>): Promise<void> {
   const brief = await readFile(join(runDir, "brief.json"), "utf8").then(JSON.parse).catch(() => ({}));
   const scopes = briefDesignScopes(brief);
+  const presentationIssues = diagnoseProjectPresentation(brief, manifest);
+  if (presentationIssues.length) throw new Error(presentationIssues[0]!.message);
   if (!scopes.length) return;
   const loaded = await readFile(join(runDir, ".performance/skills-designer.json"), "utf8").then(JSON.parse).catch(() => ({ activeSkills: [] }));
   const bindings: SkillBinding[] = Array.isArray(loaded.activeSkills) ? loaded.activeSkills : [];

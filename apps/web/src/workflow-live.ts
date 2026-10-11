@@ -26,7 +26,7 @@ const toolTitles: Record<string, string> = {
   artifact_lint: "Checked deliverables",
   design_bus_post: "Publishing workflow result",
   read: "Read project file",
-  write: "Wrote project file",
+  write: "Write project file",
   edit: "Edited project file",
   ls: "Inspected project files",
 };
@@ -79,6 +79,10 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
   const type = typeof event.type === "string" ? event.type : "";
   const invocationId = typeof event.invocationId === "string" ? event.invocationId : undefined;
   const at = typeof event.at === "string" ? event.at : new Date().toISOString();
+  if (type === "project_completed" && typeof event.id === "string" && typeof event.detail === "string") {
+    const node: WorkflowEvent = { id: event.id, kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, stage: "completion", artifactRefs: artifactRefs(event.artifactRefs), at };
+    return sorted([...workflow.filter(candidate => candidate.id !== node.id), node]);
+  }
   if (type === "design_categories_identified" && typeof event.detail === "string") {
     const id = typeof event.id === "string" ? event.id : `classification-${at}`;
     const node: WorkflowEvent = { id, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, at };

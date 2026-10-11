@@ -11,60 +11,41 @@ metadata:
 
 # UI and Web Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Specify interface composition, responsive relationships and consequential states.
 
-## Interface structure
-Establish content priority and the intended reading and interaction order.
-Choose a layout model appropriate to information density, task frequency and
-device context. Specify navigation, primary actions, content regions and
-supporting information with realistic text lengths and data variation.
+## Establish structure
 
-Design responsiveness as changes in relationships: reorder, wrap, stack,
-collapse or progressively reveal. State what remains visible and how users
-access displaced functions; simply shrinking desktop layouts is insufficient.
+Identify content priority, task frequency, density and reading/interaction order.
+Design navigation, primary actions and information regions with realistic copy
+and data. Compare layout families through grouping, task focus and disclosure,
+not theme swaps. Stress-test long content, sparse data, permissions and narrow widths.
 
-## Components and states
+Design responsive relationships explicitly: reorder, wrap, stack, collapse or reveal.
+State what stays visible and how displaced functions remain accessible; shrinking
+an oversized desktop layout is insufficient.
 
-Explore layout and interaction families through density, information grouping,
-navigation, task focus and progressive disclosure, not theme swaps. Stress-test
-each with realistic long content, sparse data, small viewports and permission
-differences. Borrow a cross-domain organizational principle only if it improves
-the task. Compare visual hierarchy, interaction cost and component/state
-complexity; document the selected rules and unresolved implementation dependencies.
-Define component anatomy, variants, inputs, outputs and interaction states.
-Specify focus, selected, disabled, loading, empty, error and success states
-when relevant, including their wording and behavior. Distinguish informational
-status from interactive affordances.
+## Resolve components
 
-Assign typography, color and spacing roles; explain density and hierarchy.
-Avoid using color alone for meaning. Describe keyboard order, focus visibility,
-alternative text and semantic roles where they affect implementation.
+Define anatomy, variants, inputs, outputs and relevant focus, selected, disabled,
+loading, empty, error and success behavior. Include actual wording and distinguish
+status from controls. Assign type, color and spacing roles. Meaning needs cues beyond
+color; specify keyboard order, focus, labels and semantic roles.
 
-## Visual coverage
-Choose views that demonstrate the primary task, meaningful navigation,
-secondary journeys, relevant alternatives, important component details and
-normal/empty/loading/error states across applicable device contexts. Do not
-stop at a home screen and one detail screen without covering the developed
-design. There is no default output-count ceiling. Include different content
-densities and consequential states. Include device layouts
-when responsive behavior changes the design. Exact copy, numerical values and
-component behavior belong in authored HTML/CSS/JS and the specification.
-Design a directly inspectable page prototype for UI tasks; image assets can
-support it, but screen images do not replace its behavior.
+Compare hierarchy, interaction cost, resilience and component complexity. Carry
+selected rules and real integration needs into the specification.
 
-Carry layout rules, component states, tokens and responsive decisions into the
-canonical Design Spec. Author the page sources in plan/html/<scope-id>/ for Builder to generate
-without redesign. Cover relevant navigation, states and responsive behavior
-with declarative interaction checks; use html-interface for delivery details.
-A local prototype does not establish backend integration or deployed service.
+## Author meaningful coverage
 
-## Quality judgment
-Evaluate hierarchy, legibility, clear affordances, content resilience and
-coherence across screen sizes. Decorative expression is welcome when it
-preserves task clarity.
+Choose pages and states from primary tasks, navigation, secondary journeys and
+consequential errors across device contexts. A home and detail screen are not
+automatically complete; avoid both missing flows and duplicate views.
+
+Author exact copy, values and behavior in HTML/CSS/JS under `plan/html/<scope-id>/`.
+Builder materializes approved sources without redesign. Cover consequential scripted
+flows and responsive behavior with interaction checks; use html-interface for the
+execution contract. Image assets support rather than replace inspectable behavior.
+A local prototype does not prove backend integration or deployed services.
 
 ## Knowledge source
-W3C's designer guidance provides practical accessibility considerations:
-https://www.w3.org/WAI/tips/designing/
+
+[W3C: accessibility tips for designers](https://www.w3.org/WAI/tips/designing/).

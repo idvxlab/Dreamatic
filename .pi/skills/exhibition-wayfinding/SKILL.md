@@ -11,52 +11,33 @@ metadata:
 
 # Exhibition and Wayfinding Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Connect curatorial narrative, visitor movement and environmental information.
 
-## Visitor and narrative
-Define audiences, visit duration, entry points, prior knowledge and intended
-learning or emotional outcomes. Connect the curatorial story to the visitor's
-spatial sequence; distinguish the author's narrative order from the routes
-visitors may actually take.
+## Model the visit
 
-Organize arrival, orientation, exploration, pause and exit. Consider sightlines,
-crowding, dwell time, seating, accessibility and staff or maintenance needs
-when they affect the experience.
+Identify audiences, prior knowledge, duration, entry points and intended outcomes.
+Separate the author's narrative from routes visitors may actually take. Account
+for arrival, orientation, exploration, pause, exit, crowding, seating and accessibility.
 
-## Spatial communication
+Compare thematic, chronological or visitor-led structures through an unfamiliar
+visitor's decision points and alternative routes, rather than sign appearance alone.
+Use material, light and spatial storytelling where they aid comprehension.
 
-Explore narrative and route models such as thematic clusters, chronological
-sequence or visitor-led discovery when the brief supports them. Compare arrival,
-an unfamiliar visitor's decision points, crowding and alternative accessible
-routes in each, not only sign appearance. Combine material, light and spatial
-storytelling where they support comprehension. Specify mounting, changing
-content, cleaning, sightline and maintenance assumptions for the selected scheme;
-distinguish conceptual location logic from a surveyed installable plan.
-Define interpretive layers from distant attraction to close reading. Establish
-sign types, naming, directional hierarchy, landmarks and decision points.
-Design continuity across routes; do not rely solely on color or an assumption
-that everyone follows one path.
+## Design communication in space
 
-Relate display objects, media, lighting, acoustics, graphics and materials.
-State protection or environmental assumptions for sensitive objects without
-inventing conservation requirements.
+Establish layers from distant attraction to close reading: sign types, names,
+directions, landmarks and junctions. Preserve continuity without relying solely
+on color or a single assumed path. Relate objects, lighting, acoustics and graphics.
 
-## Coverage and specification
-Plan overview, arrival, visitor-scale scenes, interpretive details, junctions
-and sign families as needed to explain the concept. Include views that test
-reading distance and route decisions, not only dramatic interior perspectives.
+Specify mounting, reading distance, sightlines, changing content, cleaning and
+maintenance assumptions. Distinguish conceptual location logic from surveyed
+installation plans; do not invent conservation requirements.
 
-Persist exact sign copy, location logic, hierarchy and accessibility intentions
-in the Design Spec and include the literal sign text, arrows and placement
-instructions in each relevant generation/edit prompt. Generate readable signs
-in their intended scene rather than blank panels explained by gallery captions.
-Keep unverified route relationships conceptual and distinguish designed text
-from guaranteed character-perfect rendering or an engineering-certified map.
+## Show the decisions
 
-## Quality judgment
-Look for a coherent relationship between story, movement and information.
-Expressive environments can remain surprising while orientation and essential
-communication remain intelligible. This module can operate independently of
-architecture-space.
+Select overview, arrival, visitor-scale scenes, junctions and sign-family details
+that test orientation and reading. Record exact sign text, arrows, placement and
+hierarchy in the specification and relevant image prompts. Captions supplement
+visible signs rather than replace them. Generated scenes do not certify exact
+lettering or engineering accuracy. Judge story, movement, legibility and accessibility
+as one experience.

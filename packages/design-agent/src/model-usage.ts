@@ -45,6 +45,6 @@ export async function writeModelPreview(runDir: string, entry: string, usage: Mo
   const target = relative(join(runDir, "artifacts"), join(runDir, entry)).replaceAll("\\", "/").split("/").map(encodeURIComponent).join("/");
   const path = "artifacts/00-model-preview.html";
   if (entry === path) throw new Error("Preview entry conflicts with runtime model wrapper");
-  await writeFile(join(runDir, path), `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DreamaticArt Preview</title><style>body{margin:0;display:flex;flex-direction:column;height:100dvh;background:#fafaf8;color:#343434}iframe{flex:1;width:100%;border:0;min-height:0}</style></head><body><iframe title="Design preview" src="${escape(target)}" sandbox="allow-scripts allow-downloads allow-popups"></iframe>${modelCreditHtml(usage)}</body></html>`);
+  await writeFile(join(runDir, path), `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DreamaticArt Preview</title><style>body{margin:0;display:flex;flex-direction:column;min-height:100dvh;background:#fafaf8;color:#343434}iframe{flex:none;width:100%;height:100dvh;border:0}</style></head><body><iframe title="Design preview" src="${escape(target)}" sandbox="allow-scripts allow-downloads allow-popups"></iframe>${modelCreditHtml(usage)}</body></html>`);
   return path;
 }

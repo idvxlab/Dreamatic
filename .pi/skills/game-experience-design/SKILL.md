@@ -11,49 +11,34 @@ metadata:
 
 # Game Experience Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Connect player decisions, systems, world and art direction to an intended experience.
 
-## Player experience
-Identify the intended player fantasy, audience, session context and experience:
-mastery, discovery, strategy, expression, narrative or social connection.
-Define the core loop in terms of decisions, actions, feedback and consequences.
-Explain why choices matter rather than listing mechanics.
+## Define the player fantasy
 
-Relate resources, progression, challenge and rewards to that loop. State rules
-and balance hypotheses without claiming playtest evidence. Avoid adding
-retention mechanics unrelated to the desired experience.
+Identify audience, session context and intended mastery, discovery, strategy,
+expression, narrative or social connection. Define decisions, actions, feedback
+and consequences; explain why choices matter. Relate resources, progression,
+challenge and rewards to this loop rather than unrelated retention mechanics.
 
-## World and interaction
+## Explore systems and world
 
-Explore fundamentally different player decisions, information visibility or
-resource relationships, not the same loop with new art. Recombine narrative,
-system and environmental ideas around the intended fantasy and explain the
-player consequence. Walk through a concrete play episode and its failure/recovery
-for each candidate. Compare learning, agency, legibility and content/systems
-production load; record a falsifiable playtest hypothesis for the selected loop.
-A static sequence neither proves fun nor establishes balanced mechanics.
-Connect narrative, environment, character and interface to player decisions.
-Define affordances, navigation, camera intent and feedback for important
-actions. Account for onboarding, failure, recovery and accessibility options
-where they influence the concept.
+Compare different decisions, information visibility or resource relationships,
+not the same loop with new art. Walk through the same play episode and recovery
+for each candidate. Evaluate agency, learning, legibility and content/system load;
+record a testable play hypothesis without claiming balance or observed fun.
 
-Establish art direction through form, color, material, lighting, scale and
-detail hierarchy. Preserve readability of interactive objects against the
-world. Differentiate atmospheric imagery from actionable UI.
+Connect environment, characters, narrative and interface to actions. Specify
+navigation, camera, affordances, onboarding, failure and accessibility where relevant.
+Define form, color, material, lighting, scale and detail hierarchy while keeping
+interactive objects readable against atmosphere.
 
-## Current runtime deliverables
-Plan static world views, interface concepts, interaction sequences, character
-or environment studies and rule documentation. DreamaticArt does not implement
-a playable game, animated sequence or 3D asset in its current image-based
-runtime; frame the delivery accordingly.
+## Deliver concept evidence
 
-Choose views from distinct play and communication questions. Record rules,
-states, visual anchors and interaction assumptions in the canonical Design
-Spec so images describe one coherent concept.
+Choose world views, interface studies, characters, interaction sequences and rule
+explanations by distinct design questions. Carry rules, states and visual anchors
+into the specification. Image outputs communicate concepts; they are not playable
+software, animation or 3D assets. When a local browser prototype is appropriate,
+author it through html-interface and describe only its implemented behavior.
 
-## Quality judgment
-Assess whether the intended experience follows from meaningful decisions,
-legible feedback and a consistent world. Speculative mechanics can be strong
-creative hypotheses; identify what future prototypes or playtests must verify.
+Distinguish hypotheses from completed playtests. Judge meaningful decisions, feedback,
+world coherence and what future prototypes still need to verify.

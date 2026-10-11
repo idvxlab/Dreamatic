@@ -1,3 +1,4 @@
+import { writeCompletionSummary } from "./completion-summary.js";
 import { loadedRuntimeIdentity } from "./delivery-block.js";
 import { ORCHESTRATOR_TOOLS } from "./orchestrator-contract.js";
 import { upgradeDesignData } from "./design-context-v2.js";
@@ -35,7 +36,6 @@ import { resolveInside, safeRunId } from "./paths.js";
 import { RUN_CONTEXT_SECTIONS, RUN_DOCUMENT_ALIASES, canonicalRunDocument, runDocumentCandidates, findRunDocument } from "./run-files.js";
 import { createModelImagePreview } from "./image-preview.js";
 import { createIdleSleepGuard } from "./idle-sleep.js";
-import { showcaseTemplate } from "./showcase-template.js";
 import { annotateShowcasePrompts, appendShowcaseReferences } from "./showcase.js";
 import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
 import { discoverResearchAssets, fetchResearchAsset, hasResearchPageCache, researchFetch, validateResearchAssets, webSearch } from "./research.js";
@@ -103,7 +103,7 @@ export const DREAMATIC_PERSONA_TOOL_POLICY = {
   researcher: ["update_design_context", "commit_design_context", "user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"],
   designer: ["design_context_validate", "update_design_context", "commit_design_context", "user_asset_import", "read", "write", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"],
   reviewer: ["update_design_context", "commit_design_context", "read", "design_bus_post", "design_bus_read", "design_context_read"],
-  builder: ["read", "write", "edit", "ls", "list_skills", "use_skill", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "showcase_template", "build_finalize"],
+  builder: ["read", "ls", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "build_finalize"],
 } as const;
 
 const DREAMATIC_SPECIALISTS = new Set(Object.keys(DREAMATIC_PERSONA_TOOL_POLICY).filter((persona) => persona !== "orchestrator"));
@@ -213,7 +213,7 @@ async function assertRoleWrite(workspaceDir: string, runId: string, agent: strin
   const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
   const path = resolveInside(runDir, target);
   const local = relative(runDir, path).replaceAll("\\", "/");
-  const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json", "artifacts/model-usage.json", "plan/model-usage.json"]);
+  const runtimeOwned = new Set(["brief.json", "run-state.json", "design-context.json", "bus.jsonl", "completion-summary.json", "research/assets/validation.json", "artifacts/artifact-manifest.json", "artifacts/lint-report.json", "artifacts/model-usage.json", "plan/model-usage.json"]);
   const unified = await hasUnifiedContext(runDir);
   if (unified && Object.values(CONTEXT_PROJECTIONS).some((paths) => (paths as readonly string[]).includes(local))) throw new Error(`${local} is a retired read-only Context path; no such file is generated. Use named update_design_context changes followed by commit_design_context {}.`);
   const roots: Record<string, string> = { researcher: "research/", designer: "plan/", reviewer: "review/", builder: "artifacts/" };
@@ -1443,18 +1443,6 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
   const reviewerPersona = options.parentInvocation?.agent === "reviewer" || (options.personaPath !== undefined && basename(options.personaPath) === "reviewer.md");
   const builderPersona = options.parentInvocation?.agent === "builder" || (options.personaPath !== undefined && basename(options.personaPath) === "builder.md");
   const assignedRunId = options.parentInvocation?.runId ? safeRunId(options.parentInvocation.runId) : undefined;
-  const builderToolsForRun = async (runId?: string): Promise<string[]> => {
-    const tools: string[] = [...DREAMATIC_PERSONA_TOOL_POLICY.builder];
-    if (!runId) return tools;
-    const runDir = resolveInside(workspaceDir, join("runs", safeRunId(runId)));
-    const plan = await readJsonRecord(runDir, "plan/design_plan.json").catch(() => undefined);
-    if (plan?.schemaVersion !== 2) return tools;
-    const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
-    const contract = deliveryContract(plan, manifest);
-    const generated = new Set(contract.tasks.filter(task => task.method === "html_generate").flatMap(task => [...htmlTask(task).files, ...htmlTask(task).resources].map(file => file.output)));
-    const pureHtml = contract.presentation.mode === "html" && contract.deliverables.every(item => item.method !== "manual" || generated.has(String(item.file)));
-    return pureHtml ? tools.filter(name => !["write", "edit"].includes(name)) : tools;
-  };
   const assignment = assignedRunId ? specialistRunAssignment(workspaceDir, assignedRunId, options.parentInvocation!.agent) : "";
   const assertAssignedRun = (runId: string, operation: string) => {
     const projectRunId = options.projectId ? safeRunId(options.projectId) : undefined;
@@ -1627,7 +1615,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         else if (designerPersona) pi.setActiveTools([...DREAMATIC_PERSONA_TOOL_POLICY.designer]);
         else if (reviewerPersona) pi.setActiveTools([...DREAMATIC_PERSONA_TOOL_POLICY.reviewer]);
         else if (builderPersona) {
-          builderTools = new Set(await builderToolsForRun(assignedRunId ?? options.projectId));
+          builderTools = new Set(DREAMATIC_PERSONA_TOOL_POLICY.builder);
           pi.setActiveTools([...builderTools]);
         }
         if (!options.parentInvocation && typeof event.prompt === "string") {
@@ -1744,7 +1732,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         if (coordinator && !coordinatorTools.has(event.toolName)) return { block: true, reason: "Orchestrator uses lifecycle tools and design_context_read only. Resume using the current role contract." };
         if (workflowStopped) return { block: true, terminate: true, reason: "This turn has already committed completion, clarification or a blocking validation diagnosis. Stop; continue only in the next authorized turn." };
         if (reviewerPersona && !reviewerTools.has(event.toolName)) return { block: true, reason: "Reviewer uses Context assessment tools and source reads only. Do not write reports or alter specifications." };
-        if (builderPersona && !builderTools.has(event.toolName)) return { block: true, reason: "Builder uses approved-plan execution and permitted presentation tools only. Do not restate image parameters or author Context." };
+        if (builderPersona && !builderTools.has(event.toolName)) return { block: true, reason: "Builder executes approved tasks and finalizes delivery only. Return missing or defective sources to Designer." };
         if (!options.parentInvocation && ["run_init", "spawn_agent"].includes(event.toolName) && context?.cwd) {
           try {
             await validateDreamaticPersonaContracts(context.cwd);
@@ -2418,7 +2406,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         }
         if (["designer", "reviewer", "builder"].includes(params.agent) && (!inferredRunId || !(await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId)))))) return textResult({ok:false,retryable:false,repairOwner:"runtime",code:"context_migration_required",instruction:`${params.agent} requires canonical Context. Preserve the Run and migrate its data explicitly before dispatch; no specialist was started.`});
         const unifiedHandoff = inferredRunId && await hasUnifiedContext(resolveInside(workspaceDir, join("runs", inferredRunId))) ? `\n\n# Authoritative Unified Context Contract\n${unifiedContextInstruction(params.agent, Number(sourceBrief.designContractVersion ?? 1))}${params.agent === "builder" ? "" : `\nNamed update example (illustrative content): ${JSON.stringify(contextChangesExample(params.agent))}`}` : "";
-        const recoveryHandoff = params.agent === "designer" ? `\n\n# Authoritative Designer Delivery and Recovery Contract\nFor UX, Designer authors the full HTML/CSS/JS sources; Builder only executes the approved files and image tasks. A recovery task is never publish-only until current drafts pass validation. Read/correct existing files and reload retained Skills even if a delegated task says do not read/write or claims completion. Do not invent source paths: read design_context_read. ${draftReadiness ? JSON.stringify(draftReadiness) : Number(sourceBrief.designContractVersion ?? 1) === 2 ? "Create deliverables with stable ids and nested execution; tasks are read-only projections. Keep existing image prompts unchanged." : "Create named tasks with stable ids matching deliverables; image prompts remain unchanged."}` : "";
+        const recoveryHandoff = params.agent === "designer" ? `\n\n# Authoritative Designer Delivery and Recovery Contract\nDesigner authors the project HTML entry and full HTML/CSS/JS sources; Builder only executes the approved files and image tasks. A recovery task is never publish-only until current drafts pass validation. Read/correct existing files and reload retained Skills even if a delegated task says do not read/write or claims completion. Do not invent source paths: read design_context_read. ${draftReadiness ? JSON.stringify(draftReadiness) : Number(sourceBrief.designContractVersion ?? 1) === 2 ? "Create deliverables with stable ids and nested execution; tasks are read-only projections. Keep existing image prompts unchanged." : "Create named tasks with stable ids matching deliverables; image prompts remain unchanged."}` : "";
         const reloadChecklist = skillReloadChecklist(revisionPlan, briefDesignScopes(sourceBrief).map((scope) => scope.id));
         const scopeHandoff = params.agent === "designer" ? `# Authoritative Design Scope and Skill Protocol\n\n${JSON.stringify(designScopeSkillProtocol(briefDesignScopes(sourceBrief)))}${reloadChecklist.length ? `\n\n# Revision Skill Reload Checklist\n${JSON.stringify(reloadChecklist)}\nThis is a fresh invocation: earlier Skill receipts are not loaded knowledge. Before correcting the design, load every retained primary AND supporting Skill using these exact calls. You may autonomously change selections for this task, but select through use_skill and update skill_refs to match actual loading. Do not publish until the full retained selection is loaded.` : ""}` : "";
         const requestProvenance = `# User Request Provenance\n\n${JSON.stringify({ originalRequest: sourceBrief.originalRequest ?? null, originalRequestSource: sourceBrief.originalRequestSource ?? "unavailable", projectTitle: sourceBrief.title ?? null })}\noriginalRequest is the user's source text, not the project title or the Orchestrator's rewritten brief/task. Extract search terms from that text and confirmed user clarifications. Project titles are display labels, never original wording. When originalRequest is unavailable, report the provenance gap and recover the actual user message through Orchestrator; do not invent or relabel a title as user input. Later confirmed revisions supplement the original request; they do not rewrite it.`;
@@ -2427,8 +2415,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           : { profile: "compact" as const, budget: WORKFLOW_BUDGETS.compact };
         const runtimeLimits = `# DreamaticArt Runtime Limits\n\nWorkflow profile: ${limits.profile}. Initial research acquisition budgets: ${JSON.stringify(limits.budget)}. A specific material evidence/figure gap can enable one bounded reserve per resource via refinementReason, up to twice its initial budget. Change keywords/sources rather than repeating attempted requests. Cached-page rediscovery and selected-image downloads need no new source fetch. These budgets limit searches and source fetches only. Reference images have no per-page or per-Run count ceiling; ignore obsolete referenceAssets budgets in older Briefs or tasks. Choose useful reference coverage based on user intent and retain lightweight screening, provenance and file-safety checks; uncertain article-context candidates are for Designer to evaluate, not automatically reject. These budgets do not limit design deliverables. DREAMATIC_IMAGE_DEFAULT_SIZE is ${imageSizeCeiling()} and is the hard per-image size ceiling. Unless the user explicitly sets a quantity or requests fewer images, there is no total or per-stage generation-count ceiling. Designer must map significant design conclusions, developed alternatives, scenarios, states, details and applications to adequate visual deliverables. Do not treat compact profiles, Skill examples, retry budgets or concurrency limits as output quotas. Builder executes the complete approved deliverable set. Image-specific limits apply only to imagery; HTML pages use their approved viewport/interaction requirements. No planned or executed image may exceed the image-size envelope, including when orientation is swapped.`;
         const executionProfile = params.agent === "builder" && inferredRunId
-          ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "plan/design_plan.json").then((plan) => plan.schemaVersion === 2 ? "\n\n# Approved Typed Execution\nUse execute_design_plan without ids first to execute all required tasks. ids selects a subset only; HTML presentation does not cancel required image tasks. HTML sources already contain the full design: do not reconstruct, copy by hand, write or edit their artifact files, even if the handoff says implement a page. Source resources and interactions are validated before approval. Do not perform another browser/visual/design audit or try image editing as a file-copy operation. Only mechanical generation/reuse and declared Gallery/manual output authoring belong to Builder." : "").catch(() => "") : "";
-        if (params.agent === "builder") tools = await builderToolsForRun(inferredRunId);
+          ? await readJsonRecord(resolveInside(workspaceDir, join("runs", inferredRunId)), "plan/design_plan.json").then((plan) => plan.schemaVersion === 2 ? "\n\n# Approved Typed Execution\nUse execute_design_plan without ids first to execute all required tasks. ids selects a subset only; HTML presentation does not cancel required image tasks. HTML sources already contain the full design: do not reconstruct, copy by hand, write or edit their artifact files, even if the handoff says implement a page. Source resources and interactions are validated before approval. Do not perform another browser/visual/design audit or try image editing as a file-copy operation. Only mechanical generation/reuse and finalization belong to Builder; missing sources return to Designer." : "").catch(() => "") : "";
+        if (params.agent === "builder") tools = [...DREAMATIC_PERSONA_TOOL_POLICY.builder];
         const childLoader = new DefaultResourceLoader({
           cwd: context.cwd,
           agentDir: getAgentDir(),
@@ -2701,7 +2689,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           try {
             await withRetry(async (attempt) => {
               try {
-                const task = attempt === 1 ? params.task : modelRecoveryTask(lastModelFailure);
+                const task = attempt === 1 ? params.task : modelRecoveryTask(lastModelFailure, params.agent);
                 const stageTask = unifiedHandoff
                   ? `${unifiedContextPrompt(task)}\n\n${specialistStageContract(params.agent, Number(sourceBrief.designContractVersion ?? 1))}\n\n# Research Acquisition Observations\n${JSON.stringify(await researchAcquisition(resolveInside(workspaceDir, join("runs", inferredRunId!))))}`
                   : task;
@@ -2863,7 +2851,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "use_skill",
       label: "Load design skill",
-      description: "Load exactly ONE named Pi Skill. Every bindings entry applies this SAME Skill to another assigned scope; bindings is not a batch of different Skills. Use separate calls for different Skill names. Bind shared knowledge atomically via bindings:[{scopeId,role,rationale}]. Single-scope arguments remain supported. All bindings validate before selection changes.  A primary replaces only that scope's primary. Deactivate obsolete support explicitly. Unchanged bodies are reused within this invocation; reload restores compacted knowledge.",
+      description: "Load exactly ONE named Pi Skill. Primary requires moduleType:discipline matching the assigned category; cross_domain/execution modules are supporting. Use list_skills primaryEligible and per-scope load arguments to determine eligibility. Every bindings entry applies this SAME Skill to another assigned scope; bindings is not a batch of different Skills. Use separate calls for different Skill names. Bind shared knowledge atomically via bindings:[{scopeId,role,rationale}]. Single-scope arguments remain supported. All bindings validate before selection changes. A primary replaces only that scope's primary. Deactivate obsolete support explicitly. Unchanged bodies are reused within this invocation; reload restores compacted knowledge.",
       parameters: Type.Object({ rationale: Type.Optional(Type.String({ minLength: 1, description: "Task-specific reason for this Scope–Skill selection; runtime records it in draft skill_selection" })),
         bindings: Type.Optional(Type.Array(Type.Object({ scopeId: Type.String({ minLength: 1 }), role: Type.Optional(Type.Union([Type.Literal("primary"), Type.Literal("supporting")])), rationale: Type.Optional(Type.String({ minLength: 1 })) }, { additionalProperties: false }), { minItems: 1 })),
         name: Type.String({ description: "One exact catalog Skill name. This same name applies to EVERY binding; do not put other Skills in the bindings rationale." }), arguments: Type.Optional(Type.String()),
@@ -2900,7 +2888,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           if (binding.role === "primary" && category && (metadata.moduleType !== "discipline" || !metadata.designCategories.includes(category))) throw new Error(JSON.stringify({ ok: false, code: "skill_scope_mismatch", name: skill.name, scopeId: binding.scopeId, category, selectionChanged: false,
             eligiblePrimaryScopes: scopes.filter(item => metadata.moduleType === "discipline" && metadata.designCategories.includes(item.category)).map(item => item.id),
             suggestedCalls: (await Promise.all(catalog.map(async candidate => ({ name: candidate.name, ...skillMetadata(parseFrontmatter<{ metadata?: unknown }>(await readFile(candidate.filePath, "utf8")).frontmatter.metadata) })))).filter(candidate => candidate.moduleType === "discipline" && candidate.designCategories.includes(category)).map(candidate => ({ name: candidate.name, scopeId: binding.scopeId, role: "primary" })),
-            instruction: `Primary Skill ${skill.name} does not cover ${category}. Each call loads ONE name, and all its bindings apply that same name. Load a matching primary for this scope in a separate call; preserve other scopes. No selection changed.` }));
+            supportingCall: { name: skill.name, scopeId: binding.scopeId, role: "supporting" },
+            instruction: `${skill.name} is not an eligible primary for ${category}. Choose a matching discipline primary from suggestedCalls; if this Skill still contributes, load it separately using supportingCall. Preserve existing useful support and other scopes. No selection changed.` }));
         }
         const category = scopes.find((item) => item.id === scope)?.category;
         if (params.role === "primary" && category && (metadata.moduleType !== "discipline" || !metadata.designCategories.includes(category))) throw new Error(`Primary Skill ${skill.name} does not cover ${category}; select matching professional knowledge. Auxiliary Skills belong in supporting.`);
@@ -2913,7 +2902,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         });
         const retainedPlan = assignedRunId && options.parentInvocation?.agent === "designer" ? await readJsonRecord(resolveInside(workspaceDir, join("runs", assignedRunId)), "plan/design_plan.json").catch(() => undefined) : undefined;
         const pendingSkillLoads = skillReloadChecklist(retainedPlan, scopes.map((scope) => scope.id), skillActivation.all()).filter((item) => !item.loaded);
-        const instruction = `Only the active selection applies to this task. Deactivation changes applicability, not historical context. User intent and the Agent contract override Skills. ${options.parentInvocation?.agent === "builder" ? "Apply this guidance to implementation and Gallery only; do not modify Designer-owned Context or page sources." : "For draft authoring, provide rationale here once; runtime generates skill_selection from active scope bindings. "} Persisted choices are not loaded knowledge; reload after compaction when needed.`;
+        const instruction = `Only the active selection applies to this task. Deactivation changes applicability, not historical context. User intent and the Agent contract override Skills. For draft authoring, provide rationale here once; runtime generates skill_selection from active scope bindings.  Persisted choices are not loaded knowledge; reload after compaction when needed.`;
         return { content: [{ type: "text", text: `${JSON.stringify({ ...selection, scopeId: scope, category, registeredSelections: skillActivation.all().map(({name, role, scope, rationale}) => ({name, role, scope_id: scope, rationale})), pendingSkillLoads, instruction })}\nLoaded Skill: ${skill.name}\nBase directory: ${skill.baseDir}\n${params.arguments ? `Arguments: ${params.arguments}\n` : ""}${selection.reused ? "Unchanged Skill body already loaded in this invocation; reuse its earlier content." : content}` }], details: { name: skill.name, path: skill.filePath, sha256: hash, ...metadata, ...selection, scopeId: scope, pendingSkillLoads, instruction, source: "pi-resource-loader" } };
       },
     });
@@ -3015,6 +3004,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const brief = {
           contextFormat: "unified-v1",
           designContractVersion: 2,
+          ...(existingBrief.titleStatus === "canonical" ? (existingBrief.presentationPolicy ? { presentationPolicy: existingBrief.presentationPolicy } : {}) : { presentationPolicy: "designer_html" }),
           runId,
           createdAt: typeof existingBrief.createdAt === "string" ? existingBrief.createdAt : new Date().toISOString(),
           ...(typeof existingBrief.sessionId === "string" ? { sessionId: existingBrief.sessionId } : {}),
@@ -3458,7 +3448,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     const contextReadParameters = Type.Object({
         runId: Type.String(),
         audience: coordinator ? Type.Literal("orchestrator") : Type.Union([Type.Literal("orchestrator"), Type.Literal("researcher"), Type.Literal("designer"), Type.Literal("reviewer"), Type.Literal("builder")]),
-        paths: Type.Optional(Type.Array(Type.String(), { minItems: 1 })),
+        paths: Type.Optional(Type.Array(Type.String(), { minItems: 1, description: "Required with select: specify exactly one canonical Context file." })),
         full: Type.Optional(Type.Boolean({ description: "Read complete selected JSON files only when omitted details are required." })),
         select: Type.Optional(Type.Object({
           section: Type.Union(["brief", "evidence", "findings", "usageConditions", "system", "strategy", "tasks", "deliverables", "presentation", "acceptanceNotes", "executionNotes", "assessment", "intentCoverage"].map(field => Type.Literal(field))),
@@ -3469,7 +3459,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         section: Type.Optional(Type.Union(Object.keys(roleContextSchema(role!, contractVersion).properties).map(field => Type.Literal(field)), { description: "A field of your own role's working draft. For another role's canonical content use paths and select instead." })),
         ...(role === "designer" ? { ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "Stable ids within your working tasks or deliverables; requires section." })) } : {}),
         } : {}),
-      }, { additionalProperties: false });
+      }, {
+        additionalProperties: false,
+        // Overview/full-file reads keep optional paths; canonical selection requires one file.
+        anyOf: [
+          { not: { required: ["select"] } },
+          { required: ["paths"], properties: { paths: { minItems: 1, maxItems: 1 } } },
+        ],
+      });
     pi.registerTool({
       name: "design_context_read",
       label: "Read compact Design Context",
@@ -4087,41 +4084,6 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     });
 
     pi.registerTool({
-      name: "showcase_template",
-      label: "Build showcase from captions",
-      description: "Render a local responsive gallery from approved deliverable ids, captions and thematic sections. Include required images and links to required HTML pages. Finalization adds references and prompt attribution. Pure HTML presentation uses its approved page instead of this gallery.",
-      parameters: Type.Object({ runId: Type.String(), title: Type.String(), sections: Type.Array(Type.Object({ title: Type.String(), items: Type.Array(Type.Object({ id: Type.String(), caption: Type.String() }), { minItems: 1 }) }), { minItems: 1 }) }),
-      async execute(_id, params, signal) {
-        if (options.parentInvocation?.agent !== "builder") throw new Error("Only Builder may render a showcase");
-        assertAssignedRun(params.runId, "showcase_template");
-        signal?.throwIfAborted();
-        const runDir = resolveInside(workspaceDir, join("runs", safeRunId(params.runId)));
-        const manifest = await readJsonRecord(runDir, "plan/deliverable_manifest.json");
-        const deliverables = requiredArray(manifest, "deliverables", "manifest").map((item) => requiredRecord(item, "deliverable"));
-        const covered = new Set(params.sections.flatMap((section) => section.items.map((item) => item.id)));
-        for (const item of deliverables) if (item.required === true && !covered.has(String(item.id))) throw new Error(`Showcase omits required deliverable: ${String(item.id)}`);
-        const sections = [];
-        for (const section of params.sections) {
-          const items = [];
-          for (const item of section.items) {
-            const entry = deliverables.find((entry) => entry.id === item.id);
-            if (!entry) throw new Error(`Unknown deliverable: ${item.id}`);
-            const file = requiredString(entry, "file", "deliverable");
-            const path = entry.method === "html_generate"
-              ? await physicalRunFile(runDir, file)
-              : artifactOutputPath(workspaceDir, params.runId, item.id, "generated-images", file);
-            if (!(await stat(path)).isFile()) throw new Error(`Missing output: ${item.id}`);
-            items.push({ ...item, path, ...(entry.method === "html_generate" ? { kind: "html" as const } : {}) });
-          }
-          sections.push({ title: section.title, items });
-        }
-        const path = join(runDir, "artifacts", "00-gallery.html");
-        await writeFile(path, showcaseTemplate(params.title, sections, dirname(path)));
-        return textResult({ ok: true, path: relative(workspaceDir, path), instruction: "Showcase saved; call build_finalize when all required outputs are ready." });
-      },
-    });
-
-    pi.registerTool({
       name: "compare_images",
       label: "Compare design images",
       description: "Load two to six labeled local images together so the model can compare real visual evidence against explicit criteria.",
@@ -4202,7 +4164,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "build_finalize",
       label: "Finalize build",
-      description: "Finalize approved outputs and presentation: create delivery metadata, run mechanical lint, and commit build_done. For gallery presentation, first author artifacts/00-gallery.html; finalization appends research citations. For HTML presentation, generate its declared approved page, without an extra gallery. No fallback page is generated. This is not a visual or engineering audit.",
+      description: "Finalize approved outputs and the declared HTML entry: run mechanical checks, write delivery metadata and commit build_done. Missing or defective sources return to Designer. No fallback page or visual audit is generated.",
       parameters: Type.Object({
         runId: Type.String(),
         summary: Type.Optional(Type.String()),
@@ -4299,10 +4261,10 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         await mkdir(artifactsDir, { recursive: true });
         const galleryPath = join(artifactsDir, "00-gallery.html");
         const authoredGallery = await readFile(galleryPath, "utf8").catch((error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") throw new Error("Builder must author artifacts/00-gallery.html before build_finalize. Write the layout, overall description, image captions and conclusion; preserve completed images.");
+          if (error.code === "ENOENT") throw new Error("Existing Gallery entry is missing. Return to Designer to declare a complete HTML entry; Builder cannot author a replacement.");
           throw error;
         });
-        if (!authoredGallery.trim()) throw new Error("Builder-authored artifacts/00-gallery.html is empty; write the Showcase before build_finalize");
+        if (!authoredGallery.trim()) throw new Error("Existing Gallery entry is empty; return the source defect to Designer");
         const artifactManifestPath = join(artifactsDir, "artifact-manifest.json");
         const modelUsage = await collectModelUsage(runDir, artifacts);
         await writeFile(join(runDir, "plan/model-usage.json"), JSON.stringify(modelUsage, null, 2));
@@ -4455,6 +4417,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           ? gallery
           : gallery.replace(/<head([^>]*)>/i, '<head$1><base href="artifacts/">');
         if (typedPresentation?.mode !== "html") await writeFile(join(finalDir, "00-index.html"), html, "utf8");
+        const completion = await writeCompletionSummary(runDir, runId, finalDir);
         await updateRunState(workspaceDir, runId, "export_done");
         await updateDesignContextIndex(workspaceDir, runId, "export_done");
         const progressPath = join(runDir, "plan", "progress.json");
@@ -4469,7 +4432,8 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
             items: progress.items.map((item) => ({ ...item, status: "completed" })),
           }, null, 2), "utf8");
         }
-        return finishWorkflow({ ok: true, runId, finalDir, files: await listFiles(finalDir) });
+        if (completion.fresh) await appendWorkflowLifecycleEvent(workspaceDir, runId, completion.event);
+        return finishWorkflow({ ok: true, runId, finalDir, completion: completion.summary, files: await listFiles(finalDir) });
       },
     });
   };

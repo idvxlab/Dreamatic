@@ -14,8 +14,8 @@ boundaries; they do not grant tools or change storage contracts.
 - Runtime owns project metadata, Brief, indexes, state, Bus, versions, approval
   receipts and validation/finalization records.
 - Researcher authors research; Designer authors design and complete page sources;
-  Reviewer authors assessments; Builder executes approved deliverables and designs
-  their Gallery presentation. Orchestrator confirms intent and routes work.
+  Reviewer authors assessments; Builder executes approved deliverables and finalizes
+  delivery. Designer owns the project presentation. Orchestrator confirms intent and routes work.
 - Unified Runs use named `update_design_context` changes and
   `commit_design_context({})` for role-owned Context. Never write canonical Context
   with file tools or recreate retired reports.
@@ -62,14 +62,13 @@ can be imported content; remote embeds and script/HTML imports are unsupported.
 Designer chooses task-specific coverage and appropriate image sizes within the
 runtime ceiling. No default image-count ceiling applies; respect user quantities
 and budgets. Skill examples, research profiles and retry/concurrency limits are
-not output quotas. Include required copy in image prompts; Gallery captions do
+not output quotas. Include required copy in image prompts; page captions do
 not replace artwork text. Do not claim guaranteed text or geometry fidelity.
 
 Builder executes the complete approved set and real source-before-edit
 dependencies. Use stored-plan execution for approved deliverables. PNG and JPG/JPEG
-are supported according to the runtime output contract. Pure HTML uses its approved page entry; Gallery delivery
-uses Builder-authored presentation. Builder may load relevant presentation Skills,
-including `showcase-layout`, independently of Designer's Skill selections.
+are supported according to the runtime output contract. New projects use a Designer-authored HTML entry. Builder materializes approved
+sources and finalizes delivery; it does not load Skills or author presentation.
 
 Designer publication and Reviewer approval validate approved HTML sources and
 declared interactions when browser validation is available. Required-browser

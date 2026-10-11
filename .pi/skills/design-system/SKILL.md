@@ -12,72 +12,43 @@ metadata:
 
 # Design System
 
-Use this optional module when several outputs must feel like one designed family. The system should be concise enough to guide execution and specific enough to evaluate consistency.
+Define the relationships that make several outputs a coherent family.
 
-## System Thesis
+## Select the thesis
 
-Start with one sentence describing the intended character and the principle that unifies the work. Every token or rule should support that thesis.
+State the intended character and unifying principle in one sentence. Compare
+candidate systems in the same demanding applications before freezing an attractive
+motif. Evaluate recognition, expressive range, content resilience and complexity.
+Separate confirmed invariants from revisable proposals; trace changed rules to
+affected components, views and prompts.
 
-## Core Decisions
+## Specify useful rules
 
-Do not freeze the first attractive motif into a consistency anchor before the
-concept is selected. Keep materially different candidate systems separate and
-test each against the same demanding applications. Compare expressive range,
-recognition, content resilience and production complexity; a system must support
-the subject rather than force every artifact into identical minimal geometry.
-On feedback, distinguish confirmed invariants from revisable proposals and
-trace a changed token or rule to affected components, views and prompts. Preserve
-user-approved relationships while revisiting the underlying thesis when rejected.
+Choose only decisions relevant to the outputs:
 
-Define only the dimensions that affect the requested artifacts:
+- palette roles, contrast, material and lighting behavior;
+- typography hierarchy, density and alignment;
+- grid, spacing, framing and composition;
+- form, motif, geometry, surface and imagery treatment;
+- voice, consistency anchors and asset-preservation rules.
 
-- palette roles, contrast behavior, and material or lighting implications;
-- typography roles, hierarchy, density, and alignment behavior;
-- grid, spacing rhythm, framing, and compositional structure;
-- form language, motif, geometry, material, or surface behavior;
-- imagery, illustration, rendering, photography, or diagram treatment;
-- voice and textual tone when language is part of the design;
-- one or more consistency anchors that must recur across outputs;
-- protected assets and explicit `do_not` constraints.
+Adapt emphasis to the domain: spatial light/material, product geometry/CMF or
+graphic grid/type. Preserve identity-defining relationships while allowing distinct
+compositions and expressive density. Consistency does not imply uniform minimalism.
 
-For each prohibition, state whether it comes from user intent, an evidenced
-asset condition, a runtime limit or Designer's own consistency decision. Only
-the latter is a revisable creative rule. Do not import an upstream assumption
-as a universal ban or convert subject recognition into prohibited copying.
-Allow detailed, expressive and contextual applications while preserving the
-identity features that actually unify the family.
-Derive expressive density and medium from communication needs and the selected
-direction, not from an assumption that a coherent system must be restrained.
-Distinguish accurate subject depiction from copying an existing design.
+For each prohibition identify its basis: user intent, evidenced asset condition,
+runtime limit or revisable creative choice. Accurate subject depiction is distinct
+from copying an existing design. For critical invariants decide whether text is
+sufficient or dependent image editing needs a real source and preservation rules.
 
-Adapt the system to the domain. A spatial system may prioritize material, light, and thresholds; a product system may prioritize geometry and CMF; a graphic system may prioritize grid, type, and image treatment.
+## Author the current Context
 
-Separate conceptual invariants from their execution mechanism. For each critical
-invariant, specify whether written instructions suffice or a source asset and
-dependent editing are needed. Name source/output ids and preservation rules in
-the Design Spec; do not call a token or label an actual image input. Preserve
-identity-defining relationships while allowing different compositions, contexts
-and expressive density. Consistency is not uniform minimalism or identical layouts.
+Submit system decisions through `update_design_context({changes:{system:{...}}})`.
+Keep `system_thesis`, `palette`, `typography`, `consistency_rules`, `asset_rules`,
+`consistency_anchor` and `prohibited` inside `changes.system`. Palette and typography
+use named-role objects; these fields do not belong at the changes root or in strategy.
+Runtime owns identity and versions.
 
-## Design Spec Contract
-
-When expressing the system as structured data, put these fields together inside
-the Designer's `system` object. In unified Runs submit
-`update_design_context({changes:{system:{...}}})`; runtime owns Run identity and
-versions. Keep the contract compact and include only useful decisions:
-
-- `system_thesis`;
-- palette and typography as objects with named roles;
-- `consistency_rules` and `asset_rules`;
-- at least one `consistency_anchor`;
-- `prohibited` treatments or transformations.
-
-`consistency_rules`, `asset_rules`, `consistency_anchor` and `prohibited` belong
-inside `changes.system`, alongside `system_thesis`, `palette` and `typography`.
-They are not siblings of `system` or fields of `strategy`.
-
-Add domain-specific fields only when they improve execution. Avoid copying research notes, workflow state, or review history into the design system.
-
-## Quality Lens
-
-Check whether the system is traceable to the brief, internally coherent, discriminating enough to guide choices, flexible across outputs, and free of rules that exist only for decoration.
+Include domain-specific decisions only when useful. Keep research, review history
+and workflow state out of the system. Judge traceability, coherence, useful
+specificity and flexibility across the actual outputs.

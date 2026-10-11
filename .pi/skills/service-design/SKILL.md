@@ -11,53 +11,36 @@ metadata:
 
 # Service Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Connect customer experience to staff, systems and operational handoffs.
 
-## End-to-end experience
-Define actors, desired outcomes, entry conditions, channels and the span of the
-service. Map what happens before, during and after the central interaction.
-Identify waiting, handoffs, exceptions and failure recovery alongside the
-ideal path.
+## Model end-to-end delivery
 
-Distinguish what the customer experiences from how the organization delivers
-it. Relate customer actions and visible touchpoints to staff actions, backstage
-processes, supporting systems and operational ownership.
+Identify actors, outcomes, entry conditions and channels before, during and after
+the central interaction. Include waiting, exceptions, handoffs and recovery.
+Relate customer actions and visible touchpoints to staff, backstage processes,
+supporting systems and operational ownership.
 
-## Service concept
+## Compare service concepts
 
-Explore alternative allocations of agency, channels, sequence and responsibility:
-what could be self-directed, assisted, anticipatory or asynchronous? Compare
-the same customer episode across concepts with frontstage/backstage implications.
-Use an adjacent service pattern only after accounting for trust, staff capacity
-and recovery. Specify owner, input, output and fallback for critical handoffs;
-compare training, staffing and coordination cost drivers without inventing
-service-level evidence or claiming that a storyboard validates operations.
-Develop the service promise, interaction principles and roles. Design how
-information, objects and responsibility move between touchpoints. Explain
-capacity, timing, training and policy assumptions when they affect the proposal.
-Avoid inventing operational evidence or promising service levels without
-support.
+Vary agency, channels, sequence and responsibility: self-directed, assisted,
+anticipatory or asynchronous where suitable. Compare the same customer episode
+with frontstage/backstage consequences. Transfer adjacent service patterns only
+after considering trust, staff capacity and recovery.
 
-Include accessibility across channels, fallback options and continuity when a
-channel fails. For cultural or community contexts, distinguish participants'
-observed needs from inferred interpretations.
+For critical handoffs specify owner, input, output and fallback. Record capacity,
+timing, training, policy and coordination cost drivers as assumptions when unverified.
+Include accessible alternatives and continuity when a channel fails. Distinguish
+observed community needs from inferred interpretations; storyboards do not validate
+operations or service levels.
 
-## Communicating the design
-Select journeys, service scenes, touchpoint concepts and blueprint segments that
-demonstrate the proposed experience. Assign each touchpoint an owner, input,
-output and recovery behavior in the existing Design Spec.
+## Show the service
 
-Use imagery for tangible scenes and artifacts. Keep exact process logic, roles,
-timings and labels in structured or deterministic content rather than asking
-an image model to produce a precise blueprint.
-
-## Quality judgment
-Assess whether a coherent promise can be delivered across handoffs and common
-exceptions. Treat organizational feasibility as an explicit assumption when
-research cannot establish it.
+Choose journeys, scenes, touchpoints and blueprint segments by meaningful questions.
+Keep exact process logic, roles, timing and labels in the specification and authored
+HTML where deterministic reading matters; imagery communicates tangible scenes.
+Judge the coherence of the promise across common exceptions and identify what
+organizational feasibility still requires validation.
 
 ## Knowledge source
-NN/g describes service-blueprint layers and their relationship to delivery:
-https://www.nngroup.com/articles/service-blueprints-definition/
+
+[NN/g: service blueprints](https://www.nngroup.com/articles/service-blueprints-definition/).

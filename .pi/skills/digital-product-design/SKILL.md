@@ -11,58 +11,40 @@ metadata:
 
 # Digital Product Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Resolve product-level value, capability and experience for digital or connected services.
 
-## Product framing
-Identify the user outcome, context of use, value proposition and evidence of
-need. Separate user value, business goals and technical assumptions. Define
-the core loop: trigger, meaningful action, feedback, achieved outcome and
-reason to return. Avoid engagement mechanisms that obscure the user's goal.
+## Frame the outcome
 
-Compare plausible concepts through utility, differentiation, adoption friction
-and delivery constraints. Develop the selected concept into a coherent scope:
-core capability, supporting capabilities and explicit exclusions.
+Identify user outcome, use context, value proposition and evidence of need.
+Separate user value, business goals and technical assumptions. Define the core
+loop: trigger, meaningful action, feedback, outcome and reason to return.
+Avoid engagement mechanisms that obscure the user's goal.
 
-## Product structure
+## Compare product concepts
 
-Explore different ways of achieving the outcome: change who acts, when guidance
-appears, how information is organized or how work crosses channels. A different
-theme on the same feature list is not a different product concept. Compare the
-same user scenario across candidates, including setup effort, permissions,
-data availability, failure recovery and value after first use. Select a coherent
-core loop and identify data/integration dependencies, operational ownership and
-cost/complexity drivers. State which prototype or user observation could disconfirm
-its value; do not infer demand from attractive competitor screens.
-Define actors, permissions, objects, relationships, lifecycle and ownership.
-Explain the information a user needs at each decision and where it comes from.
-Connect navigation and feature architecture to these objects rather than
-inventing a menu of unrelated features.
+Vary who acts, when guidance appears, how information is organized or how work
+crosses channels; a new theme on the same feature list is not a new concept.
+Compare the same scenario through utility, distinction, setup effort, permissions,
+data availability, failure recovery and value after first use. Attractive competitor
+screens do not establish demand. Identify a prototype or observation that could
+challenge the selected concept's value.
 
-Describe first use, recurring use, interruptions, collaboration and recovery
-where relevant. Specify realistic content, empty or incomplete data and
-permission boundaries. For connected hardware, describe the handoff between
-physical controls, software and service without assuming universal connectivity.
+## Structure the experience
 
-## Proposal and delivery
-Map applicable journeys, roles, major task steps, navigation, content variants,
-normal/empty/loading/error states, device contexts and meaningful concept
-alternatives. Design enough pages, states and scenarios to explain the developed
-decisions, not just one representative journey. Include more than a polished landing screen when the outcome depends
-on several tasks, roles or states. Write intended behavior, content, rules and
-validation hypotheses into the canonical Design Spec.
-Choose page/state coverage from the task and requested scope; keep consequential
-flows directly inspectable rather than cramming them into a tiny overview.
+Define core/supporting capabilities and exclusions, actors, permissions, objects,
+relationships, lifecycle and ownership. Connect navigation to these objects and
+the information each decision requires. Describe first use, recurring use,
+interruptions, collaboration and recovery with realistic content and incomplete data.
+For connected hardware explain physical/software/service handoffs and offline limits.
 
-Distinguish a conceptual interface image from a functional application.
-For UI tasks, author HTML/CSS/JS page prototypes with realistic content and
-local interaction, using html-interface for the delivery contract. Builder
-generates those approved sources. Record real data/integration dependencies
-without claiming that a local prototype implements deployed services.
+Record integration needs, operational ownership and cost/complexity drivers as
+assumptions when unverified. Commercial and usability success remain hypotheses.
 
-## Quality judgment
-A strong concept connects an important user need to a comprehensible and
-differentiated experience. Treat commercial or usability success as a hypothesis
-until supported by research or testing. This module is independent of UX and
-UI modules; those can deepen a task when applicable.
+## Deliver meaningful coverage
+
+Choose pages, states and scenarios from actual journeys, roles and consequences,
+including empty/loading/error cases and relevant device contexts. A polished landing
+screen cannot explain a multi-step product. Develop UI tasks into authored HTML/CSS/JS
+with realistic content and local interactions; use html-interface for the execution
+contract. Builder materializes approved sources. A local prototype does not establish
+backend integration or a deployed service.

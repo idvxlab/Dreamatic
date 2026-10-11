@@ -1,166 +1,145 @@
 ---
 name: html-interface
-description: "Express approved UX/UI design as complete responsive HTML, CSS and local JavaScript with explicit resources and interaction checks. Supporting knowledge for page delivery."
+description: "Express project showcases and approved UX/UI design as complete responsive HTML, CSS and local JavaScript with explicit resources and interaction checks. Supporting knowledge for page delivery."
 metadata:
   audience: designer
   domain_type: html_interface_expression
-  design_categories: [ux]
+  design_categories: []
   module_type: execution
   supported_outputs: [html]
 ---
 
 # HTML Interface Expression
 
-Apply alongside suitable UX/UI professional knowledge. User intent determines
-content, style and scope; this module defines executable expression, not a theme.
-Designer owns the complete page design; Builder generates the approved files.
-Use one cohesive source per write, with path before content in write arguments.
-Split unusually large sources into meaningful local modules instead of risking
-a truncated tool response; this is not a feature, page or design-coverage quota.
+Translate the selected design into complete responsive HTML/CSS/local JavaScript.
+Designer authors sources; Builder materializes approved files without redesign.
+Every project has one required HTML entry. An existing product page can be that
+entry; this Skill does not require extra pages, scopes or a fixed section count.
 
-Author complete HTML/CSS/JS under `plan/html/<scope-id>/`. Use semantic markup,
-realistic copy/content, clear hierarchy and controls, visible focus, appropriate
-labels, and responsive relationships. Design relevant loading/empty/error states,
-navigation and recovery. Implement declared local interactions with mock data
-or local state. Record real backend dependencies without pretending they exist.
-Use native browser features and local assets; no remote scripts/styles/fonts,
-network requests, iframe embeds, eval, service workers or base elements. Use inline
-data or local JS constants instead of fetch. Prevent default form submission
-when handling it locally. Relative page links and system fonts are valid.
+## Author complete sources
 
-Follow the runtime-injected design contract version. In unified v2, each deliverable
-owns id/scope/file and nested execution:{method:"html_generate",files,resources,
-uses,interaction_requirements,interaction_checks,viewports}. execution.uses references
-other deliverable ids; runtime derives dependencies and artifact resource mappings.
-Keep image prompts/sizes inside each image deliverable's execution. Never author a
-second task list or duplicate scope/identity. Historical unified v1 retains tasks;
-Builder consumes the derived execution view.
-Production required and presentation required are separate. Explicitly declare
-user_requested and presentation access (embed/link/download); user-requested imagery
-must be visible or accessible from the entry, rather than only copied to artifacts.
+Write under `plan/html/<scope-id>/`, with `path` before `content`. For substantial
+pages, use a small HTML entry linking local CSS and JavaScript; move repeated
+content or diagrams into local modules/data rendered by that JavaScript, without fetch.
+Save one complete file per response, retaining successful files as checkpoints.
+Keep small pages simple; this is source organization, not extra pages or reduced coverage.
+After truncation, split the failed source before retrying. Do not append incomplete
+markup, rely on unsaved streamed code, or resend the entire page merely shortened.
+Map every local module in the page's `execution.files` and resolve links from outputs.
+Use semantic markup, realistic copy, accessible controls, visible focus and
+responsive relationships. Implement relevant navigation, states and recovery with
+local state or mock data; record real integrations as unresolved dependencies.
 
-Declare executable interaction_checks once: {name, viewport?:{min_width?,max_width?},
-steps:[{action,selector?,value?}]}. Optional interaction_requirements are descriptive
-notes, not a second copy of outcome assertions or a publication prerequisite.
-Native anchor navigation does not require a separate test list; test meaningful
-scripted user flows and responsive menu behavior. Commit then publish; publication
-validates sources. Use design_context_validate for optional targeted diagnostics
-and repair the reported exact fields/sources. Final validation
-checks the Gallery and real assets after Builder creates them.
-All outputs stay under artifacts/. Resolve local URLs relative to the containing
-HTML output, not the Run root or source directory: from artifacts/cabin/index.html
-to artifacts/seats/index.html use href="../seats/index.html", not
-href="artifacts/seats/index.html". Source and output mappings do not rewrite URLs.
-Researcher-discovered images are reference-only. User-specified existing works
-can be imported unchanged with user_asset_import and mapped directly from
-inputs/user-assets/; do not regenerate originals merely to deliver them. For new
-or meaningfully changed imagery declare image_generate/image_edit tasks, map
-the resulting artifacts/... files and include producer dependencies. For edits
-supply referenceImagePaths, diagnosis, actual changes and preserve; provenance
-reference_ids_or_paths alone does not supply pixels. Keep each asset strategy
-consistent across the plan, task breakdown, manifest and resource mappings. A missing-image
-fallback, lazy loading or a changed src does not replace this execution plan.
-Every resource is a concrete {source, output} mapping, not an external_url/url/license
-declaration. Author icons/vector/UI code under plan/html/... using files mappings.
-Use system-font stacks and remove remote Google Fonts imports. Author all required sources
-before posting completion. An HTML page has no image prompts or image sizes.
+For showcases, shape the story around actual work with meaningful captions and
+inspectable full/detail views. Preserve image proportions. Keep prompts, generation
+logs and invented technical claims out of visitor-facing copy.
 
-Example execution task (adapt coverage to the actual design):
+Use local assets and native browser features. Remote embedded scripts, styles,
+fonts, network requests, iframe, eval, service workers and base elements are
+unsupported. Use system fonts and local constants instead of fetch; prevent local
+forms from submitting. Ordinary navigation and evidence links may use HTTPS,
+mailto, tel, query or hash URLs.
+
+## Declare the current deliverable
+
+Author `deliverables` through `update_design_context({changes:{...}})`. Identity,
+scope, file, purpose and acceptance belong on the deliverable. Put method, source
+mappings, resources, producer references, viewports and checks inside `execution`.
+Use the exact assigned scope id and actually loaded Skill names.
 
 ```json
 {
-  "id": "settings-page", "scope_id": "control-ui", "category": "ux",
-  "method": "html_generate",
-  "files": [
-    {"source": "plan/html/control-ui/index.html", "output": "artifacts/control-ui/index.html"},
-    {"source": "plan/html/control-ui/style.css", "output": "artifacts/control-ui/style.css"},
-    {"source": "plan/html/control-ui/app.js", "output": "artifacts/control-ui/app.js"}
-  ],
-  "resources": [], "dependencies": [],
-  "viewports": [{"width": 1440, "height": 900}, {"width": 390, "height": 844}],
-  "interaction_checks": [{"name": "Save settings", "steps": [
-    {"action": "fill", "selector": "#name", "value": "Living room"},
-    {"action": "click", "selector": "#save"},
-    {"action": "expect_text", "selector": "#status", "value": "Saved"}
-  ]}]
+  "id": "project-page", "scope_id": "actual-owning-scope",
+  "skill_refs": ["loaded-professional-skill", "html-interface"],
+  "kind": "html_page", "file": "artifacts/project/index.html",
+  "purpose": "Present the project", "acceptance_test": "Required works are accessible",
+  "required": true, "user_requested": false,
+  "presentation": {"required": true, "access": "embed"},
+  "execution": {
+    "method": "html_generate",
+    "files": [{"source": "plan/html/actual-owning-scope/index.html", "output": "artifacts/project/index.html"}],
+    "uses": [], "resources": [],
+    "viewports": [{"width": 1440, "height": 900}, {"width": 390, "height": 844}],
+    "interaction_checks": []
+  }
 }
 ```
 
-Declare a matching deliverable with id, kind html_page, file
-artifacts/control-ui/index.html, purpose, acceptance_test, required, scope_id,
-category and skill_refs (names actually loaded for that scope). In unified
-Context, method belongs only to the task; omit method and size from deliverables.
+Set project `presentation` to `{"mode":"html","entry":"artifacts/project/index.html"}`.
+`required` means production; deliverable `presentation.required` means user access.
+Set `user_requested` from actual intent; requested outputs require both production
+and embed/link/download access from the entry. Internal-only outputs need a rationale.
+For shared work keep one owning scope and one output; `contributing_scopes` records
+other scopes' `scope_id`, `category`, loaded `skill_refs` and `purpose`.
 
-The presentation field is `{"mode":"html","entry":"artifacts/control-ui/index.html"}`
-for page-first delivery. For mixed image/page delivery, mode gallery uses
-artifacts/00-gallery.html; Builder links the pages from it. One task may include
-multiple pages and shared files. Distinct tasks may depend on each other's assets.
-`entry` is the single Showcase homepage, not an `artifacts[]` collection. Designer
-saves fill a missing HTML entry from the sole html_page deliverable's declared
-file, even when its task has multiple pages. With multiple HTML deliverables,
-explicitly choose the homepage; with mixed delivery, explicitly choose the mode.
+## Map assets and links
 
-Checks use click/fill/press/expect_visible/expect_hidden/expect_text/expect_value;
-fill/press/expect_text/expect_value require value. A check can declare page as its
-artifacts/... HTML path. Empty checks are appropriate only for a static page.
-Cover consequential flows and applicable viewports, not a fixed page/test quota.
-Passing declared checks is mechanical evidence, not completed user research.
+`files` maps authored HTML/CSS/JS/SVG sources to `artifacts/`. `resources` maps concrete
+asset `{source,output}` pairs. Source/output mapping does not rewrite page URLs:
+resolve URLs relative to the containing output. From `artifacts/cabin/index.html`
+to `artifacts/seats/index.html`, use `../seats/index.html`.
 
-Use `viewport: {min_width, max_width}` on checks that apply only to a responsive
-layout (for example, mobile menu below 768px or desktop navigation above it).
-Put viewport beside name and steps on the whole check, never inside a step.
-Use the CSS breakpoints of the actual page, not example numbers. For mobile
-navigation/language checks, open its menu first; do not click hidden controls.
-`:first-of-type` can still match one button in each card. Use a unique scoped
-selector or `>> nth=0` when intentionally testing one repeated instance.
-Filtering checks must assert both matching content visible and nonmatching
-content hidden, then reset the filter. Do not remove required interactions or
-viewport coverage merely to avoid a failing test.
-Bounds must include at least one task viewport. Do not require hidden desktop
-controls to be clickable on mobile. Actions click/fill/press require a unique
-target. Visibility defaults to any matching visible element; hidden defaults to
-all matching elements hidden/absent. Assertions can declare match any/all/unique;
-text/value default to unique. Use all when every result must satisfy the assertion.
-Normal contact/navigation hyperlinks may use mailto:, tel:, https:, query or hash
-links; these are navigation, not permission for remote embedded resources.
+New/changed images need their own image deliverables. Reference producer ids in
+`execution.uses`; runtime derives execution order. Supply edit pixels through
+`referenceImagePaths`, with diagnosis, changes and preserve; provenance alone
+cannot supply them. Keep asset intent and resource paths consistent with the
+canonical design. A missing-image fallback cannot replace a required producer.
 
-For explicit cross-domain contributions to a page, bind contributing_scopes on
-one deliverable and keep one execution task for its HTML/CSS/JS. Each contribution
-has scope_id, category, skill_refs and purpose; do not duplicate output files.
-
-On Designer publication and Reviewer approval, runtime previews these exact
-sources and runs declared interactions at applicable viewports when a browser is
-available. Required-browser configuration blocks unavailable validation; otherwise
-the receipt reports it unverified. Failures identify task, check, viewport, step
-and selector; repair the actual source/check before publishing. Generated image
-dependencies use private preview placeholders, which do not certify final imagery
-or layout. Builder finalization checks approved bytes and file/resource integrity,
-without another browser or visual audit. Unchanged inputs reuse preflight results.
-
-For a page needing a designed hero image, declare an image task (e.g. hero-image)
-with full prompt/negative prompt, size and rationale, plus a matching deliverable
-with its output file and acceptance criterion. Then add to the HTML task:
+For a page needing a designed hero image, declare an image deliverable `hero-image`
+with file `artifacts/hero-image.png`, acceptance and complete image execution fields.
+Add these fields to the page's existing execution, retaining its files and checks:
 
 ```json
 {
   "resources": [{"source": "artifacts/hero-image.png", "output": "artifacts/control-ui/images/hero.png"}],
-  "dependencies": ["hero-image"]
+  "uses": ["hero-image"]
 }
 ```
 
-The HTML uses images/hero.png. The producer is executed before page copying;
-no reference image is copied as the hero. Designer/Reviewer validate all local
-references and declared interactions before approval. Builder only executes the
-approved producers/mappings and verifies file integrity/source equality.
+A page output under `artifacts/control-ui/` uses `images/hero.png`. Adapt all paths
+together to the actual page. No research reference is implicitly copied as a hero.
 
-User-specified material exception: explicitly user-provided URLs and uploads may
-be reused unchanged. Researcher/Designer calls user_asset_import
-before approval (sourcePageUrl only for an asset actually linked on the user's
-page). The tool returns a verified inputs/user-assets/<hash>.<ext> source. Designer
-maps it in resources to artifacts/<page>/assets/<file>; no image producer
-dependency is required for this imported resource. Reviewer checks the trusted
-import receipt, source hash and every output mapping. Builder copies approved
-mappings mechanically; never download/reselect/reinterpret materials during
-building. Researcher-discovered sources remain reference-only. Local video/audio
-is supported; documents are local download links. Remote embeds and script/HTML
-material imports are unsupported.
+User-requested originals can be reused unchanged after `user_asset_import` returns
+a verified `inputs/user-assets/...` source. Map it to a local resource; unchanged
+reuse needs no image producer. Import before approval, using `sourcePageUrl` only
+for an asset actually linked on the user's page. Research-discovered images remain
+reference-only. Local audio/video and document downloads are supported; remote
+embeds and script/HTML material imports are not. Builder copies approved mappings,
+without downloading or reselecting materials.
+
+## Declare observable interactions
+
+Use `execution.interaction_checks:[{name,viewport?,page?,steps:[...]}]` once for
+consequential scripted flows. Optional `interaction_requirements` are descriptive
+notes. Static pages and native anchors do not require duplicate test specifications.
+
+Step actions are click/fill/press/expect_visible/expect_hidden/expect_text/
+expect_value/expect_url/expect_in_viewport. Selectors are required except for
+expect_url; fill, press and text/value/URL assertions require `value`.
+Click/fill/press need unique targets. Scope repeated controls precisely or use
+`>> nth=0` intentionally. Assertions support `match:any|all|unique`; visibility
+usually defaults to any, hidden to all, text/value to unique.
+
+Put responsive `{min_width,max_width}` bounds on the whole check, alongside name
+and steps; tested dimensions belong in `execution.viewports`. Bounds are inclusive
+and must include a declared viewport. Match actual CSS breakpoints. Test mobile
+menus by opening them before selecting links; a desktop-only check does not verify
+mobile navigation. Filtering checks should show matching content, hide nonmatches
+and reset. Repair failing behavior instead of removing necessary checks or viewports.
+Use `expect_in_viewport` to verify navigation reaches its target; it waits for
+arrival within a bounded timeout. `expect_visible` checks rendered visibility,
+including offscreen content, and cannot substitute for navigation arrival.
+
+## Validate and publish
+
+Author all required sources, commit ready Context and publish. Publication and
+Reviewer approval preview exact sources and declared interactions. Generated assets
+use private preview placeholders: access errors concern source visibility/reachability,
+not an instruction to write final image files. Normal scrolling and declared
+interactions must reveal required content; retain readable reduced-motion behavior.
+
+Repair the reported field, source, selector or responsive flow. Optional
+`design_context_validate` provides targeted diagnostics. Receipts distinguish passed,
+failed and unavailable browser verification; previews do not certify final imagery
+or user research. Builder checks approved source bytes and actual file/resource
+integrity after execution. Unchanged inputs can reuse preflight results.

@@ -6,13 +6,17 @@ export function responseTimeoutReason(elapsedMs: number, idleMs: number, generat
   return generationMs >= limits.generationMs ? 'generation deadline' : undefined;
 }
 
-export function modelRecoveryTask(reason: string | undefined) {
-  const policy = reason?.includes('token limit') || reason?.includes('generation deadline') || reason?.includes('model total deadline')
+export function modelRecoveryTask(reason: string | undefined, role?: string) {
+  const exceededAllowance = reason?.includes('token limit') || reason?.includes('generation deadline') || reason?.includes('model total deadline');
+  const policy = exceededAllowance
     ? 'The complete response exceeded its generation allowance. Produce a concise complete role Context using actual evidence and source references; omit repeated quotations and repeated asset metadata. Never split required Context roots into separate overwrites or reuse truncated tool arguments.'
     : reason?.includes('first output deadline')
       ? 'The provider did not produce its first output in time. Resume once from durable results; do not enlarge the task or repeat acquisition.'
       : 'The provider connection failed or its stream stalled. Resume from durable results without repeating successful acquisition.';
-  return `${policy} Read design_context_read once with only needed canonical paths. Preserve completed files and loaded Skills. Missing outputs must be created using the role-owned Context tool. Never create a new Run or have Orchestrator author another role’s outputs.`;
+  const sourceRecovery = role === 'designer' && exceededAllowance
+    ? ' If a source write was interrupted, change its structure before retrying: inspect completed files, then save complete local HTML, CSS, JavaScript and content modules in separate writes, one file per response with path before content. Keep a small HTML entry linking those modules and map every file in the same deliverable execution.files. Preserve requested content and behavior; do not retry the whole page in one call, append partial markup, or treat streamed text as saved. Continue from successful writes, then update and commit Context when all required sources exist.'
+    : '';
+  return `${policy}${sourceRecovery} Read design_context_read once with only needed canonical paths. Preserve completed files and loaded Skills. Use role-owned Context tools for Context content; file tools are only for permitted source files. Never create a new Run or have Orchestrator author another role’s outputs.`;
 }
 
 /** Only aggregate request structure and explicitly known control fields are logged. */

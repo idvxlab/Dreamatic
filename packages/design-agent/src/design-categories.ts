@@ -39,7 +39,8 @@ export function designScopeSkillProtocol(scopes: DesignScope[]) {
   return {
     mode: scopes.length ? "classified" : "legacy_unclassified",
     namespaces: { scopeId: "Exact designScopes[].id assigned by Orchestrator", category: "Design category registry id", name: "Skill name returned by list_skills; never a scopeId" },
-    assignments: scopes.map((scope) => ({ ...scope, discover: { tool: "list_skills", arguments: { scopeId: scope.id } }, defaultOutput: scope.category === "ux" ? "html_page" : "image" })),
+    assignments: scopes.map((scope) => ({ ...scope, discover: { tool: "list_skills", arguments: { scopeId: scope.id } }, subjectOutput: scope.category === "ux" ? "html_page" : "image" })),
+    presentation: "Designer authors one required HTML project entry, scaled to project needs. An existing product page may serve as the entry; do not create a separate scope or page per discipline merely for presentation. Builder executes approved sources only.",
     instruction: "Orchestrator persists category/task assignments; Designer chooses and loads Skills with use_skill(name, scopeId, role). Discovery does not load knowledge. Scope ids must remain unchanged in skill_selection, deliverables and execution tasks. Reviewer checks this committed specification; Builder executes only approved declared methods. If classification is missing in a new task, ask Orchestrator to establish it; do not infer an id from a Skill name.",
   };
 }

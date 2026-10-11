@@ -59,11 +59,15 @@ export async function finalizeDelivery(runDir: string, runId: string, signal?: A
   const modelUsage = await collectModelUsage(runDir, artifacts);
   await writeFile(join(runDir, "plan/model-usage.json"), JSON.stringify(modelUsage, null, 2));
   const modelPreviewEntry = contract.presentation.mode === "html" ? await writeModelPreview(runDir, contract.presentation.entry, modelUsage) : undefined;
+  if (modelPreviewEntry) {
+    const previewPath = resolveInside(runDir, modelPreviewEntry);
+    await writeFile(previewPath, await appendShowcaseReferences(runDir, await readFile(previewPath, "utf8")));
+  }
   await writeFile(join(artifactsDir, "model-usage.json"), JSON.stringify(modelUsage, null, 2));
   if (contract.presentation.mode === "gallery") {
     const galleryPath = resolveInside(runDir, contract.presentation.entry);
     const gallery = await readFile(galleryPath, "utf8").catch(() => "");
-    if (!gallery.trim()) throw new Error("Builder must author artifacts/00-gallery.html before finalization");
+    if (!gallery.trim()) throw new Error("Existing Gallery entry is missing; return to Designer for a declared HTML entry");
     await writeFile(galleryPath, await appendShowcaseReferences(runDir, await annotateShowcasePrompts(runDir, annotateModelUsage(gallery, modelUsage))));
   }
   const lint = await lintHtmlDelivery(runDir, completed);

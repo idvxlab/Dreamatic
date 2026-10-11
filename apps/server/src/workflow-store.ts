@@ -154,7 +154,7 @@ function toolLabel(tool: string): string {
     export_package: "Exported design package",
     todo_write: "Updated workflow plan",
     read: "Read project file",
-    write: "Wrote project file",
+    write: "Write project file",
     edit: "Edited project file",
     ls: "Inspected project files",
   };
@@ -502,6 +502,7 @@ function busEvents(records: Record<string, unknown>[], runId: string): WorkflowE
     try {
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       if (LIFECYCLE_TYPES.has(type) || type === "operation_finished") return [];
+      if (type === "project_completed" && typeof event.detail === "string") return [{ id: String(event.id), kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, stage: "completion", artifactRefs: [...collectPaths(event.artifactRefs, runId)], at: String(event.at) }];
       if (type === "design_categories_identified" && typeof event.detail === "string") return [{ id: typeof event.id === "string" ? event.id : `classification-${index}`, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, ...(typeof event.at === "string" ? { at: event.at } : {}) }];
       const failed = type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";

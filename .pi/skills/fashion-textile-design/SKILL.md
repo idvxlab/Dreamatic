@@ -11,49 +11,34 @@ metadata:
 
 # Fashion and Textile Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Develop wearable concepts through silhouette, movement, material and construction intent.
 
-## Wearer and context
-Define intended wearer, occasion, climate, movement, cultural context and use.
-Separate styling aspirations from practical fit or performance requirements.
-Explore silhouette, proportion, volume, layering and how the garment changes
-with posture and motion.
+## Define wearer and use
 
-Use references for construction logic, fabric behavior and cultural meaning.
-Identify traditional or protected motifs and the provenance of interpretations.
+Identify wearer, occasion, climate, cultural context and movement. Separate styling
+aspirations from fit and performance requirements. Study construction, fabric
+behavior and motif provenance; distinguish documented traditions from interpretations.
 
-## Material and construction
+## Develop the wearable idea
 
 Explore silhouette, layering, closure, pattern placement and material behavior
-as independent axes, then combine them into genuinely different wearable theses.
-Transfer a principle from architecture or another craft only after relating it
-to motion, comfort and construction. Compare the same use/movement episode
-across candidates. For the selected direction, explain load/support, seam and
-closure relationships, drape/stretch assumptions, care and sample-making needs;
-identify cutting waste, fabric/trim diversity and labor as cost drivers, not
-fabricated factory quotes or validated sizing.
-Specify fabric or material by its relevant behavior: drape, stretch, opacity,
-surface, weight intent and care. Relate seam placement, closure, lining,
-reinforcement and trim to form and use. Note fit and technical assumptions
-without inventing pattern measurements or manufacturing validation.
+as independent choices, then combine distinct concepts. Transfer ideas from another
+craft only through a benefit to comfort, motion or construction. Compare the same
+use/movement episode across candidates.
 
-For textile patterns, define motif scale, repetition, direction, color
-relationships and placement. Distinguish an all-over repeat from engineered
-placement and explain how the surface relates to garment structure.
+Specify drape, stretch, opacity, surface, weight intent and care. Connect seams,
+closures, lining, reinforcement and trim to support and use. Explain critical
+construction relationships and sample-making needs; avoid invented sizing, factory
+quotes or validated performance. Consider cutting waste, trim variety and labor
+as cost drivers.
 
-## Collection and coverage
-Develop variation around an identifiable collection principle, keeping each
-piece meaningful. Select silhouette views, back or side views, movement,
-details, material studies and looks according to the brief. Plan diversity
-and human scale where they aid understanding without fabricating fit evidence.
+For textiles, define motif scale, repeat, direction and color. Distinguish all-over
+repeat from engineered placement and relate the surface to garment structure.
 
-Persist construction intent, material assignments and consistency rules into
-the Design Spec. Generated fashion images are concepts; they are not sewing
-patterns, validated sizing, production repeats or garment samples.
+## Build and communicate the collection
 
-## Quality judgment
-Assess coherence between silhouette, material, movement and context.
-Encourage imaginative forms while explaining how volume, layering and body
-relationship are intended to work.
+Create meaningful variation around a collection principle. Choose silhouette,
+side/back, movement, detail, material and contextual views from the brief. Carry
+construction intent, material assignments and continuity into the specification.
+Generated concepts are not sewing patterns, validated sizing, production repeats
+or samples. Judge silhouette, material, body relationship, movement and context together.

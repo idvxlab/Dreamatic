@@ -12,67 +12,38 @@ metadata:
 
 # Architecture and Space
 
-Use this optional knowledge module when the brief concerns buildings, interiors, exhibitions, installations, or spatial experiences. It strengthens spatial reasoning without prescribing the workflow or replacing the design brief.
+Develop buildings, interiors and spatial experiences through program, context,
+movement, human scale, material and light.
 
-## Design Frame
+## Frame the spatial problem
 
-Resolve the relationships that materially shape the concept:
+Identify users, activities, privacy, accessibility and duration of stay. Relate
+site, climate, orientation, views and thresholds to program, capacity, adjacency,
+circulation and servicing. State missing site, dimension and engineering evidence.
 
-- users, activities, privacy, accessibility, and duration of stay;
-- site, climate, orientation, views, thresholds, and surrounding context;
-- program, adjacency, zoning, circulation, arrival, and egress intent;
-- scale, capacity, adaptability, maintenance, and operational constraints;
-- conceptual structure and enclosure, without presenting unverified engineering claims;
-- material, light, acoustics, atmosphere, and sensory transitions.
+## Develop the organizing idea
 
-State assumptions when dimensions, regulations, site data, or technical evidence are missing.
+Compare arrangements through arrival, privacy, daylight, accessible movement and
+maintenance, rather than facade styling alone. Use typology references for program
+and circulation, site references for environmental response, and experiential
+references for atmosphere and scale. Transfer a principle only with a spatial benefit.
 
-## Reference Use
+For new proposals develop their own spatial logic. For existing-site depiction or
+adaptation, preserve documented geometry and context where recognition matters.
+Separate observed features, proposed interventions and uncertainties; unknown
+photo permissions do not require replacing the actual building with a generic one.
 
-Explore distinct organizing hypotheses through program adjacency, movement,
-section, threshold and environmental response, not only facade styling. Build
-qualitative adjacency and circulation relations, then test arrangements against
-arrival, privacy, daylight, servicing and accessible movement. Transfer patterns
-from landscape, infrastructure or temporal activities only with an explanation
-of spatial benefit. Develop structure/enclosure intent, material junctions and
-construction sequence at concept depth; distinguish site facts from proposed
-interventions. Compare use quality, context fit, material/maintenance implications
-and unresolved site/engineering tests.
+Develop enclosure, conceptual structure, material junctions and construction intent
+at concept depth. Connect form and atmosphere to use; distinguish proposals from
+certified engineering or regulatory compliance.
 
-Judge references by what they can contribute rather than by visual similarity alone:
+## Make the proposal inspectable
 
-- site references clarify environmental response;
-- typology references reveal program and circulation patterns;
-- experiential references clarify atmosphere, sequence, and human scale;
-- operational references expose accessibility, maintenance, and use constraints.
+Choose distinct views for relevant questions: context, organization, plan/section,
+movement, interiors/exteriors, human-scale use, details and environmental states.
+A hero cannot replace unresolved spatial relationships. Set quantity from the
+brief and useful coverage; avoid redundant views and fixed templates.
 
-For a new spatial proposal, extract transferable principles and develop its
-own program, context response and spatial logic rather than pasting an unrelated
-precedent's appearance. For depicting an existing site or planning an adaptation,
-retain documented identifying geometry and context where the task requires it.
-Do not replace a recognizable building with a generic invented one solely
-because the source photo's reuse permissions are unknown. Keep observed site
-features, proposed changes and uncertainties distinct in prompts and diagrams.
-
-## Proposal Coverage
-
-Map the spatial proposal comprehensively: context and orientation, overall
-organization, plans and sections, movement sequences, key interiors/exteriors,
-human-scale use scenarios, structural relationships, material/light studies,
-important details, environmental states and worthwhile scheme comparisons.
-Develop the applicable dimensions into readable dedicated views; one hero and
-one overview are not automatically sufficient. Image count follows coverage,
-without a preset ceiling unless the user limits it. These are conceptual views,
-not certified engineering drawings.
-
-For every planned image, define:
-
-- the design question it answers;
-- viewpoint, program, scale cues, material behavior, and consistency anchor;
-- acceptance criteria and an appropriate output size.
-
-Avoid redundant views. Auxiliary diagrams can use lower resolution when they do not require fine material or spatial detail.
-
-## Quality Lens
-
-A strong spatial proposal connects program, movement, hierarchy, context, scale, and atmosphere. Preserve creative freedom in form and expression while ensuring that every major decision can be traced to the brief, evidence, or a clearly stated design hypothesis.
+Each image needs a purpose, viewpoint, program, scale cues, material behavior,
+consistency anchors, acceptance criterion and adequate size. Judge the scheme by
+use quality, context fit, spatial clarity, atmosphere and remaining validation needs.

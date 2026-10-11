@@ -11,51 +11,38 @@ metadata:
 
 # Media and Motion Design
 
-Use this independent knowledge module to inform the canonical Design Spec.
-Select the dimensions relevant to the brief; the Agent contract governs tools,
-output formats, image-size ceilings and stage completion.
+Develop audiovisual and campaign concepts through narrative, framing and temporal relationships.
 
-## Narrative and medium
-Define audience, communication goal, viewing context, duration assumption,
-channel and intended emotional progression. Establish the narrative premise,
-message hierarchy and relationship between image, voice, text and sound.
+## Establish message and medium
+
+Identify audience, viewing context, channel, duration assumption and emotional
+progression. Connect image, voice, text and sound to the message hierarchy.
 Distinguish explanatory, persuasive, expressive and documentary intentions.
 
-Develop a sequence with a beginning, development and resolution appropriate
-to the task. Use contrast, anticipation, reveal and repetition deliberately;
-do not impose a three-act formula on every short piece.
+Compare narrative mechanisms through the same audience and channel: observed
+use, revealed relationships, contrast or another suitable strategy. Extract
+attention and transition principles from references rather than copying shots.
+Develop a beginning, development and resolution suited to the task, without
+requiring a universal three-act formula.
 
-## Temporal design
+## Specify temporal design
 
-Explore different narrative mechanisms and temporal viewpoints: an observed
-use episode, a revealed relationship, a meaningful contrast or another strategy
-suited to the message. Decompose references into attention, anticipation and
-transition principles instead of copying their shots. Compare candidates using
-the same intended audience/channel, comprehension and emotional arc. Develop
-the selected shot relationships, duration hypotheses and adaptation needs;
-record asset, typography, staging and continuity dependencies as production
-drivers. Do not confuse many similar frames with narrative exploration.
-Specify shot purpose, framing, camera behavior, subject movement, transitions,
-tempo and approximate timing. Explain the rationale for motion: attention,
-meaning, continuity or emotion. Maintain spatial and visual continuity unless
-a break serves the narrative.
+Describe shot purpose, framing, camera, subject movement, transitions and approximate
+timing. Motion should serve attention, meaning, continuity or emotion. Define type
+behavior, captions, sound intent and silent/reduced-motion alternatives as relevant.
+Adapt aspect ratios and safe regions from actual channel requirements.
 
-Define typography behavior, caption placement, sound intent and alternatives
-for silent or reduced-motion viewing where relevant. Identify aspect ratios,
-safe content regions and platform-specific recomposition requirements from
-available evidence rather than assuming one universal placement rule.
+Track subject, geometry, color, camera and lighting anchors plus staging and asset
+needs. Many similar frames do not constitute narrative exploration.
 
-## Current DreamaticArt delivery
-The runtime produces static PNGs. Specify storyboards, distinct keyframes,
-style frames, shot lists and timing notes; do not invoke video, audio or 3D
-generation tools or claim a playable film. Keep critical narration and captions
-as exact structured copy for deterministic presentation.
+## Match delivery to capability
 
-Choose keyframes according to narrative beats and decisions, with no fixed
-count. Define recurring characters, geometry, color, camera and lighting anchors
-so Builder can execute consistent frames.
+Use image deliverables for storyboards, keyframes and style frames, with timing,
+shot and narration decisions retained in the specification. Include intended copy
+in relevant prompts. These communicate planned motion; they are not generated
+video, audio or 3D assets. Local browser motion can be authored through HTML sources;
+use interaction-motion for its behavior and html-interface for delivery.
 
-## Quality judgment
-Check narrative comprehension, pacing intent, visual continuity and adaptation.
-Strong expressive motion concepts can remain speculative; state assumptions
-and distinguish planned movement from movement actually delivered.
+Choose distinct frames by narrative beats and questions, without a fixed count.
+Judge comprehension, pacing intent, continuity and adaptation; distinguish planned
+movement from behavior actually delivered.

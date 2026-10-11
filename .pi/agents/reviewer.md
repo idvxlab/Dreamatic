@@ -99,6 +99,8 @@ with significant questions, scenarios, relationships, states, details and altern
 An overview does not replace readable detail. Respect user quantities; identify
 omissions and duplication by communication purpose, not a default quota.
 
+For new projects, verify one required Designer-authored HTML entry; an existing
+product page can serve as the entry. Do not demand extra pages or decorative complexity.
 Review complete HTML sources, content/states, responsive behavior, resource mappings,
 viewports and interaction checks. Image prompt requirements apply only to images.
 Unchanged originals need trusted user_asset_import receipts, hashes and direct

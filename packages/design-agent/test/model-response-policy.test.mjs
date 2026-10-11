@@ -15,6 +15,15 @@ test('recovery distinguishes late start, long generation and connection errors w
  assert.match(modelRecoveryTask('first output deadline'),/did not produce/);
  assert.match(modelRecoveryTask('generation deadline'),/Never split required Context roots/);
  assert.match(modelRecoveryTask('stream stalled'),/connection failed/);
+ for (const failure of ['model output token limit reached', 'generation deadline', 'model total deadline']) {
+  const recovery = modelRecoveryTask(failure, 'designer');
+  assert.match(recovery, /one file per response with path before content/);
+  assert.match(recovery, /same deliverable execution.files/);
+  assert.match(recovery, /Continue from successful writes/);
+  assert.match(recovery, /Never split required Context roots/);
+  assert.doesNotMatch(modelRecoveryTask(failure, 'builder'), /small HTML entry/);
+ }
+ assert.doesNotMatch(modelRecoveryTask('first output deadline', 'designer'), /split.*source/);
 });
 test('request telemetry exposes sizes and controls without content, headers or arbitrary fields',()=>{
  const result=providerRequestSummary({model:'mock',messages:[{content:'secret source text'}],apiKey:'secret-key',headers:{Authorization:'secret-auth'},enable_thinking:false,tools:[{}]});

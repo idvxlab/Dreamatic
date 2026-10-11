@@ -424,3 +424,44 @@ test('unified product notes render canonical Context without persisted Markdown 
     for (const file of ['research/research-findings.md', 'plan/task_breakdown.md', 'review/design-review.md']) await assert.rejects(readFile(join(runDir, file)), /ENOENT/);
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
+
+test('completion summary restores as one top-level message and live replay does not duplicate it', async()=>{
+ const workspace=await mkdtemp(join(tmpdir(),'dreamatic-completion-message-'));
+ try{
+  const runDir=join(workspace,'runs/demo');await mkdir(runDir,{recursive:true});
+  await writeFile(join(runDir,'brief.json'),JSON.stringify({title:'Project',brief:'Project',createdAt:'2026-01-01T00:00:00Z'}));
+  const completion={type:'project_completed',id:'demo-completion-initial',runId:'demo',at:'2026-01-01T00:05:00Z',summary:'Project completion summary',detail:'Project completed\nUsage: 100 tokens',artifactRefs:['runs/demo/final/artifacts/project/index.html']};
+  await writeFile(join(runDir,'bus.jsonl'),[completion,completion].map(JSON.stringify).join('\n')+'\n');
+  const restored=(await workflowInventory(workspace,'demo')).filter(event=>event.stage==='completion');
+  assert.equal(restored.length,1);assert.equal(restored[0].kind,'message');assert.equal(restored[0].detail,completion.detail);
+  const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
+  const compiled=ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"',JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-progress.js',import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"',JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-retries.js',import.meta.url).href)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  const {applyWorkflowStreamEvent}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  const live=applyWorkflowStreamEvent(applyWorkflowStreamEvent([],completion),completion);
+  assert.equal(live.length,1);assert.deepEqual(live,restored);
+ }finally{await rm(workspace,{recursive:true,force:true});}
+});
+
+test('denied Designer writes retain error status without a successful-write title in restored and live workflows', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-denied-write-'));
+  try {
+    const runDir = join(workspace, 'runs/demo'); await mkdir(runDir, { recursive: true });
+    await writeFile(join(runDir, 'brief.json'), JSON.stringify({ title: 'Project', createdAt: '2026-01-01T00:00:00Z' }));
+    const base = { invocationId: 'designer-1', agent: 'designer' };
+    const events = [
+      { ...base, type: 'agent_started', at: '2026-01-01T00:00:00Z' },
+      { ...base, type: 'tool_started', toolName: 'write', toolCallId: 'write-1', at: '2026-01-01T00:00:01Z' },
+      { ...base, type: 'tool_finished', toolName: 'write', toolCallId: 'write-1', isError: true, output: 'designer cannot write artifacts/hero.png', at: '2026-01-01T00:00:02Z' },
+    ];
+    await writeFile(join(runDir, 'bus.jsonl'), events.map(JSON.stringify).join('\n') + '\n');
+    const restored = (await workflowInventory(workspace, 'demo')).find(event => event.id === 'designer-1').children[0];
+    const source = await readFile(new URL('../../web/src/workflow-live.ts', import.meta.url), 'utf8');
+    const compiled = ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-progress.js', import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-retries.js', import.meta.url).href)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+    const live = events.reduce(applyWorkflowStreamEvent, []).find(event => event.id === 'designer-1').children[0];
+    for (const tool of [restored, live]) {
+      assert.equal(tool.label, 'Write project file'); assert.equal(tool.status, 'error');
+      assert.match(tool.output, /cannot write artifacts/);
+    }
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});

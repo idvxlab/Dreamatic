@@ -5,12 +5,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { createDreamaticExtension, specialistCompletionEvent } from '../dist/extension.js';
+import { createDreamaticExtension, dreamaticPersonaTools, specialistCompletionEvent } from '../dist/extension.js';
 import { createReadTool, createWriteTool, createGrepTool } from '@earendil-works/pi-coding-agent';
 import { designerDraftReadiness, designerHandoffError } from '../dist/designer-recovery.js';
 import { configureToolSearchPath } from '../dist/runtime.js';
 import { RUN_CONTEXT_SECTIONS } from '../dist/run-files.js';
-import { designScopes } from '../dist/design-categories.js';
+import { DESIGN_CATEGORIES, designScopes } from '../dist/design-categories.js';
 import { encodeImageOutput, imageEncoding } from "../dist/image-output.js";
 import { finalizeDelivery } from "../dist/finalize-delivery.js";
 import { approvedImageEdit, approvedImageAcceptance, deliveryContract, htmlTask, normalizeDraftPresentation, validateDeliveryContract } from '../dist/design-contract.js';
@@ -36,6 +36,7 @@ async function invoke(tools, name, args, ctx = context) {
     const brief = JSON.parse(await readFile(join(runDir, 'brief.json'), 'utf8'));
     delete brief.contextFormat;
     delete brief.designContractVersion;
+    delete brief.presentationPolicy;
     await writeFile(join(runDir, 'brief.json'), JSON.stringify(brief));
     const index = JSON.parse(await readFile(join(runDir, 'design-context.json'), 'utf8'));
     await writeFile(join(runDir, 'design-context.json'), JSON.stringify({ ...index, sections: RUN_CONTEXT_SECTIONS }));
@@ -126,7 +127,7 @@ test('category assignments and per-scope professional Skills preserve independen
     const industrial = value(await invoke(tools, 'list_skills', { scopeId: 'product' }));
     assert.ok(industrial.skills.some((skill) => skill.name === 'industrial-design'));
     assert.ok(industrial.skills.some((skill) => skill.name === 'image-prompting'));
-    assert.equal(industrial.skills.some((skill) => skill.name === 'html-interface'), false);
+    assert.equal(industrial.skills.some((skill) => skill.name === 'html-interface'), true);
     assert.equal(industrial.skills.some((skill) => skill.name === 'brand-identity'), false);
     assert.deepEqual(industrial.activeSkills, []);
     await assert.rejects(invoke(tools, 'use_skill', { name: 'design-system', scopeId: 'product', role: 'primary' }), error => { const d = JSON.parse(error.message); assert.equal(d.code, 'skill_scope_mismatch'); assert.equal(d.selectionChanged, false); assert.ok(d.suggestedCalls.some(call => call.name === 'industrial-design')); return true; });
@@ -141,6 +142,65 @@ test('category assignments and per-scope professional Skills preserve independen
     await assert.rejects(invoke(fresh, 'list_skills', { scopeId: 'product', category: 'ux' }), /match/);
     assert.throws(() => designScopes([scopes[0], scopes[0]]), /unique/);
     assert.throws(() => designScopes([{ id: 'wrong', category: 'unknown', task: 'Task' }]), /Unknown/);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('ineligible primary recovery loads a matching professional and retains useful supporting knowledge', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-skill-recovery-'));
+  try {
+    await invoke(harness(workspace).tools, 'run_init', { runIdOverride: 'demo', projectTitle: '4D printing', brief: 'Present technology and application concepts', designScopes: [{ id: '4d-print-showcase', category: 'media_communication', task: 'Explain technology and applications' }] });
+    const tools = harness(workspace, 'designer').tools;
+    await invoke(tools, 'use_skill', { name: 'html-interface', scopeId: '4d-print-showcase', role: 'supporting' });
+    const receiptPath = join(workspace, 'runs/demo/.performance/skills-designer.json');
+    const before = await readFile(receiptPath);
+    let recovery;
+    await assert.rejects(invoke(tools, 'use_skill', { name: 'concept-showcase-storytelling', scopeId: '4d-print-showcase', role: 'primary' }), error => {
+      recovery = JSON.parse(error.message);
+      assert.equal(recovery.code, 'skill_scope_mismatch');
+      assert.equal(recovery.selectionChanged, false);
+      return true;
+    });
+    assert.deepEqual(await readFile(receiptPath), before);
+    assert.deepEqual(recovery.supportingCall, { name: 'concept-showcase-storytelling', scopeId: '4d-print-showcase', role: 'supporting' });
+    await invoke(tools, 'use_skill', recovery.suggestedCalls.find(call => call.name === 'information-design'));
+    const loaded = await invoke(tools, 'use_skill', recovery.supportingCall);
+    assert.equal(loaded.details.reused, false);
+    const selected = value(await invoke(tools, 'list_skills', { scopeId: '4d-print-showcase' })).activeSkills;
+    assert.deepEqual(selected, [{ name: 'html-interface', role: 'supporting' }, { name: 'information-design', role: 'primary' }, { name: 'concept-showcase-storytelling', role: 'supporting' }]);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('new design support Skills load through the unified runtime without replacing professional knowledge', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-skill-library-'));
+  const additions = ['accessible-interface', 'concept-showcase-storytelling', 'generative-art', 'icon-system', 'interaction-motion', 'interface-writing', 'typographic-detail'];
+  try {
+    const assigned = DESIGN_CATEGORIES.map(({ id }) => ({ id, category: id, task: `Design and present the ${id} concept` }));
+    const orchestrator = harness(workspace).tools;
+    await orchestrator.get('run_init').execute('init', { runIdOverride: 'demo', projectTitle: 'Skill library', brief: 'Design concepts and their presentation', designScopes: assigned }, undefined, undefined, context);
+    const tools = harness(workspace, 'designer').tools;
+    for (const scope of assigned) {
+      const catalog = value(await invoke(tools, 'list_skills', { scopeId: scope.id }));
+      for (const name of additions) {
+        const skill = catalog.skills.find(skill => skill.name === name);
+        assert.ok(skill, `${name} is discoverable for ${scope.category}`);
+        assert.equal(skill.primaryEligible, false);
+        assert.equal(skill.applicableScopes.find(item => item.scopeId === scope.id).load.arguments.role, 'supporting');
+      }
+    }
+    await invoke(tools, 'use_skill', { name: 'ui-web-design', scopeId: 'ux', role: 'primary' });
+    for (const name of additions) {
+      const loaded = await invoke(tools, 'use_skill', { name, scopeId: 'ux', role: 'supporting' });
+      const source = await readFile(join(cwd, '.pi/skills', name, 'SKILL.md'), 'utf8');
+      assert.ok(loaded.content[0].text.includes(source));
+      assert.equal(loaded.details.reused, false);
+      assert.equal((await invoke(tools, 'use_skill', { name, scopeId: 'ux', role: 'supporting' })).details.reused, true);
+    }
+    const selected = value(await invoke(tools, 'list_skills', { scopeId: 'ux' })).activeSkills;
+    assert.deepEqual(selected.filter(skill => skill.role === 'primary'), [{ name: 'ui-web-design', role: 'primary' }]);
+    assert.deepEqual(selected.filter(skill => skill.role === 'supporting').map(skill => skill.name).sort(), additions.sort());
+    await assert.rejects(invoke(tools, 'use_skill', { name: 'generative-art', scopeId: 'ux', role: 'primary' }), /skill_scope_mismatch/);
+    assert.throws(() => dreamaticPersonaTools('builder', ['use_skill']), /disallowed/);
+    assert.throws(() => dreamaticPersonaTools('builder', ['list_skills']), /disallowed/);
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
@@ -228,7 +288,7 @@ test('canonical scope protocol survives discovery recovery, design approval and 
       assert.equal(ctx.scopeProtocol.mode, 'classified');
       assert.deepEqual(ctx.scopeProtocol.assignments[0].discover.arguments, { scopeId: 'ui' });
       assert.equal(ctx.scopeProtocol.assignments[0].category, 'ux');
-      assert.equal(ctx.scopeProtocol.assignments[0].defaultOutput, 'html_page');
+      assert.equal(ctx.scopeProtocol.assignments[0].subjectOutput, 'html_page');
       assert.ok(ctx.files.some((file) => file.path === '.performance/skills-designer.json'));
     }
     const executed = value(await invoke(builder, 'execute_design_plan', { runId: 'demo' }));
@@ -370,7 +430,8 @@ test('mixed Gallery links real pages, retains image prompts and exports without 
     globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ b64_json: PNG.toString('base64') }] }));
     const { runDir, builder, orchestrator } = await fixture(workspace, true, { gallery: true });
     await invoke(builder, 'execute_design_plan', { runId: 'demo' });
-    await invoke(builder, 'showcase_template', { runId: 'demo', title: 'Connected Light', sections: [{ title: 'Hardware, control and campaign', items: ['product', 'page', 'campaign'].map((id) => ({ id, caption: id })) }] });
+    // Historical finalized Gallery fixture, authored before Builder executes.
+    await writeFile(join(runDir,'artifacts/00-gallery.html'),`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected Light</title></head><body><h1>Connected Light</h1><section><h2>Hardware, control and campaign</h2><figure><img src="product.png" alt="Product"><figcaption>product</figcaption></figure><figure><a href="ui/index.html" target="_blank">page</a><figcaption>page</figcaption></figure><figure><img src="campaign.png" alt="Campaign"><figcaption>campaign</figcaption></figure></section></body></html>`);
     await invoke(builder, 'build_finalize', { runId: 'demo' });
     const gallery = await readFile(join(runDir, 'artifacts/00-gallery.html'), 'utf8');
     assert.match(gallery, /href="ui\/index\.html" target="_blank"/);
@@ -437,7 +498,7 @@ test('approved HTML outputs reject native rewrites while mechanical generation r
     await fixture(workspace);
     const { handlers, tools } = harness(workspace, 'builder');
     const blocked = await handlers.get('tool_call')({ toolName: 'write', input: { path: 'artifacts/ui/index.html', content: 'Rebuilt' } }, context);
-    assert.equal(blocked.block, true); assert.match(blocked.reason, /generated mechanically/);
+    assert.equal(blocked.block, true); assert.match(blocked.reason, /executes approved tasks/);
     assert.equal(value(await invoke(tools, 'execute_design_plan', { runId: 'demo' })).succeeded, 1);
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });

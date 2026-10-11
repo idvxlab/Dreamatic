@@ -161,7 +161,9 @@ All bindings validate before selection changes; failed persistence restores acti
 state. The body is returned once, reused within the invocation, and loaded again in a
 fresh invocation. Bindings and body-loading state are separate. Legacy single-scope
 arguments remain supported. Stored receipts never prove knowledge loaded in the current
-invocation. Builder may load presentation Skills; it cannot change Designer selections.
+invocation. Builder executes approved tasks without Skill loading or page authoring. New Runs
+record presentationPolicy:designer_html; existing Runs keep their original contract.
+Designer owns one required HTML entry, scaled to project needs.
 
 ## Reads, readiness and completion
 
@@ -179,7 +181,7 @@ HTML parameter structure before commit. Publication validates actual Designer so
 `design_context_validate` is optional for targeted diagnostics, not a required extra
 round trip after every commit. Interaction checks are the single executable assertion
 format; optional interaction_requirements are descriptive notes. Gallery access is
-validated after Builder creates Gallery, never against a missing Gallery during source preview. Cache fingerprints bind contract, sources, browser and loaded runtime;
+retained for existing projects and validated against their existing entry, never against a missing Gallery during source preview. Cache fingerprints bind contract, sources, browser and loaded runtime;
 changed bytes invalidate source evidence. Designer publishes design_spec_ready or
 design_revision_ready, Reviewer publishes design_review_pass/fail, Builder's
 build_finalize publishes build_done, and Orchestrator exports. Commits alone do not
@@ -222,14 +224,21 @@ on a split-file Run requires explicit migration and preserves existing data.
 
 ### Builder execution boundary
 
-Builder exposes twelve capabilities: Context/Bus reads, native presentation
-read/write/edit/ls, presentation Skill discovery/loading, execute_design_plan,
-html_generate, showcase_template and build_finalize. It cannot author Context,
-use JSON report tools or restate image-generation/edit parameters. The stored-plan
-executor retains its internal image scheduling, generation, editing and reuse
-implementation; removing agent-facing raw tools does not remove production.
+Builder exposes seven capabilities: read, ls, design_context_read, design_bus_read,
+execute_design_plan, html_generate and build_finalize. It cannot write files,
+load Skills, author Context or restate image-generation/edit parameters. The
+stored-plan executor retains image scheduling, generation, editing and reuse.
 
-Managed registration, per-turn restoration and call guards enforce the role.
-Gallery/manual presentation retains native write/edit, while pure generated HTML
-remains read-only on every turn. Split-file dispatch requires explicit migration
-without changing existing output data.
+Managed registration, per-turn restoration and call guards enforce this boundary.
+New projects require a Designer-authored HTML entry. Existing Gallery contracts
+remain readable/exportable; missing presentation sources return to Designer.
+Split-file dispatch requires explicit migration without changing existing output data.
+
+### Completion summary
+
+Successful export writes runtime-owned completion-summary.json in the Run and final
+package, and publishes one project_completed message per revision. The chat restores
+this event without another model call. Summary facts come from delivery receipts
+and model-requests.jsonl; request ids deduplicate usage, including reported retries.
+Elapsed time includes waits and retries. Image tokens are unmeasured, not zero.
+Follow-up directions reuse recorded next steps, validation plans and review risks.
