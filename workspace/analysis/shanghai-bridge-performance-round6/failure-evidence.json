@@ -1,0 +1,69 @@
+{
+  "modelControl": {
+    "type": "provider_request",
+    "requestId": "7ef6668d-b6fc-48ae-a977-d1405a51d555",
+    "role": "orchestrator",
+    "at": "2026-10-12T06:04:22.786Z",
+    "thinkingControl": "unspecified",
+    "controlState": "unspecified",
+    "toolConstraints": {
+      "strict": 0,
+      "nonStrict": 0,
+      "unspecified": 9
+    },
+    "model": "qwen3.7-plus",
+    "messageCount": 2,
+    "serializedInputChars": 16301,
+    "toolCount": 9,
+    "controls": {
+      "max_completion_tokens": 16384
+    },
+    "runtime": {
+      "initializedAt": "2026-10-12T06:04:06.472Z",
+      "codeFingerprint": "4de63dbedbad6992b562080051bde6b72edbd5f2714fbb7482f7879bd239a50e",
+      "designContract": 2,
+      "runtimeFingerprint": "92269161cda4c7b97b7532dc9e8d8123d3d06d1181b765b0d7ded04a4a8a9315",
+      "piVersion": "0.85.1"
+    },
+    "configuredThinkingLevel": null,
+    "sessionThinkingLevel": "off",
+    "capabilitySource": "unspecified",
+    "endpointFingerprint": "7250b595c872240afb4fc91f93dc352483154807edfd274a13d8795e4b1ac88f",
+    "reasoningCapability": "unknown",
+    "offControlUnconfirmed": true,
+    "declaredOffUnsupported": false
+  },
+  "toolErrors": [
+    {
+      "agent": "reviewer",
+      "tool": "update_design_context",
+      "at": "2026-10-12T06:19:09.520Z",
+      "error": null,
+      "output": "{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"ok\\\":false,\\\"saved\\\":false,\\\"committed\\\":false,\\\"code\\\":\\\"invalid_named_fields\\\",\\\"field\\\":\\\"/changes/issues\\\",\\\"message\\\":\\\"update_design_context#/changes/issues: invalid_named_fields: /issues: schema is false; /resolved_issue_ids: schema is false; /remaining_risks: schema is false; : must not have additional properties Unknown role roots: issues, resolved_issue_ids, remaining_risks. Allowed changes fields: assessment, intentCoverage, unsetFields. Move changes.issues to changes.assessment.issues; changes.resolved_issue_ids to changes.assessment.resolved_issue_ids; changes.remaining_risks to changes.assessment.remaining_risks. Preserve the original values and other assessment fields; do not drop issues or risks to make the call pass. Keep intentCoverage beside assessment inside changes. Resubmit with the corrected nesting; no fields were saved.\\\",\\\"i"
+    }
+  ],
+  "imageRetries": [
+    {
+      "runId": "project-2026-10-12-187992dd",
+      "type": "operation_retry",
+      "operation": "image_generate",
+      "scope": "bridge-night-view",
+      "attempt": 1,
+      "nextAttempt": 2,
+      "delayMs": 1081,
+      "error": "image_generate failed (503): {\"error\":{\"message\":\"system cpu overloaded (current: 78.5%, threshold: 75%)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"system_cpu_overloaded\"}}",
+      "at": "2026-10-12T06:24:02.318Z"
+    },
+    {
+      "runId": "project-2026-10-12-187992dd",
+      "type": "operation_retry",
+      "operation": "image_generate",
+      "scope": "bridge-night-view",
+      "attempt": 2,
+      "nextAttempt": 3,
+      "delayMs": 2436,
+      "error": "image_generate failed (503): {\"error\":{\"message\":\"system cpu overloaded (current: 78.5%, threshold: 75%)\",\"type\":\"new_api_error\",\"param\":\"\",\"code\":\"system_cpu_overloaded\"}}",
+      "at": "2026-10-12T06:24:03.696Z"
+    }
+  ]
+}

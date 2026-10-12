@@ -48,6 +48,16 @@ test('reading external changes is pure and explicit apply activates the persiste
  assert.equal(env.DREAMATIC_MODEL,'external-model');assert.equal(env.DREAMATIC_IMAGE_MODEL,'external-image');assert.equal(applied.pendingApply,false);
 });
 
+test('generic endpoint capabilities round-trip and invalid maps leave configuration unchanged',async t=>{
+ const root=await fixture(t),env={};
+ const capabilities=JSON.stringify({custom:{reasoning:true,thinkingFormat:'openrouter',supportsReasoningEffort:true,thinkingLevelMap:{off:null,low:'low'},thinkingTokenBudgetField:'thinking_budget',maxTokensField:'max_tokens',maxTokens:8192,contextWindow:32768}});
+ assert.equal((await saveRuntimeConfig(root,{values:{DREAMATIC_MODEL_CAPABILITIES:capabilities}},env)).values.DREAMATIC_MODEL_CAPABILITIES,capabilities);
+ const before=await readFile(join(root,'.env'),'utf8');
+ await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_MODEL_CAPABILITIES:'{"custom":{"reasoning":true,"thinkingLevelMap":{"off":false}}}'}},env),/Invalid/);
+ assert.equal(await readFile(join(root,'.env'),'utf8'),before);
+ assert.equal(env.DREAMATIC_MODEL_CAPABILITIES,capabilities);
+});
+
 
 test('explicit apply validates externally edited fields before mutating disk or runtime',async t=>{
  const text='DREAMATIC_MODEL=external-model\nPORT=invalid\n';const root=await fixture(t,text),env={DREAMATIC_MODEL:'running-model',PORT:'4310'};

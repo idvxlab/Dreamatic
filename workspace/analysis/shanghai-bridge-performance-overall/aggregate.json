@@ -1,0 +1,118 @@
+{
+  "overall": {
+    "count": 15,
+    "meanMinutes": 25.941243333333333,
+    "medianMinutes": 23.640716666666666,
+    "meanWorkflowMinutes": 24.092625555555557,
+    "meanTokens": 2026715.2666666666,
+    "meanInput": 552614.8,
+    "meanRequests": 53.4,
+    "meanImageDeliveries": 5.333333333333333
+  },
+  "usage": {
+    "input": 8289222,
+    "output": 817299,
+    "cacheRead": 21294208,
+    "reasoning": 179328,
+    "totalTokens": 30400729
+  },
+  "roleTokens": {
+    "orchestrator": 3891718,
+    "researcher": 5333732,
+    "designer": 14816825,
+    "reviewer": 5312379,
+    "builder": 1046075
+  },
+  "stageMinutes": {
+    "researcher": 59.995433333333324,
+    "designer": 136.4994,
+    "reviewer": 37.761500000000005,
+    "builder": 93.69856666666668
+  },
+  "groups": {
+    "初期8次": {
+      "count": 8,
+      "meanMinutes": 27.77658125,
+      "medianMinutes": 23.661558333333332,
+      "meanWorkflowMinutes": 25.205222916666667,
+      "meanTokens": 2099918.5,
+      "meanInput": 568656.375,
+      "meanRequests": 52.75,
+      "meanImageDeliveries": 4.5
+    },
+    "中间3次": {
+      "count": 3,
+      "meanMinutes": 24.83713888888889,
+      "medianMinutes": 24.361383333333333,
+      "meanWorkflowMinutes": 23.565155555555553,
+      "meanTokens": 2262324.6666666665,
+      "meanInput": 542306,
+      "meanRequests": 62,
+      "meanImageDeliveries": 6.333333333333333
+    },
+    "最近4次": {
+      "count": 4,
+      "meanMinutes": 23.098645833333336,
+      "medianMinutes": 22.895225000000003,
+      "meanWorkflowMinutes": 22.263033333333333,
+      "meanTokens": 1703601.75,
+      "meanInput": 528263.25,
+      "meanRequests": 48.25,
+      "meanImageDeliveries": 6.25
+    },
+    "初期排除51分钟异常": {
+      "count": 7,
+      "meanMinutes": 24.414514285714287,
+      "medianMinutes": 23.640716666666666,
+      "meanWorkflowMinutes": 21.625207142857143,
+      "meanTokens": 2141834.285714286,
+      "meanInput": 582794.2857142857,
+      "meanRequests": 52.714285714285715,
+      "meanImageDeliveries": 4.428571428571429
+    }
+  },
+  "toolEnds": 758,
+  "toolErrors": 32,
+  "agentRetries": [
+    {
+      "runId": "project-2026-10-12-905cf94e",
+      "invocationId": "call_bd47b0bec3484cab9acec464",
+      "agent": "designer",
+      "type": "agent_retry",
+      "attempt": 1,
+      "nextAttempt": 2,
+      "delayMs": 1000,
+      "error": "Sub-agent designer failed: model output token limit reached: response truncated; partial arguments are not committed",
+      "status": "running",
+      "at": "2026-10-12T04:53:30.908Z",
+      "project": "project-2026-10-12-905cf94e"
+    }
+  ],
+  "lengthResponses": [
+    {
+      "type": "provider_response_complete",
+      "requestId": "0ac4f0d2-7e8b-422b-9985-b74cf8a0e9ad",
+      "role": "designer",
+      "at": "2026-10-12T04:53:30.901Z",
+      "stopReason": "length",
+      "elapsedMs": 279729,
+      "reasoningChars": 53986,
+      "usage": {
+        "input": 54651,
+        "output": 16384,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "reasoning": 16384,
+        "totalTokens": 71035,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "project": "project-2026-10-12-905cf94e"
+    }
+  ]
+}

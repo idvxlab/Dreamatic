@@ -1,4 +1,5 @@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { modelResponseEvidence } from "./model-response-policy.js";
 
 export function stopAfterCommittedTurn(agent: AgentSession["agent"], committed: () => boolean): () => void {
   const previous = agent.shouldStopAfterTurn;
@@ -18,7 +19,9 @@ export function dreamaticSessionFailure(messages: readonly unknown[]): string | 
   if (!latest || typeof latest !== "object" || Array.isArray(latest)) return undefined;
   const message = latest as { role?: unknown; stopReason?: unknown; errorMessage?: unknown };
   if (message.role !== "assistant" || !["error", "length"].includes(String(message.stopReason))) return undefined;
-  if (message.stopReason === "length") return "model output token limit reached: response truncated; partial arguments are not committed";
+  if (message.stopReason === "length") return modelResponseEvidence(message).truncationKind === "reasoning_exhausted"
+    ? "model output token limit reached: reasoning exhausted before any text or tool call; partial arguments are not committed"
+    : "model output token limit reached: response truncated; partial arguments are not committed";
   return typeof message.errorMessage === "string" && message.errorMessage.trim()
     ? message.errorMessage
     : "The model stopped with an unspecified error";

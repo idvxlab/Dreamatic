@@ -9,7 +9,7 @@ import { researchAcquisition, specialistStageContract } from "./workflow-contrac
 import { approvedImageTask, approvedImageFingerprint, recordApprovedImage, assertApprovedImageRequest, type ApprovedImageTask } from "./approved-image.js";
 import { registerContextAuthoring } from "./context-authoring.js";
 import { ContextFailureTracker } from "./context-failures.js";
-import { responseTimeoutReason, modelRecoveryTask, providerRequestSummary } from "./model-response-policy.js";
+import { responseTimeoutReason, modelRecoveryTask, providerRequestSummary, modelResponseEvidence, reasoningRecoveryPlan } from "./model-response-policy.js";
 import { SourceWriteRecovery } from "./source-write-recovery.js";
 import { contextFailureIdentity, contextChangesExample } from "./context-tools.js";
 import { roleContextSchema } from "./context-schema.js";
@@ -38,7 +38,7 @@ import { RUN_CONTEXT_SECTIONS, RUN_DOCUMENT_ALIASES, canonicalRunDocument, runDo
 import { createModelImagePreview } from "./image-preview.js";
 import { createIdleSleepGuard } from "./idle-sleep.js";
 import { annotateShowcasePrompts, appendShowcaseReferences } from "./showcase.js";
-import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
+import { dreamaticProviderFromEnv, dreamaticThinkingLevel, modelCapabilitySource } from "./provider.js";
 import { discoverResearchAssets, fetchResearchAsset, hasResearchPageCache, researchFetch, validateResearchAssets, webSearch } from "./research.js";
 import { ResponseBodyTimeoutError, boundedResponseBytes, imageRequestScheduler, projectContext, serializeJsonWrite } from "./performance.js";
 import { dreamaticSessionFailure, stopAfterCommittedTurn } from "./session-status.js";
@@ -1633,11 +1633,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       pi.on("agent_end", () => { idleSleep.stop(); });
       pi.on("session_shutdown", () => { idleSleep.stop(); });
     }
+    const capabilityConfiguration = process.env.DREAMATIC_MODEL_CAPABILITIES;
     const profile = dreamaticProviderFromEnv();
     let activeRunId = options.parentInvocation?.runId;
     let workflowStopped = false;
     const sourceWrites = new SourceWriteRecovery();
     let providerOutputLimit: number | undefined;
+    let providerControls: ReturnType<typeof providerRequestSummary> | undefined;
     pi.on("agent_start", () => { sourceWrites.clear(); });
     pi.on("message_end", async (event) => {
       const message = event.message;
@@ -1651,10 +1653,12 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       }
       if (message.role === "assistant") {
         if (designerPersona) sourceWrites.observe(message, providerOutputLimit);
+        const evidence = modelResponseEvidence(message);
         await recordProviderDiagnostic("provider_response_complete", {
           stopReason: message.stopReason,
           elapsedMs: providerRequestedAt ? Date.now() - providerRequestedAt : undefined,
-          reasoningChars: message.content.filter(item => item.type === "thinking").reduce((total, item) => total + (item.type === "thinking" ? item.thinking.length : 0), 0),
+          ...evidence,
+          thinkingObservation: evidence.reasoningObserved ? providerControls?.controlState === "off_requested" ? "reasoning_observed_despite_off_request" : "reasoning_observed" : "no_reasoning_observed",
           usage: message.usage,
         });
       }
@@ -1702,14 +1706,26 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       await mkdir(join(runDir, ".performance"), { recursive: true });
       await appendFile(join(runDir, ".performance", "model-requests.jsonl"), `${JSON.stringify({ type, requestId: providerRequestId, role: options.parentInvocation?.agent ?? "orchestrator", at: new Date().toISOString(), ...data })}\n`);
     };
-    pi.on("before_provider_request", async event => {
+    pi.on("before_provider_request", async (event, context) => {
       providerRequestId = randomUUID();
       providerRequestedAt = Date.now();
       providerFirstDelta = false;
       providerFirstText = false;
-      const summary = providerRequestSummary(event.payload);
+      const summary = providerRequestSummary(event.payload, context?.model?.compat);
+      providerControls = summary;
       providerOutputLimit = ["max_completion_tokens", "max_output_tokens", "max_tokens"].map(key => summary.controls[key]).find((value): value is number => typeof value === "number" && value > 0);
-      await recordProviderDiagnostic("provider_request", { ...summary, runtime: { ...loadedRuntimeIdentity, designContract: 2, runtimeFingerprint: await deliveryRuntimeStamp(), piVersion: loadedPiVersion }, configuredThinkingLevel: dreamaticThinkingLevel(options.parentInvocation?.agent ?? "orchestrator") ?? "off", capabilitySource: process.env.DREAMATIC_MODEL_CAPABILITIES?.trim() ? "explicit_configuration" : "unspecified" });
+      const configuredThinkingLevel = dreamaticThinkingLevel(options.parentInvocation?.agent ?? "orchestrator") ?? null;
+      const sessionThinkingLevel = context?.thinkingLevel ?? null;
+      const capabilitySource = profile && context?.model?.provider === profile.providerId
+        ? modelCapabilitySource(context.model.id, capabilityConfiguration)
+        : context?.model ? "pi_model_descriptor" : "unspecified";
+      await recordProviderDiagnostic("provider_request", { ...summary, runtime: { ...loadedRuntimeIdentity, designContract: 2, runtimeFingerprint: await deliveryRuntimeStamp(), piVersion: loadedPiVersion },
+        configuredThinkingLevel, sessionThinkingLevel, capabilitySource,
+        endpointFingerprint: context?.model ? createHash("sha256").update(`${context.model.api}|${context.model.baseUrl}`).digest("hex") : null,
+        reasoningCapability: capabilitySource === "unspecified" ? "unknown" : context?.model?.reasoning ? "declared_supported" : "declared_nonreasoning",
+        offControlUnconfirmed: (sessionThinkingLevel ?? configuredThinkingLevel) === "off" && summary.controlState !== "off_requested" && (capabilitySource === "unspecified" || context?.model?.reasoning !== false),
+        declaredOffUnsupported: context?.model?.thinkingLevelMap?.off === null,
+      });
     });
     pi.on("after_provider_response", async event => { await recordProviderDiagnostic("provider_response_headers", { status: event.status, elapsedMs: providerRequestedAt ? Date.now() - providerRequestedAt : undefined }); });
     pi.on("message_update", async event => {
@@ -2682,9 +2698,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const abort = () => void session.abort();
         signal?.addEventListener("abort", abort, { once: true });
         const childSessionFile = session.sessionFile;
+        let reasoningRecoveries = 0;
+        let modelRetryAllowed = true;
+        let thinkingRecovery: ReturnType<typeof reasoningRecoveryPlan> | undefined;
         try {
           try {
             await withRetry(async (attempt) => {
+              modelRetryAllowed = true;
+              thinkingRecovery = undefined;
               try {
                 const task = attempt === 1 ? params.task : modelRecoveryTask(lastModelFailure, params.agent);
                 const stageTask = unifiedHandoff
@@ -2700,12 +2721,26 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
               if (modelTimeoutError) { lastModelFailure = modelTimeoutError.message; throw modelTimeoutError; }
               if (committedDuringPrompt || blockedDuringPrompt) return;
               const failure = dreamaticSessionFailure(session.messages);
-              if (failure) { lastModelFailure = failure; throw new Error(`Sub-agent ${params.agent} failed: ${failure}`); }
+              if (failure) {
+                lastModelFailure = failure;
+                if (failure.includes("reasoning exhausted")) {
+                  thinkingRecovery = reasoningRecoveryPlan(childModel, session.thinkingLevel, session.getAvailableThinkingLevels(), reasoningRecoveries);
+                  if (thinkingRecovery.retry) {
+                    const previousLevel = session.thinkingLevel;
+                    session.setThinkingLevel(thinkingRecovery.nextLevel);
+                    modelRetryAllowed = session.thinkingLevel !== previousLevel;
+                    if (modelRetryAllowed) reasoningRecoveries++;
+                  } else modelRetryAllowed = false;
+                  if (!modelRetryAllowed) throw new Error(`Sub-agent ${params.agent} failed: ${failure}. Reasoning recovery stopped (${thinkingRecovery.reason}); verify this endpoint's thinking controls before re-dispatch. Durable tool results are preserved; no model was switched.`);
+                }
+                throw new Error(`Sub-agent ${params.agent} failed: ${failure}`);
+              }
             }, {
               attempts: Math.max(1, Number(process.env.DREAMATIC_AGENT_RETRY_ATTEMPTS ?? 3)),
+              shouldRetry: () => modelRetryAllowed,
               ...(signal ? { signal } : {}),
               onRetry: async (notice) => {
-                await emitLifecycle({ type: "agent_retry", attempt: notice.attempt, nextAttempt: notice.nextAttempt, delayMs: notice.delayMs, error: notice.error, status: "running" });
+                await emitLifecycle({ type: "agent_retry", attempt: notice.attempt, nextAttempt: notice.nextAttempt, delayMs: notice.delayMs, error: notice.error, ...(thinkingRecovery ? { thinkingRecovery } : {}), status: "running" });
                 onUpdate?.({
                   content: [{ type: "text", text: `${params.agent} reconnecting (attempt ${notice.nextAttempt}): ${notice.error}` }],
                   details: { agent: params.agent, retry: notice },

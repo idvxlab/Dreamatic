@@ -184,9 +184,37 @@ Endpoint reasoning capabilities can be configured by exact model id with
 can use `{"qwen3.7-plus":{"reasoning":true,"thinkingFormat":"qwen"}}` so Pi
 sends `enable_thinking:false` when thinking is off. Unknown endpoints preserve
 existing behavior; model names alone do not establish parameter support. Supported
-formats are openai, qwen, qwen-chat-template and zai. Validate the actual endpoint
-before enabling a format. Mock Pi request construction verifies parameter emission,
-not whether a live gateway honors it.
+formats reuse Pi's completions adapters: openai, openrouter, deepseek, together,
+baseten, zai, qwen, chat-template, qwen-chat-template, string-thinking and ant-ling.
+Capabilities belong to the active profile's endpoint, not a model name globally.
+Validate the actual endpoint before enabling a format. Mock Pi request construction
+verifies parameter emission, not whether a live gateway honors it.
+
+Optional declarations also expose `supportsReasoningEffort`, `thinkingLevelMap`
+(a null value marks a level unsupported), `thinkingTokenBudgetField`,
+`maxTokensField`, model `maxTokens`/`contextWindow`, and Pi's dynamic
+`chatTemplateKwargs`/`chatTemplateArgs`. The latter accept only scalar values or
+Pi variables `thinking.enabled`, `thinking.effort`, `thinking.budget` with optional
+`omitWhenOff`. These compatibility fields apply to the matching Pi API adapter;
+native providers continue using their existing Pi descriptors. Unknown models
+retain the previous descriptor defaults without inventing endpoint controls.
+
+Request telemetry distinguishes configured and effective session levels (null
+means unavailable), the exact-id capability source, actual serialized controls and
+an endpoint fingerprint without credentials. `off_requested` means a disable
+parameter was sent, not that the endpoint honored it. Responses record aggregate
+reasoning/text/tool-call counts and flag reasoning observed despite an off request.
+Output token counts already include reasoning when using the completions adapter;
+do not add that subset again. No prompt content or reasoning text is added to these
+diagnostics.
+
+Length stops distinguish pure reasoning exhaustion (reasoning evidence with no
+text or tool call) from output truncation. A specialist gets at most one reasoning
+recovery using a lower verified control, only in that local session. If no lower
+control exists, thinking was already off, or reasoning exhaustion recurs, the
+invocation stops with a diagnosis and keeps durable results. Ordinary output and
+network recoveries retain their existing behavior. Models are never switched.
+Role-specific budgets and a separate pure-reasoning watchdog are not enabled here.
 
 Research fetch batches supply at most 6000 excerpt characters across their
 sources. Full text remains in cachedPath, and complete acquisition/candidate

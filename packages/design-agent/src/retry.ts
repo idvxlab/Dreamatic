@@ -13,6 +13,8 @@ export interface RetryOptions {
   onRetry?: (notice: RetryNotice) => void | Promise<void>;
   sleep?: (delayMs: number, signal?: AbortSignal) => Promise<void>;
   random?: () => number;
+  /** An operation-specific gate may stop otherwise transient retries. */
+  shouldRetry?: (error: unknown, attempt: number) => boolean;
 }
 
 export class RetryableHttpError extends Error {
@@ -60,7 +62,7 @@ export async function withRetry<T>(operation: (attempt: number) => Promise<T>, o
     catch (error) {
       options.signal?.throwIfAborted();
       lastError = error;
-      if (attempt >= attempts || !isRetryableError(error)) throw error;
+      if (attempt >= attempts || options.shouldRetry?.(error, attempt) === false || !isRetryableError(error)) throw error;
       const exponential = Math.min(maxDelayMs, baseDelayMs * 2 ** (attempt - 1));
       const jitter = options.random ? Math.floor(exponential * options.random() * 0.25) : 0;
       const delayMs = error instanceof RetryableHttpError && error.retryAfterMs !== undefined
