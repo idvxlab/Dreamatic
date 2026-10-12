@@ -2088,7 +2088,13 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "research_fetch_batch",
       label: "Fetch multiple research sources",
-      description: "Fetch independent research pages with bounded concurrency and optionally retain metadata-screened reference candidates. Saved images still require Designer relevance judgment.",
+      description: 'Fetch independent research pages with bounded concurrency and optionally retain metadata-screened reference candidates. Required envelope: {runId, sources:[{url,...}]}; runId alone does not select sources. Minimal example: {"runId":"<assigned-runId>","sources":[{"url":"https://publisher.example/article"}]}. Replace placeholders with the assigned Run and actual selected source URLs from existing search results. Saved images still require Designer relevance judgment.',
+      prepareArguments: args => {
+        const sources = args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>).sources : undefined;
+        if (!Array.isArray(sources) || sources.length === 0) throw new Error('research_fetch_batch requires a nonempty sources array. Keep the assigned runId and add sources:[{url:"actual-selected-source-URL"}] at the argument root. Select URLs from existing search results; do not invent URLs or repeat successful searches. No pages were fetched and no acquisition budget was consumed.');
+        // Pi validates the full schema after preparation; preserve every supplied field.
+        return args as { runId: string; sources: { url: string }[] };
+      },
       parameters: Type.Object({
         runId: Type.String(),
         refinementReason: Type.Optional(Type.String({ minLength: 10, description: "Specific unresolved evidence/figure gap; enables one bounded source-fetch reserve. Select new sources rather than repeating attempted URLs." })),
@@ -2107,7 +2113,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           assetDescription: Type.Optional(Type.String()),
           assetDoNotReplace: Type.Optional(Type.Boolean()),
           assetAllowedForEdit: Type.Optional(Type.Boolean()),
-        }), { minItems: 1, maxItems: 10 }),
+        }), { minItems: 1, maxItems: 10, description: "Required explicit selection of source URLs; a runId alone does not identify pages to fetch." }),
       }),
       async execute(_id, params, signal) {
         const budget = await consumeWorkflowBudget(workspaceDir, params.runId, "sourceFetches", params.sources.length, params.refinementReason, params.sources.map((source) => source.url), params.sources.filter((source) => source.refresh).map((source) => source.url));

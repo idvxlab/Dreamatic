@@ -63,6 +63,36 @@ test("committed-turn stop preserves and restores existing SDK stop policy", asyn
   assert.equal(agent.shouldStopAfterTurn, previous);
 });
 
+test('Pi gives targeted fetch-batch feedback before execution and preserves explicit source selection', async () => {
+  const {createDreamaticExtension}=await import('../dist/extension.js');
+  const {mkdtemp,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');
+  const {join}=await import('node:path');
+  const workspace=await mkdtemp(join(tmpdir(),'dreamatic-fetch-arguments-'));
+  try {
+    const tools=new Map();
+    createDreamaticExtension({workspaceDir:workspace})({registerTool:tool=>tools.set(tool.name,tool),on:()=>{}});
+    const batch=tools.get('research_fetch_batch');
+    const valid={runId:'demo',sources:[{url:'https://publisher.example/selected',researchTerms:['subject']}],refinementReason:'Resolve an actual evidence gap'};
+    assert.equal(batch.prepareArguments(valid),valid, 'valid selection and optional fields must remain unchanged');
+    const inputs=[{runId:'demo'},{runId:'demo',sources:'[]'},{runId:'demo',sources:[]},valid];
+    let turns=0,executed=0,received;
+    const errors=[];
+    const agent=new Agent({initialState:{model:{id:'mock',provider:'mock',api:'openai-completions'},tools:[{...batch,execute:async(_id,args)=>{executed++;received=args;return {content:[],details:{}};}}]},streamFn:()=>{
+      assert.ok(turns<inputs.length);
+      const message={role:'assistant',api:'openai-completions',provider:'mock',model:'mock',content:[{type:'toolCall',id:`fetch-${turns}`,name:'research_fetch_batch',arguments:inputs[turns++]}],stopReason:'toolUse',timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}};
+      return {async *[Symbol.asyncIterator](){yield {type:'done',reason:'toolUse',message};},result:async()=>message};
+    }});
+    agent.subscribe(event=>{if(event.type==='tool_execution_end' && event.isError)errors.push(event.result.content.map(item=>item.text??'').join('\n'));});
+    const restore=stopAfterCommittedTurn(agent,()=>executed===1);
+    try {await agent.prompt('Fetch explicitly selected research sources');}finally{restore();}
+    assert.equal(errors.length,3);
+    for(const error of errors)assert.match(error,/nonempty sources array.*Keep the assigned runId.*existing search results.*No pages were fetched and no acquisition budget was consumed/);
+    assert.equal(executed,1, 'invalid calls must never reach fetch or budget execution');
+    assert.deepEqual(received,valid);
+  } finally {await rm(workspace,{recursive:true,force:true});}
+});
+
 test("Pi reports invalid role Context arguments at execution_end before execute and stops unchanged retries", async () => {
   const { roleContextSchema, contextFailureIdentity } = await import('../dist/context-tools.js');
   let executed = 0, calls = 0, failures = 0;
@@ -112,7 +142,7 @@ test('real Pi executes partial Context updates and final commit without regenera
    assert.ok(calls<=4);
    const name=calls%2?'update_design_context':'commit_design_context';
    const args=calls===1?{changes:{evidence:{target:'Research page',summary:'Complete research'},findings:'Useful findings'}}:
-    calls===3?{changes:{usageConditions:'No restricted materials.'}}:{};
+    calls===3?{changes:{usageConditions:'No restricted materials.'}}:calls===4?{runId:'demo'}:{};
    const message={role:'assistant',api:'openai-completions',provider:'mock',model:'mock',content:[{type:'toolCall',id:`draft-${calls}`,name,arguments:args}],stopReason:'toolUse',timestamp:Date.now(),usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}}};
    return {async *[Symbol.asyncIterator](){yield {type:'done',reason:'toolUse',message};},result:async()=>message};
   }});

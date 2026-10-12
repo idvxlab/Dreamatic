@@ -200,11 +200,13 @@ export function contextChangesExample(role: string) {
     : { changes: { system: { system_thesis: "Actual design thesis", consistency_rules: ["Actual shared rule"] }, strategy: { design_intent: "Actual intent" } } };
 }
 
-/** Only a content-free obsolete commit wrapper can be safely canonicalized. */
-export function prepareContextCommit(input: unknown) {
+/** Canonicalize only content-free wrappers that cannot change the bound Run. */
+export function prepareContextCommit(input: unknown, boundRunId?: string) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("commit_design_context takes exactly {}.");
   const record = input as Record<string, unknown>;
-  if (Object.keys(record).length === 1 && Object.hasOwn(record, "changes") && (record.changes === "{}" || (record.changes && typeof record.changes === "object" && !Array.isArray(record.changes) && !Object.keys(record.changes).length))) return {};
-  if (Object.keys(record).length) throw new Error("commit_design_context takes exactly {}. Author content with update_design_context first; no content was committed.");
+  const keys = Object.keys(record);
+  if (keys.length === 1 && Object.hasOwn(record, "runId") && boundRunId !== undefined && record.runId === boundRunId) return {};
+  if (keys.length === 1 && Object.hasOwn(record, "changes") && (record.changes === "{}" || (record.changes && typeof record.changes === "object" && !Array.isArray(record.changes) && !Object.keys(record.changes).length))) return {};
+  if (keys.length) throw new Error(`commit_design_context takes exactly {}. Unexpected fields: ${keys.map(key => JSON.stringify(key)).join(", ")}.${Object.hasOwn(record, "runId") && record.runId !== boundRunId ? " runId is not the bound Run; this tool cannot select or switch Runs." : ""} Remove these fields and retry commit_design_context({}). Existing working draft is retained; no canonical content was committed. Do not repeat successful research or updates.`);
   return record;
 }

@@ -162,7 +162,7 @@ export function registerContextAuthoring(pi: ExtensionAPI, dependencies: {
   pi.registerTool({ name: "commit_design_context", label: "Commit role Context", description: "Call with {}. Runtime assembles observed working Context, validates structure, scoped Skills and semantics, and atomically submits with version checks. Retains editable work for subsequent repairs. Read design_context_read before committing retained work in a fresh invocation. This does not publish completion or approve design.",
     constrainedSampling: { type: "json_schema", strict: "prefer" },
     parameters: Type.Object({}, { additionalProperties: false }),
-    prepareArguments: prepareContextCommit,
+    prepareArguments: args => prepareContextCommit(args, boundRunId),
     async execute(_id, params, signal) { return serializeJsonWrite(draftPath, () => serializeJsonWrite(canonicalPath, async () => {
       if (Object.keys(params).length) throw new Error("commit_design_context takes {}; runtime manages all version hashes.");
       const current = await workingContext();

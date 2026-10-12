@@ -22,6 +22,18 @@ test('obsolete empty commit wrapper is safe but nonempty content and ambiguous e
   assert.throws(() => normalizeDesignBusArguments({payload:'{"type":"design_review_pass","summary":"pass"}'}, 'demo', 'reviewer'), /missing root fields: type, summary/);
 });
 
+test('commit tolerates only the sole exact bound runId and gives targeted correction without discarding content', () => {
+  const input = {runId:'demo'};
+  assert.deepEqual(prepareContextCommit(input, 'demo'), {});
+  assert.deepEqual(input, {runId:'demo'}, 'preparation must not mutate the original call');
+  for (const args of [{runId:'foreign'}, {runId:' demo '}, {runId:null}, {runId:'demo',changes:{}}, {runId:'demo',findings:'unsaved content'}]) {
+    assert.throws(() => prepareContextCommit(args, 'demo'), /takes exactly \{\}.*Unexpected fields:.*Remove these fields.*Existing working draft is retained/);
+  }
+  assert.throws(() => prepareContextCommit({runId:'demo'}), /cannot select or switch Runs/);
+  assert.throws(() => prepareContextCommit({runId:'foreign'}, 'demo'), /runId is not the bound Run/);
+  assert.throws(() => prepareContextCommit({findings:'private research'}, 'demo'), error => /"findings"/.test(error.message) && !error.message.includes('private research'));
+});
+
 test('current persona, stage handoff, loaded system Skill and tool schema share one authoring protocol', async () => {
   const repo = new URL('../../../', import.meta.url);
   for (const role of ['researcher','designer','reviewer']) {

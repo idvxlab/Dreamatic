@@ -102,7 +102,10 @@ claims for freshness and record disagreement/access limits.
 # Acquire text and image candidates
 
 Fetch selected pages with research_fetch_batch, cacheText:true and focused
-researchTerms. Read targeted cached passages only when necessary, using the exact
+researchTerms. Pass `{runId, sources:[{url, cacheText:true, researchTerms:[...]}]}`;
+runId alone does not select sources. If sources is missing, select URLs from existing
+search results and correct the call without repeating successful searches.
+Read targeted cached passages only when necessary, using the exact
 returned cachedPath; never reconstruct or extend its filename from the URL. After
 ENOENT, recheck that path before retrying; offset/limit cannot fix a missing file.
 Excerpts are not full-paper reading. For blocked/PDF-only sources seek accessible publisher,
