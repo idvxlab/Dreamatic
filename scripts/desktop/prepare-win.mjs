@@ -188,6 +188,32 @@ await rm(join(stage, '.tool-cache'), { recursive: true, force: true });
 const browserDir = (await readdir(join(stage, 'browsers'))).find(name => name.startsWith('chromium_headless_shell-'));
 if (!browserDir) throw new Error('Playwright did not install the Windows HTML review browser.');
 await access(join(stage, 'browsers', browserDir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'));
+
+// Electron 44 exposes an explicit installer instead of downloading its binary
+// during npm ci. Install and checksum-verify the host-native runtime now.
+const electronExecutable = join(root, 'node_modules/electron/dist/electron.exe');
+try {
+  await access(electronExecutable);
+} catch {
+  const electronInstaller = join(root, 'node_modules/electron/install.js');
+  const mirrors = [undefined, 'https://npmmirror.com/mirrors/electron/'];
+  let lastError;
+  for (const mirror of mirrors) {
+    console.log(`Installing Electron for Windows from ${mirror ? new URL(mirror).hostname : 'the official release'}`);
+    try {
+      await run(process.execPath, [electronInstaller], mirror ? { ELECTRON_MIRROR: mirror } : {}, root);
+      await access(electronExecutable);
+      lastError = undefined;
+      break;
+    } catch (error) {
+      lastError = error;
+      console.warn(error.message);
+      await rm(join(root, 'node_modules/electron/dist'), { recursive: true, force: true });
+      await rm(join(root, 'node_modules/electron/path.txt'), { force: true });
+    }
+  }
+  if (lastError) throw new Error(`Unable to install the verified Windows Electron runtime: ${lastError.message}`);
+}
 await access(join(root, 'node_modules/electron/dist/electron.exe'));
 await run(process.execPath, [join(root, 'scripts/desktop/icon-win.mjs')], {}, root);
 
