@@ -20,7 +20,8 @@ else {
     const dataDir = app.getPath('userData');
     await mkdir(dataDir, { recursive: true });
     log = createWriteStream(join(dataDir, 'desktop.log'), { flags: 'a', mode: 0o600 });
-    const runtime = app.isPackaged ? join(process.resourcesPath, 'runtime') : resolve(fileURLToPath(new URL('../../.desktop-runtime', import.meta.url)));
+    const developmentRuntime = process.platform === 'win32' ? '../../.desktop-runtime-win-x64' : '../../.desktop-runtime';
+    const runtime = app.isPackaged ? join(process.resourcesPath, 'runtime') : resolve(fileURLToPath(new URL(developmentRuntime, import.meta.url)));
     service = await startRuntime({ runtime, dataDir, log });
     service.child.once('exit', () => { if (!quitting) { dialog.showErrorBox('DreamaticArt', 'The local service stopped. Restart DreamaticArt. Details are in desktop.log.'); app.quit(); } });
     const origin = service.url;

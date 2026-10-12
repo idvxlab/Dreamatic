@@ -1,6 +1,22 @@
 import { fork } from 'node:child_process';
 import { mkdir, copyFile, constants, readdir, chmod } from 'node:fs/promises';
-import { join, delimiter } from 'node:path';
+import { join, delimiter, posix, win32 } from 'node:path';
+
+export function runtimeExecutablePaths(runtime, browserDir, platform = process.platform) {
+  const windows = platform === 'win32';
+  const targetJoin = windows ? win32.join : posix.join;
+  return {
+    node: targetJoin(runtime, 'bin', windows ? 'node.exe' : 'node'),
+    browser: targetJoin(
+      runtime,
+      'browsers',
+      browserDir,
+      windows ? 'chrome-headless-shell-win64' : 'chrome-headless-shell-mac-arm64',
+      windows ? 'chrome-headless-shell.exe' : 'chrome-headless-shell',
+    ),
+  };
+}
+
 export async function startRuntime({ runtime, dataDir, log }) {
   await mkdir(dataDir, { recursive: true });
   try {
@@ -10,15 +26,16 @@ export async function startRuntime({ runtime, dataDir, log }) {
   catch (error) { if (error.code !== 'EEXIST') throw error; }
   const browserDir = (await readdir(join(runtime, 'browsers'))).find(name => name.startsWith('chromium_headless_shell-'));
   if (!browserDir) throw new Error('The packaged HTML review browser is missing.');
-  const browser = join(runtime, 'browsers', browserDir, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell');
+  const executables = runtimeExecutablePaths(runtime, browserDir);
+  const systemPaths = process.platform === 'win32' ? [] : ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
   const child = fork(join(runtime, 'apps/server/dist/index.js'), [], {
-    execPath: join(runtime, 'bin/node'), cwd: dataDir,
+    execPath: executables.node, cwd: dataDir,
     env: { ...process.env, DREAMATIC_DESKTOP: '1', DREAMATIC_CONFIG_DIR: dataDir,
       DREAMATIC_DESKTOP_TOOL_PATH: join(runtime, 'bin'),
-      PATH: [join(runtime, 'bin'), '/usr/bin', '/bin', '/usr/sbin', '/sbin', process.env.PATH || ''].join(delimiter),
+      PATH: [join(runtime, 'bin'), ...systemPaths, process.env.PATH || ''].join(delimiter),
       PI_CODING_AGENT_DIR: join(dataDir, 'pi'),
       PLAYWRIGHT_BROWSERS_PATH: join(runtime, 'browsers'),
-      DREAMATIC_DESKTOP_BROWSER: browser },
+      DREAMATIC_DESKTOP_BROWSER: executables.browser },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
   child.stdout.on('data', chunk => log.write(chunk)); child.stderr.on('data', chunk => log.write(chunk));

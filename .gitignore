@@ -9,4 +9,5 @@ workspace/.trash/
 *.tsbuildinfo
 
 .desktop-runtime/
+.desktop-runtime-win-x64/
 release/

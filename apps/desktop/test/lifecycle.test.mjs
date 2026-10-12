@@ -4,8 +4,18 @@ import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { Writable } from 'node:stream';
-import { startRuntime, localTarget } from '../lifecycle.mjs';
-const runtime = resolve('.desktop-runtime');
+import { startRuntime, localTarget, runtimeExecutablePaths } from '../lifecycle.mjs';
+const runtime = resolve(process.platform === 'win32' ? '.desktop-runtime-win-x64' : '.desktop-runtime');
+test('desktop runtime selects target-native Node and browser executables', () => {
+  assert.deepEqual(runtimeExecutablePaths('C:\\runtime', 'chromium_headless_shell-1223', 'win32'), {
+    node: 'C:\\runtime\\bin\\node.exe',
+    browser: 'C:\\runtime\\browsers\\chromium_headless_shell-1223\\chrome-headless-shell-win64\\chrome-headless-shell.exe',
+  });
+  assert.deepEqual(runtimeExecutablePaths('/runtime', 'chromium_headless_shell-1223', 'darwin'), {
+    node: '/runtime/bin/node',
+    browser: '/runtime/browsers/chromium_headless_shell-1223/chrome-headless-shell-mac-arm64/chrome-headless-shell',
+  });
+});
 test('navigation allows app and isolated granted previews only', () => {
   const origin = 'http://127.0.0.1:54321';
   assert.equal(localTarget(`${origin}/assets/test.html`, origin), true);
@@ -20,7 +30,7 @@ test('packaged runtime starts without system Node, writes settings outside app, 
     service = await startRuntime({ runtime, dataDir, log });
     let config = await fetch(`${service.url}/api/config`).then(r => r.json());
     assert.equal(config.envPath, join(dataDir, '.env'));
-    assert.equal((await stat(join(dataDir, '.env'))).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal((await stat(join(dataDir, '.env'))).mode & 0o777, 0o600);
     assert.equal(config.textApiKeyConfigured, false);
     const response = await fetch(`${service.url}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ values: { DREAMATIC_SEARCH_PROVIDER: 'duckduckgo' } }) });
     assert.equal(response.status, 200);

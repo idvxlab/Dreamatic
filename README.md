@@ -4,7 +4,7 @@
 
 DreamaticArt is an open-source AI design system built on Pi. It coordinates specialist agents to clarify requirements, research materials, develop designs, review specifications, and produce deliverables. Projects retain their requirements, references, plans, reviews, and results in a local workspace.
 
-Use DreamaticArt through the macOS desktop app, the Web interface, or the CLI.
+Use DreamaticArt through the macOS or Windows desktop app, the Web interface, or the CLI.
 
 **[Official website](https://www.dreamatic.art)** · **[Source code](https://github.com/idvxlab/Dreamatic)** · **[MIT license](LICENSE)**
 
@@ -391,7 +391,7 @@ DreamaticArt extends Pi through its SDK, Extensions, Skills, and session APIs. P
 | `apps/web` | React interface, Canvas, and Preview |
 | `apps/server` | HTTP/SSE, sessions, assets, and application policy |
 | `apps/cli` | Command-line entry point |
-| `apps/desktop` | macOS desktop application |
+| `apps/desktop` | macOS and Windows desktop application |
 | `packages/design-agent` | Design tools, workflows, and delivery contracts |
 | `.pi/agents` | Agent instructions |
 | `.pi/skills` | Professional and supporting Skills |
@@ -425,7 +425,26 @@ npm run release:mac -- --skip-install
 
 Release logs are saved under `release/logs/`. The previous DMG is replaced only after verification succeeds. Signing is ad-hoc; Developer ID signing and notarization require separate Apple credentials.
 
-Use `npm run desktop` for desktop development.
+Use `npm run desktop` for macOS desktop development.
+
+### Build a Windows installer
+
+On a 64-bit Windows 10 or 11 computer with Node.js 22.19 or newer, open PowerShell in the repository and run:
+
+```powershell
+npm run release:win
+```
+
+Windows builds are native: macOS builds the macOS DMG, while Windows builds and runs the Windows x64 application before producing `release/DreamaticArt-<version>-windows-x64-setup.exe` and its SHA256 file. The release checks types, regression tests, the bundled Node/Pi/browser runtime, desktop Settings/Preview/Export, the packaged application, and the NSIS installer.
+
+The Windows command supports the same release options:
+
+```powershell
+npm run release:win -- --version 2.1.0
+npm run release:win -- --skip-install
+```
+
+Use `npm run desktop:win` for Windows desktop development and `npm run desktop:package:win` for a faster package-only development build. The final release gate is one manual install and uninstall on Windows. If electron-builder signing credentials such as `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` are supplied through secure local or CI environment variables, the executable and installer are signed automatically; never commit certificate files or passwords.
 
 ## Troubleshooting
 
