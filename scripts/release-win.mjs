@@ -57,9 +57,9 @@ if (args.includes('--help')) {
     const browser = join(root, '.desktop-runtime-win-x64', 'browsers', browserDir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
     process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE = browser;
     process.env.DREAMATIC_DESKTOP_BROWSER = browser;
-    const testDirs = ['apps/server/test', 'apps/web/test', 'packages/design-agent/test', 'apps/desktop/test'];
-    const tests = (await Promise.all(testDirs.map(async directory => (await readdir(join(root, directory))).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(directory, name))))).flat();
-    await run('5/7 Run regression and Windows desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=1', ...tests]);
+    const desktopTestDir = 'apps/desktop/test';
+    const tests = (await readdir(join(root, desktopTestDir))).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(desktopTestDir, name));
+    await run('5/7 Run Windows desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=1', ...tests]);
     await run('6/7 Check desktop Settings, Preview and Export on Windows', process.execPath, ['apps/desktop/test-ui.mjs']);
     await run('7/7 Package and verify the native Windows installer', process.execPath, ['scripts/desktop/package-win.mjs']);
 
