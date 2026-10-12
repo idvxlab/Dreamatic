@@ -1,9 +1,12 @@
 import { syncReleaseVersion } from './version.mjs';
-import { access, cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { access, cp, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 const root = resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const stage = join(root, '.desktop-runtime-win-x64');
@@ -33,9 +36,21 @@ async function runNpm(args) {
 }
 
 async function download(url, destination) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(900000) });
-  if (!response.ok) throw new Error(`Download failed: ${url}: ${response.status}`);
-  await writeFile(destination, new Uint8Array(await response.arrayBuffer()));
+  const partial = `${destination}.partial`;
+  await rm(partial, { force: true });
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'DreamaticArt-release' },
+      signal: AbortSignal.timeout(180000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.body) throw new Error('Response body is empty');
+    await pipeline(Readable.fromWeb(response.body), createWriteStream(partial, { flags: 'wx' }));
+    await rename(partial, destination);
+  } catch (error) {
+    await rm(partial, { force: true });
+    throw new Error(`Download failed: ${url}: ${error.message}`, { cause: error });
+  }
 }
 
 async function sha256(path) {
@@ -47,15 +62,18 @@ async function cachedDownload({ file, expected, sources }) {
   if (await sha256(destination).catch(() => '') !== expected) {
     await rm(destination, { force: true });
     for (const source of sources) {
-      console.log(`Downloading ${file} from ${new URL(source).hostname}`);
-      try {
-        await download(source, destination);
-        if (await sha256(destination) !== expected) throw new Error(`SHA256 mismatch for ${file}`);
-        break;
-      } catch (error) {
-        console.warn(error.message);
-        await rm(destination, { force: true });
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        console.log(`Downloading ${file} from ${new URL(source).hostname} (attempt ${attempt}/2)`);
+        try {
+          await download(source, destination);
+          if (await sha256(destination) !== expected) throw new Error(`SHA256 mismatch for ${file}`);
+          break;
+        } catch (error) {
+          console.warn(error.message);
+          await rm(destination, { force: true });
+        }
       }
+      if (await sha256(destination).catch(() => '') === expected) break;
     }
   }
   if (await sha256(destination).catch(() => '') !== expected) {
@@ -149,7 +167,13 @@ const windowsTools = [
   },
 ];
 for (const tool of windowsTools) {
-  const toolArchive = await cachedDownload({ file: tool.file, expected: tool.expected, sources: [tool.url] });
+  const toolArchive = await cachedDownload({
+    file: tool.file,
+    expected: tool.expected,
+    // Mirrors are acceptable only because every byte is checked against the
+    // digest published for the upstream GitHub release asset.
+    sources: [tool.url, `https://ghfast.top/${tool.url}`, `https://gh-proxy.com/${tool.url}`],
+  });
   const toolRoot = join(downloads, tool.file.replace(/\.zip$/u, ''));
   await extractZip(toolArchive, downloads, toolRoot);
   await cp(join(toolRoot, `${tool.name}.exe`), join(stage, 'bin', `${tool.name}.exe`));
