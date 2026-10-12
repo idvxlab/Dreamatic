@@ -1,6 +1,74 @@
 import type { Page } from "playwright-core";
 import { htmlTask, type DeliveryContract } from "./design-contract.js";
 
+/** Check linked numeric citations only; author-date and source-free pages remain compatible. */
+export async function observeCitationNumbering(page: Page) {
+  return page.evaluate(() => {
+    const references = document.getElementById("references");
+    if (!references) return [];
+    const citations = [...document.querySelectorAll<HTMLAnchorElement>('a[href^="#"]')].filter(link => !references.contains(link)).flatMap(link => {
+      const number = link.innerText.trim().match(/^\[(\d+)\]$/)?.[1];
+      if (!number) return [];
+      let id: string; try { id = decodeURIComponent(link.hash.slice(1)); } catch { return []; }
+      const target = document.getElementById(id);
+      return target && references.contains(target) ? [{ number: Number(number), id, target }] : [];
+    });
+    if (!citations.length) return [];
+    const visible = (element: Element) => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (node.hasAttribute("hidden") || style.display === "none" || style.visibility !== "visible" || Number(style.opacity) === 0) return false;
+      }
+      return element.getClientRects().length > 0;
+    };
+    const entries = [...references.querySelectorAll<HTMLElement>("li")].filter(item => !item.parentElement?.closest("li"));
+    const issues: string[] = [];
+    const labels = new Map<Element, number>();
+    const owners = new Map<number, Element>();
+    for (const entry of entries) {
+      let number: number | undefined;
+      // Explicit text labels survive list resets and can be compared to citation labels.
+      const textLabel = entry.innerText.trim().match(/^\[(\d+)\]/);
+      if (textLabel && visible(entry)) {
+        const walker = document.createTreeWalker(entry, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          if (!node.textContent?.trim()) continue;
+          if (node.textContent.trim().startsWith("[") && node.parentElement && visible(node.parentElement)) number = Number(textLabel[1]);
+          break;
+        }
+      }
+      // Also accept ordinary ordered-list markers, provided CSS has not suppressed them.
+      const style = getComputedStyle(entry);
+      const marker = getComputedStyle(entry, "::marker");
+      if (number === undefined && visible(entry) && entry.parentElement instanceof HTMLOListElement
+        && style.display === "list-item" && ["decimal", "decimal-leading-zero"].includes(style.listStyleType)
+        && marker.content === "normal" && marker.visibility === "visible" && Number(marker.opacity) !== 0 && parseFloat(marker.fontSize) > 0) {
+        const list = entry.parentElement;
+        const items = [...list.children].filter((item): item is HTMLLIElement => item instanceof HTMLLIElement);
+        let ordinal = list.hasAttribute("start") ? list.start : list.reversed ? items.length : 1;
+        for (const item of items) {
+          if (item.hasAttribute("value")) ordinal = item.value;
+          if (item === entry) { number = ordinal; break; }
+          ordinal += list.reversed ? -1 : 1;
+        }
+      }
+      const id = entry.id || entry.querySelector("[id]")?.id || "unnamed entry";
+      if (number === undefined) issues.push(`reference #${id} has no visible numeric label; add explicit [n] text before the entry or restore visible ordered-list markers`);
+      else {
+        labels.set(entry, number);
+        if (owners.has(number)) issues.push(`reference #${id} duplicates label [${number}] on another entry; give each source one distinct number`);
+        owners.set(number, entry);
+      }
+    }
+    for (const citation of citations) {
+      const entry = citation.target.closest("li");
+      const number = entry ? labels.get(entry) : undefined;
+      if (number !== citation.number) issues.push(`citation [${citation.number}] → #${citation.id} does not match its visible reference label${number === undefined ? " (missing)" : ` [${number}]`}; align the citation text and target label, reusing one number per source`);
+    }
+    return [...new Set(issues)];
+  });
+}
+
 export function presentationRequirements(contract: DeliveryContract) {
   return contract.deliverables.filter(item => (item.presentation as { required?: boolean } | undefined)?.required === true).map(item => {
     const access = (item.presentation as { access?: string }).access;

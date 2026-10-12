@@ -12,4 +12,25 @@ test('fixed status displays live receipts without opening tool details and keeps
  await page.evaluate(event=>window.update({running:false,workflow:[{...event,status:'completed'}]}),event);assert.equal(await status.locator('img').count(),1);assert.equal(await status.locator('.run-status-heading').count(),0);
  await page.evaluate(()=>window.update({running:false,workflow:[{id:'p-completion-initial',kind:'message',status:'completed',actor:'Dreamatic',label:'Project completion summary',stage:'completion',detail:'Project completed\nUsage: 100 text tokens',artifactRefs:['runs/p/final/artifacts/site/index.html']}]}));
  const message=page.locator('.workflow-message-bubble');await message.getByText(/Project completed/).waitFor();assert.equal(await message.locator('details').count(),0);assert.equal(await message.getByRole('link',{name:'View project'}).getAttribute('href'),'/assets/runs/p/final/artifacts/site/index.html');assert.equal(await message.getByRole('link',{name:'Download project'}).getAttribute('href'),'/api/runs/p/export');
+ await t.test('nested actions keep the reading position and do not toggle their parent agent',async()=>{
+  await page.evaluate(()=>window.update({running:false,workflow:[{id:'agent',kind:'agent',status:'running',actor:'Designer',label:'Designer actions',children:Array.from({length:45},(_,index)=>({id:`action-${index}`,kind:'tool',status:'completed',actor:'Designer',label:`Action ${index}`,input:'Action input',output:'Action result'}))}]}));
+  const agent=page.locator('.workflow-agent-card'),action=page.locator('.workflow-event-card').nth(20),scroll=page.locator('.agent-scroll');
+  await action.waitFor({state:'visible'});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await action.evaluate(element=>{
+   const container=element.closest('.agent-scroll');
+   container.scrollTop+=element.getBoundingClientRect().top-container.getBoundingClientRect().top-120;
+  });
+  const before=await scroll.evaluate(element=>element.scrollTop);
+  assert.ok(before>200,'the parent heading must be above the viewport');
+  await action.locator('summary').click();
+  await page.waitForTimeout(500);
+  assert.equal(await action.evaluate(element=>element.open),true);
+  assert.ok(Math.abs(await scroll.evaluate(element=>element.scrollTop)-before)<1,'expanding an action must preserve scroll position');
+  await action.locator('summary').click();
+  await page.waitForTimeout(100);
+  assert.equal(await action.evaluate(element=>element.open),false);
+  assert.equal(await agent.evaluate(element=>element.open),true,'closing a nested action must leave its agent expanded');
+  assert.ok(Math.abs(await scroll.evaluate(element=>element.scrollTop)-before)<1,'collapsing an action must preserve scroll position');
+ });
 });

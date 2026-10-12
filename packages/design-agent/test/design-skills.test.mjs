@@ -145,6 +145,41 @@ test('category assignments and per-scope professional Skills preserve independen
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
+test('one shared catalog groups eligible primary and supporting candidates across independent disciplines', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-skill-groups-'));
+  try {
+    await init(workspace);
+    const tools = harness(workspace, 'designer').tools;
+    const catalog = value(await invoke(tools, 'list_skills', {}));
+    assert.deepEqual(catalog.scopeProtocol.discoverAll, { tool: 'list_skills', arguments: {} });
+    assert.deepEqual(catalog.selectionByScope.map(item => item.scopeId), scopes.map(item => item.id));
+    assert.equal(new Set(catalog.skills.map(item => item.name)).size, catalog.skills.length);
+    for (const assignment of scopes) {
+      const group = catalog.selectionByScope.find(item => item.scopeId === assignment.id);
+      const candidates = catalog.skills.filter(skill => skill.applicableScopes.some(item => item.scopeId === assignment.id));
+      assert.deepEqual(group.primaryCandidates, candidates.filter(skill => skill.moduleType === 'discipline' && skill.designCategories.includes(assignment.category)).map(skill => skill.name));
+      assert.ok(group.primaryCandidates.length > 0);
+      assert.ok(group.supportingCandidates.includes('concept-showcase-storytelling'));
+      assert.ok(group.supportingCandidates.includes('html-interface'));
+      for (const [names, role] of [[group.primaryCandidates, 'primary'], [group.supportingCandidates, 'supporting']]) {
+        for (const name of names) {
+          const skill = catalog.skills.find(item => item.name === name);
+          assert.equal(skill.applicableScopes.find(item => item.scopeId === assignment.id).load.arguments.role, role);
+        }
+      }
+      const primary = catalog.skills.find(skill => skill.name === group.primaryCandidates[0]);
+      await invoke(tools, 'use_skill', primary.applicableScopes.find(item => item.scopeId === assignment.id).load.arguments);
+    }
+    const before = value(await invoke(tools, 'list_skills', {})).skillBindings;
+    await assert.rejects(invoke(tools, 'use_skill', { name: 'concept-showcase-storytelling', scopeId: 'campaign', role: 'primary' }), error => {
+      assert.equal(JSON.parse(error.message).selectionChanged, false);
+      return true;
+    });
+    assert.deepEqual(value(await invoke(tools, 'list_skills', {})).skillBindings, before);
+    assert.deepEqual(value(await invoke(tools, 'list_skills', { scopeId: 'product' })).selectionByScope.map(item => item.scopeId), ['product']);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
 test('ineligible primary recovery loads a matching professional and retains useful supporting knowledge', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-skill-recovery-'));
   try {
@@ -1003,6 +1038,13 @@ test('Designer publication catches duplicate selectors and hidden mobile navigat
     const beforeBus = await readFile(join(runDir, 'bus.jsonl'), 'utf8');
     const publication = {runId:'demo',type:'design_revision_ready',from_agent:'designer',to:'orchestrator',summary:'Revalidate navigation',requestedAction:'Review'};
     await assert.rejects(invoke(designer, 'design_bus_post', publication), /HTML source preflight.*Smooth scroll.*strict mode violation/s);
+    const recovery = JSON.parse(await readFile(join(runDir, '.performance/designer-recovery.json'), 'utf8'));
+    const selectorIssues = recovery.issues.filter(issue => issue.includes('Smooth scroll'));
+    assert.equal(selectorIssues.length, 1, 'identical selector failures across viewports are reported once');
+    assert.match(selectorIssues[0], /1440px, 768px, 390px/);
+    assert.match(selectorIssues[0], /execution.interaction_checks\[0\]/);
+    assert.match(selectorIssues[0], /page source: plan\/html\/ui\/index.html/);
+    assert.match(recovery.instruction, /edit only defective source fragments/);
     const report = JSON.parse(await readFile(join(runDir, '.performance/html-preflight.json'), 'utf8'));
     assert.equal(report.report.checks.filter((item) => item.name === 'Smooth scroll' && item.status === 'failed').length, 3);
     assert.equal(report.report.checks.filter((item) => item.name === 'Header shadow' && item.status === 'failed').length, 1);
@@ -1010,7 +1052,10 @@ test('Designer publication catches duplicate selectors and hidden mobile navigat
     assert.equal(await readFile(join(runDir, 'bus.jsonl'), 'utf8'), beforeBus);
     await assert.rejects(readFile(join(runDir, 'artifacts/product.png')), /ENOENT/);
     const cachedFailure = await readFile(join(runDir, '.performance/html-preflight.json'), 'utf8');
-    await assert.rejects(assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest)), /strict mode violation/);
+    await assert.rejects(assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest)), error => {
+      assert.deepEqual(error.issues, recovery.issues);
+      return true;
+    });
     assert.equal(await readFile(join(runDir, '.performance/html-preflight.json'), 'utf8'), cachedFailure);
     plan.execution_plan[0].interaction_checks[0].steps[0].selector = '.hero-actions a[href="#research"]';
     plan.execution_plan[0].interaction_checks[1].steps[0].selector = '.hero-actions a[href="#contact"]';
@@ -1025,6 +1070,78 @@ test('Designer publication catches duplicate selectors and hidden mobile navigat
     await assert.rejects(assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest)), /Header shadow/);
     assert.notEqual(JSON.parse(await readFile(join(runDir, '.performance/html-preflight.json'), 'utf8')).fingerprint, success.fingerprint);
   } finally { await rm(workspace, {recursive:true,force:true}); }
+});
+
+test('viewport arrival requires navigation before assertion and returns actionable preflight guidance', async (t) => {
+  if (!await browserExecutable()) { t.skip('Chromium unavailable'); return; }
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-viewport-arrival-'));
+  try {
+    const { runDir, plan, manifest } = await fixture(workspace);
+    const source = '<!doctype html><html><head><title>Arrival</title></head><body><h1>Showcase</h1><a href="#ecology">Ecology</a><main style="height:1800px">Hero</main><section id="ecology" style="height:400px">Ecology</section></body></html>';
+    await writeFile(join(runDir, 'plan/html/ui/index.html'), source);
+    const task = plan.execution_plan[0];
+    task.viewports = [{ width: 1440, height: 900 }];
+    task.interaction_checks = [{ name: 'Arrival', steps: [
+      { action: 'expect_visible', selector: 'h1' },
+      { action: 'expect_in_viewport', selector: '#ecology' },
+      { action: 'click', selector: 'a[href="#ecology"]' },
+    ] }];
+    await assert.rejects(assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest)), error => {
+      assert.equal(error.repairOwner, 'designer');
+      assert.match(error.issues[0], /step 2 expect_in_viewport #ecology.*outside the viewport/);
+      assert.match(error.issues[0], /only asserts arrival; it never scrolls.*before this assertion, not after it/);
+      assert.match(error.issues[0], /execution.interaction_checks\[0\]/);
+      return true;
+    });
+    [task.interaction_checks[0].steps[1], task.interaction_checks[0].steps[2]] = [task.interaction_checks[0].steps[2], task.interaction_checks[0].steps[1]];
+    const report = await assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest));
+    assert.equal(report.passed, true);
+    assert.equal(await readFile(join(runDir, 'plan/html/ui/index.html'), 'utf8'), source);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
+});
+
+test('scroll-revealed navigation preserves sources while checks align inclusive desktop and mobile boundaries', async (t) => {
+  if (!await browserExecutable()) { t.skip('Chromium unavailable'); return; }
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-scroll-navigation-'));
+  try {
+    const { runDir, plan, manifest } = await fixture(workspace);
+    const source = '<!doctype html><html><head><title>Navigation</title><link rel="stylesheet" href="../shared/style.css"></head><body tabindex="0"><nav id="navigation"><a class="desktop" href="#target">Desktop</a><a class="mobile" href="#target">Mobile</a></nav><main style="height:1800px">Hero</main><section id="target" style="height:400px">Target</section><script src="app.js"></script></body></html>';
+    const css = 'body{margin:0}nav{position:fixed;top:0;visibility:hidden}nav.revealed{visibility:visible}.mobile{display:none}@media(max-width:768px){.desktop{display:none}.mobile{display:inline}}';
+    const js = 'window.addEventListener("scroll",()=>document.querySelector("nav").classList.toggle("revealed",window.scrollY>100));';
+    await writeFile(join(runDir, 'plan/html/ui/index.html'), source);
+    await writeFile(join(runDir, 'plan/html/ui/style.css'), css);
+    await writeFile(join(runDir, 'plan/html/ui/app.js'), js);
+    const task = plan.execution_plan[0];
+    task.viewports = [{ width: 1440, height: 900 }, { width: 768, height: 1024 }, { width: 390, height: 844 }];
+    task.interaction_checks = [{ name: 'Desktop navigation', viewport: { min_width: 768 }, steps: [
+      { action: 'click', selector: '.desktop' }, { action: 'expect_in_viewport', selector: '#target' },
+    ] }];
+    await assert.rejects(assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest)), error => {
+      assert.match(error.issues[0], /1440px, 768px/);
+      assert.match(error.issues[0], /freshly loaded page.*min_width:769.*skipped checks/s);
+      assert.equal(error.repairOwner, 'designer');
+      return true;
+    });
+    const reveal = [{ action: 'press', selector: 'body', value: 'End' }, { action: 'expect_visible', selector: '#navigation' }];
+    task.interaction_checks[0].steps.unshift(...reveal);
+    await assert.rejects(assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest)), error => {
+      assert.match(error.issues[0], /at 768px/);
+      assert.doesNotMatch(error.issues[0], /1440px/);
+      return true;
+    });
+    task.interaction_checks[0].viewport.min_width = 769;
+    task.interaction_checks.push({ name: 'Mobile navigation', viewport: { max_width: 768 }, steps: [
+      ...reveal, { action: 'click', selector: '.mobile' }, { action: 'expect_in_viewport', selector: '#target' },
+    ] });
+    const report = await assertHtmlSourcePreflight(runDir, deliveryContract(plan, manifest));
+    assert.equal(report.passed, true);
+    assert.deepEqual(report.checks.filter(check => check.status === 'passed').map(check => [check.name, check.width]), [
+      ['Desktop navigation', 1440], ['Mobile navigation', 768], ['Mobile navigation', 390],
+    ]);
+    assert.equal(await readFile(join(runDir, 'plan/html/ui/index.html'), 'utf8'), source);
+    assert.equal(await readFile(join(runDir, 'plan/html/ui/style.css'), 'utf8'), css);
+    assert.equal(await readFile(join(runDir, 'plan/html/ui/app.js'), 'utf8'), js);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
 test('Builder validates final real assets and interactions while output integrity still gates completion', async () => {

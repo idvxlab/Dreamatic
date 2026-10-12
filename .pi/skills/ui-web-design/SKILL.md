@@ -40,7 +40,8 @@ Choose pages and states from primary tasks, navigation, secondary journeys and
 consequential errors across device contexts. A home and detail screen are not
 automatically complete; avoid both missing flows and duplicate views.
 
-Author exact copy, values and behavior in HTML/CSS/JS under `plan/html/<scope-id>/`.
+Deliver complete HTML page designs under `plan/html/<scope-id>/`, with CSS/JS as
+needed: realize layout, hierarchy, typography, exact copy, values and behavior.
 Builder materializes approved sources without redesign. Cover consequential scripted
 flows and responsive behavior with interaction checks; use html-interface for the
 execution contract. Image assets support rather than replace inspectable behavior.

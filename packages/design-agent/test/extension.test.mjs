@@ -66,6 +66,22 @@ test("completion envelopes restore assigned identity but never invent a verdict 
   assert.equal(normalizeDesignBusArguments({ runId: "other", type: "custom" }, "demo").runId, "other");
 });
 
+test("completion tool constrains specialist event types while retaining runtime rejection", async () => {
+  const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-completion-schema-"));
+  try {
+    for (const [agent, allowed] of Object.entries({ designer: ['design_spec_ready', 'design_revision_ready'], researcher: ['research_done'], reviewer: ['design_review_pass', 'design_review_fail'] })) {
+      const { tools } = await registeredTools(workspaceDir, { parentInvocation: { id: agent, agent, runId: 'demo' } });
+      const post = tools.get('design_bus_post');
+      const type = post.parameters.properties.type;
+      assert.deepEqual(type.anyOf ? type.anyOf.map(item => item.const) : [type.const], allowed);
+      await assert.rejects(post.execute('invalid-event', { runId: 'demo', type: 'design_spec', from_agent: agent, to: 'orchestrator', summary: 'Ready' }), /may only post/);
+      await assert.rejects(readFile(join(workspaceDir, 'runs/demo/bus.jsonl')), /ENOENT/);
+    }
+    const { tools } = await registeredTools(workspaceDir);
+    assert.equal(tools.get('design_bus_post').parameters.properties.type.type, 'string');
+  } finally { await rm(workspaceDir, { recursive: true, force: true }); }
+});
+
 test("clarification gracefully terminates and blocks repeated calls until the next turn", async () => {
   const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-graceful-stop-"));
   try {
@@ -331,7 +347,7 @@ test("Pi discovers and loads the new Designer domain modules through compatibili
       assert.ok(catalog.some((skill) => skill.name === name));
       const loaded = await tools.get("use_skill").execute(`load-${name}`, { name }, undefined, undefined, context);
       assert.equal(loaded.details.name, name);
-      assert.match(loaded.content[0].text, /canonical Design Spec/);
+      assert.equal(loaded.content[0].text.endsWith(await readFile(catalog.find(skill => skill.name === name).path, "utf8")), true);
     }
   } finally {
     await rm(workspaceDir, { recursive: true, force: true });
@@ -352,10 +368,11 @@ test("Designer can switch primary disciplines, deactivate support and reuse or r
     assert.deepEqual(switched.details.deactivated.sort(), ["brand-identity", "visual-composition"]);
     const reused = await use.execute("repeat", { name: "industrial-design", role: "primary" }, undefined, undefined, context);
     assert.equal(reused.details.reused, true);
-    assert.doesNotMatch(reused.content[0].text, /## Form, material and production/);
+    const industrialBody = await readFile(join(context.cwd, ".pi/skills/industrial-design/SKILL.md"), "utf8");
+    assert.equal(reused.content[0].text.includes(industrialBody), false);
     const reloaded = await use.execute("reload", { name: "industrial-design", reload: true }, undefined, undefined, context);
     assert.equal(reloaded.details.reused, false);
-    assert.match(reloaded.content[0].text, /## Form, material and production/);
+    assert.equal(reloaded.content[0].text.endsWith(industrialBody), true);
     const missing = JSON.parse((await use.execute("missing", { name: "not-a-real-domain-module", role: "primary" }, undefined, undefined, context)).content[0].text);
     assert.equal(missing.ok, false);
     const catalog = JSON.parse((await tools.get("list_skills").execute("list", {}, undefined, undefined, context)).content[0].text);
@@ -364,7 +381,7 @@ test("Designer can switch primary disciplines, deactivate support and reuse or r
     const fresh = await registeredTools(workspaceDir);
     const newInvocation = await fresh.tools.get("use_skill").execute("new-stage", { name: "industrial-design", role: "primary" }, undefined, undefined, context);
     assert.equal(newInvocation.details.reused, false);
-    assert.match(newInvocation.content[0].text, /## Form, material and production/);
+    assert.equal(newInvocation.content[0].text.endsWith(industrialBody), true);
   } finally {
     await rm(workspaceDir, { recursive: true, force: true });
   }
@@ -463,7 +480,7 @@ test("Designer screens labelled reference batches without a stage quota or all-o
     assert.equal(result.content.filter((block) => block.type === "image").length, 9);
     assert.equal(summary.results[8].label, "9: reference-8.png");
     const messages = [{ role: "assistant", content: [] }, { role: "toolResult", toolName: "view_image", content: result.content }];
-    const current = handlers.get("context")({ messages }).messages;
+    const current = (await handlers.get("context")({ messages })).messages;
     assert.equal(current[1].content.filter((block) => block.type === "image").length, 9);
     const again = await tools.get("view_image").execute("reload", { paths });
     assert.equal(again.content.filter((block) => block.type === "image").length, 9);
@@ -2288,7 +2305,7 @@ test("context removes an uploaded image after its first model pass", async () =>
   }
 });
 
-test("context progressively compacts a long Skill read without changing durable content", async () => {
+test("context retains a complete long Skill body without changing durable content", async () => {
   const workspaceDir = await mkdtemp(join(tmpdir(), "dreamatic-skill-context-"));
   try {
     const { handlers } = await registeredTools(workspaceDir);
@@ -2298,8 +2315,7 @@ test("context progressively compacts a long Skill read without changing durable 
     const toolResult = { role: "toolResult", toolCallId: "skill-1", toolName: "read", content: [{ type: "text", text: fullSkill }], isError: false, timestamp: 1 };
     const result = await context({ type: "context", messages: [toolResult] });
     const activeText = result.messages[0].content[0].text;
-    assert.ok(activeText.length < fullSkill.length);
-    assert.match(activeText, /progressive Skill loading omitted/);
+    assert.equal(activeText, fullSkill);
     assert.match(activeText, /Keep this ending/);
     assert.equal(toolResult.content[0].text, fullSkill);
   } finally {

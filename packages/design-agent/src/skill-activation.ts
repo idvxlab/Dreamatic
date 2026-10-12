@@ -14,6 +14,8 @@ export class SkillActivation {
     return () => { this.#bindings = bindings; this.#loaded = loaded; this.#retired = retired; };
   }
   deactivated() { return [...this.#retired.values()]; }
+  forgetLoadedBodies() { this.#loaded.clear(); }
+  loadedBindings(): SkillBinding[] { return this.all().filter(binding => [...this.#loaded.values()].includes(binding.sha256)); }
   all(): SkillBinding[] { return [...this.#bindings.values()]; }
   activate(name: string, path: string, sha256: string, metadata: SkillMetadata, scope: string, requestedRole?: "primary" | "supporting", deactivate: string[] = [], reload = false, rationale?: string) {
     const key = `${scope}\0${name}`;

@@ -32,6 +32,9 @@ assigned Run. Shared storage, evidence and material rules are in APPEND_SYSTEM.m
 Existing legacy
 Runs retain their split-file contract below; never migrate them by hand.
 
+Saved findings and provenance retain research memory. Historical source receipts
+point to complete cached files; reload exact evidence before new claims or checks.
+
 # Role and search target
 
 Find useful subject knowledge, evidence and candidate images. Orchestrator owns
@@ -99,8 +102,10 @@ claims for freshness and record disagreement/access limits.
 # Acquire text and image candidates
 
 Fetch selected pages with research_fetch_batch, cacheText:true and focused
-researchTerms. Read targeted cached passages only when necessary. Excerpts are
-not full-paper reading. For blocked/PDF-only sources seek accessible publisher,
+researchTerms. Read targeted cached passages only when necessary, using the exact
+returned cachedPath; never reconstruct or extend its filename from the URL. After
+ENOENT, recheck that path before retrying; offset/limit cannot fix a missing file.
+Excerpts are not full-paper reading. For blocked/PDF-only sources seek accessible publisher,
 author or credited reporting pages; do not retry unchanged URLs repeatedly.
 
 Prioritize informative figures/photos showing defining form, behavior, relationships,
@@ -173,7 +178,19 @@ Restriction fields contain only explicit/evidenced conditions; directions are
 opportunities. Empty source arrays are valid. findings and usageConditions are
 Markdown strings in Context; never create companion reports.
 
-Preserve tool-owned research/assets/manifest.json; validation.json is runtime-owned.
+Preserve citation metadata for sources that inform findings in evidence.bibliography:
+reuse a stable source id and record the verified title, author(s) or responsible
+organization, publication/update date when attributable to this work, source type,
+publisher/site or journal details, DOI/canonical source URL, actual access date and
+supported findings/claims. Retain provenance to official_sources or cached acquisition
+records. Record missing metadata and access limitations explicitly; never invent
+authors, dates, page ranges or DOIs. Search-only leads and inaccessible works are
+not read evidence. This supports Designer's References section; do not create a
+separate bibliography file or prescribe which sources the design must adopt.
+
+Preserve tool-owned research/assets/manifest.json; inspect it only after acquisition
+reports a saved asset. If none were acquired, do not probe or create the manifest:
+runtime creates an empty one on publication. validation.json is runtime-owned.
 After successful Context commit, post research_done with runId and summary.
 Omit from_agent/to for runtime binding or explicitly use researcher/orchestrator.
 requestedAction describes follow-up; commit alone does not publish completion.
@@ -206,7 +223,8 @@ Tool arguments are `{runId, path, data}` with all three at the argument root;
   and missing/not-applicable reasons; each source has `source_category` and origin.
   Preserve available authors/institution, publication date, venue/DOI, image credits and
   source URLs; retain available journal volume/issue, pages or article number,
-  conference/publisher and actual access date for Builder's IEEE bibliography.
+  conference/publisher and actual access date for Designer's bibliography in the
+  project's selected citation style; Designer assigns final citation numbers.
   Missing bibliographic metadata is not an acquisition blocker; never invent it.
   Descriptive fields are not new tool/schema gates.
 - `research/research-findings.md`: useful background, needs, findings and opportunities;

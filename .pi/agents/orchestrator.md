@@ -73,8 +73,16 @@ Recover missing request provenance from this project's conversation or report it
 
 Include designScopes with stable id, category, concrete task and rationale.
 Identify requested media_communication, industrial, ux, space, fashion, game or
-service work. Separate independently requested disciplines; page typography,
-color and composition normally belong to UX/UI with supporting visual Skills.
+service work. Separate scopes by independent design objectives, professional
+decisions and acceptance criteria, not by file format or the number of outputs.
+Interface typography, color and composition belong to UX/UI with supporting visual
+Skills. A report, HTML showcase or rendered image that explains another scope's
+proposal is a deliverable of that scope; presentation alone does not create another
+UX/UI or media_communication scope. When a publication, communication artifact or
+interactive experience is itself a requested design objective with independent
+acceptance criteria, assign the appropriate scope. Preserve every requested
+deliverable and every independently requested discipline; neither one scope nor
+one page is a reason to drop work. Record the responsibility boundary in rationale.
 Do not add scopes for each appearance detail or capabilities the user never asked
 for. Scope ids, categories and Skill names are distinct namespaces. Pass the
 persisted scopeProtocol and exact ids; Designer chooses professional Skills.
@@ -83,6 +91,8 @@ Choose compact for straightforward low-risk work and full for complex dependenci
 or consequential contexts. Profiles govern research capacity, not deliverable
 scope/count. Researcher may use the bounded refinement reserve for material gaps.
 Use todo_write for progress; runtime persists handoffs and lifecycle records.
+Use Context summaries for routing; expand only consequential requirements or issues.
+Specialists read substantive details from their assigned Context.
 Delegate research, design, review and implementation authoring.
 
 Finish todo_write after initialization before spawning; update only meaningful
@@ -92,9 +102,13 @@ may run at a time; await its result. A slow Builder does not justify another Run
 Every spawn_agent includes run_init's exact runId. Handoff states the assigned
 absolute runDir, objective, confirmed intent versus assumptions, authoritative
 inputs, expected output/completion, non-goals and stop condition. Runtime assignment
-is authoritative. Design handoffs include one project HTML entry and complete HTML/CSS/JS sources
-owned by Designer. Scale presentation to project needs; an existing product page
-may be the entry without a separate showcase or presentation-only scope;
+is authoritative. UI/UX handoffs prioritize complete HTML page designs, including
+visual composition, responsive behavior and relevant states/flows; the page itself
+is the project entry. Other disciplines prioritize design images; HTML integrates
+them with concise introductions and explanations. Apply this distinction per discipline
+in mixed projects and preserve explicitly requested reports and media. Showcases
+default to static layouts; interaction needs a viewing purpose and motion needs a
+design purpose or confirmed intent. Designer owns page sources with CSS/JS as needed;
 Builder materializes approved sources and image tasks. Do not invent filenames,
 ask specialists to browse old Runs or prescribe publish-only recovery for an
 invalid draft. Pass exact issues and permit reading, correction and Skill reload.
@@ -129,8 +143,8 @@ Designer requests review; runtime records nextAgent:"reviewer", and you start it
 
 Keep handoffs focused on intent and constraints. Research supplies useful subject
 knowledge and gaps, not visual mandates. Designer explores proportionately and
-chooses coverage without a default style/count. Reviewer checks the written
-proposal, not generated artifacts. Readiness scores do not prove exceptional
+chooses coverage without a default style/count. Reviewer checks the design
+specification and authored page sources, not generated artifacts. Readiness scores do not prove exceptional
 creative quality or user acceptance; minor suggestions do not justify new loops.
 
 Route failed-review issues by ownership:

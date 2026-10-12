@@ -1,0 +1,42 @@
+{
+  "responses": [
+    {
+      "type": "provider_response_complete",
+      "requestId": "0ac4f0d2-7e8b-422b-9985-b74cf8a0e9ad",
+      "role": "designer",
+      "at": "2026-10-12T04:53:30.901Z",
+      "stopReason": "length",
+      "elapsedMs": 279729,
+      "reasoningChars": 53986,
+      "usage": {
+        "input": 54651,
+        "output": 16384,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "reasoning": 16384,
+        "totalTokens": 71035,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      }
+    }
+  ],
+  "retries": [
+    {
+      "runId": "project-2026-10-12-905cf94e",
+      "invocationId": "call_bd47b0bec3484cab9acec464",
+      "agent": "designer",
+      "type": "agent_retry",
+      "attempt": 1,
+      "nextAttempt": 2,
+      "delayMs": 1000,
+      "error": "Sub-agent designer failed: model output token limit reached: response truncated; partial arguments are not committed",
+      "status": "running",
+      "at": "2026-10-12T04:53:30.908Z"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { observePresentation, presentationRequirements } from "./presentation-validation.js";
+import { observeCitationNumbering, observePresentation, presentationRequirements } from "./presentation-validation.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { access, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -225,6 +225,7 @@ export async function checkHtmlBrowser(runDir: string, contract: DeliveryContrac
                 return document.getElementById(id) || Array.from(document.getElementsByName(id)).length ? [] : [href];
               }));
               for (const href of [...new Set(missingAnchors)]) issues.push(`${task.id}.files (${file.output}): anchor ${href} has no target element; add the intended section or correct the link in the source`);
+              for (const issue of await observeCitationNumbering(page)) issues.push(`${task.id}.files (${file.source}): citation numbering at ${viewport.width}px: ${issue}`);
               if (!options.interactionsOnly && await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)) issues.push(`${file.output}: horizontal overflow at ${viewport.width}px`);
             }
             for (const check of task.interaction_checks) {

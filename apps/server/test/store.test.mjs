@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import ts from "typescript";
 import { readCanvasState, writeCanvasState } from "../dist/canvas-store.js";
@@ -237,6 +237,42 @@ test("canvas state and run assets share one durable Run", async () => {
   } finally {
     await rm(workspace, { recursive: true, force: true });
   }
+});
+
+test("page resource copies do not duplicate assets while independent outputs and missing-source copies remain visible", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "dreamatic-resource-inventory-"));
+  try {
+    await createDraftRun(workspace, "resource-session", "Resource project", "resource-project");
+    const runDir = join(workspace, "runs/resource-project");
+    const paths = ["artifacts/render.png", "artifacts/page/images/render.png",
+      "artifacts/independent.png", "artifacts/page/images/independent.png",
+      "artifacts/page/images/missing.png", "artifacts/page/images/unmapped.png",
+      "inputs/user-assets/original.svg", "artifacts/page/images/import.svg", "artifacts/page/index.html"];
+    for (const path of paths) {
+      await mkdir(dirname(join(runDir, path)), { recursive: true });
+      await writeFile(join(runDir, path), "identical bytes");
+    }
+    const resources = [
+      { source: "artifacts/render.png", output: "artifacts/page/images/render.png" },
+      { source: "artifacts/independent.png", output: "artifacts/page/images/independent.png" },
+      { source: "artifacts/missing.png", output: "artifacts/page/images/missing.png" },
+      { source: "inputs/user-assets/original.svg", output: "artifacts/page/images/import.svg" },
+      { source: "artifacts/../render.png", output: "artifacts/page/images/unmapped.png" },
+    ];
+    await mkdir(join(runDir, "context"), { recursive: true });
+    await writeFile(join(runDir, "context/design.json"), JSON.stringify({ schemaVersion: 2, deliverables: [
+      ...["artifacts/render.png", "artifacts/independent.png", "artifacts/page/images/independent.png", "artifacts/missing.png"].map(file => ({ file })),
+      { file: "artifacts/page/index.html", execution: { method: "html_generate", resources } },
+    ] }));
+    const expected = paths.filter(path => !["artifacts/page/images/render.png", "artifacts/page/images/import.svg"].includes(path));
+    for (const assets of [await assetInventory(workspace), await assetInventory(workspace, "resource-project")]) {
+      assert.deepEqual(assets.map(asset => asset.path.replace("runs/resource-project/", "")).sort(), [...expected].sort());
+    }
+    assert.equal((await runInventory(workspace, { summary: true }))[0].assetCount, expected.length);
+    assert.equal(await readFile(join(runDir, "artifacts/page/images/render.png"), "utf8"), "identical bytes");
+    await rm(join(runDir, "context/design.json"));
+    assert.equal((await assetInventory(workspace, "resource-project")).length, paths.length);
+  } finally { await rm(workspace, { recursive: true, force: true }); }
 });
 
 test("revision snapshots stay out of current project inventories while SVG delivery remains visible", async () => {

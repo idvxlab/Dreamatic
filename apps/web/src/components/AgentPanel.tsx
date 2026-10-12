@@ -81,10 +81,8 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   if (event.kind === "agent") return <div className={`workflow-node workflow-agent-node ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot"><Bot size={13} /></span>
     <details className="workflow-agent-card" open={agentOpen} onToggle={(toggleEvent) => {
-      const target = toggleEvent.currentTarget;
-      const open = target.open;
-      setAgentOpen(open);
-      if (open) window.requestAnimationFrame(() => target.scrollIntoView({ block: "start", behavior: "smooth" }));
+      if (toggleEvent.target !== toggleEvent.currentTarget) return;
+      setAgentOpen(toggleEvent.currentTarget.open);
     }}>
       <summary><span><strong>{t(event.label)}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} {t("actions ·")} {t(event.status)}{at ? ` · ${at}` : ""}</small>{event.status === "running" && event.output && <small>{event.output}</small>}</span><ChevronDown size={14} /></summary>
       <div className="workflow-agent-body">

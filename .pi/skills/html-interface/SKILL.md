@@ -1,6 +1,6 @@
 ---
 name: html-interface
-description: "Express project showcases and approved UX/UI design as complete responsive HTML, CSS and local JavaScript with explicit resources and interaction checks. Supporting knowledge for page delivery."
+description: "Author complete UI/UX pages or image-based project showcases in responsive HTML/CSS, with local JavaScript as needed. Supporting knowledge for page delivery."
 metadata:
   audience: designer
   domain_type: html_interface_expression
@@ -11,24 +11,57 @@ metadata:
 
 # HTML Interface Expression
 
-Translate the selected design into complete responsive HTML/CSS/local JavaScript.
+For UI/UX, HTML pages are the design outcome: realize visual composition, realistic
+copy, components, responsive relationships and relevant states/flows. For other
+disciplines, HTML integrates the primary design images with concise introductions
+and explanations; default to clear static layouts and add interaction for useful
+inspection or comparison. Use local JavaScript as needed. Motion requires a design
+purpose or confirmed intent, not merely an HTML deliverable.
 Designer authors sources; Builder materializes approved files without redesign.
 Every project has one required HTML entry. An existing product page can be that
 entry; this Skill does not require extra pages, scopes or a fixed section count.
 
+## Lightweight showcase default
+
+For non-UI/UX work, start with semantic HTML and a local stylesheet. Use system
+fonts, a natural chapter order, native anchor links, ordinary images and captions.
+Keep required content visible from first render. Scroll-reveal, opacity:0 content,
+parallax, carousels and custom navigation are additions only when a concrete viewing
+task or confirmed intent needs them; record that purpose in the design decisions.
+Static showcases need no JavaScript by default. Do not add controls just to make
+the page seem complete.
+
+Use one column on narrow screens and at most two on wide screens by default.
+Images should fit their container with preserved proportions; grid/flex children
+must be able to shrink (e.g. min-width:0). Prefer minmax(0,1fr) for equal grid columns.
+On mobile, turn dense technical cards into a single-column list, reduce excessive
+padding, and allow long text to wrap. Preserve all requested sections, evidence
+boundaries and access to full/detail images; reduce implementation complexity,
+not design coverage. Choose visual hierarchy, spacing and color for the actual work
+rather than applying a mandatory template.
+
+For UI/UX products, the requested navigation, states and flows remain part of the
+design outcome. Keep the complexity needed for those requirements and verify it.
+
 ## Author complete sources
 
-Write under `plan/html/<scope-id>/`, with `path` before `content`. For substantial
-pages, use a small HTML entry linking local CSS and JavaScript; move repeated
-content or diagrams into local modules/data rendered by that JavaScript, without fetch.
+Use Run-relative `path` for source read/write/edit, e.g.
+`plan/html/<scope-id>/styles.css`; runtime binds the assigned Run. Do not prepend
+runDir, workspace/runs/<runId> or an absolute path. Write `path` before `content`.
+For substantial pages, separate long styles and needed behavior/content modules
+from a small HTML entry. Use JavaScript modules/data when the design needs them,
+without fetch; static showcases need no scripted content rendering.
+Choose this structure before the first write; keep index.html as the entry rather
+than embedding all sections, diagrams and behavior in one large call.
 Save one complete file per response, retaining successful files as checkpoints.
 Keep small pages simple; this is source organization, not extra pages or reduced coverage.
 After truncation, split the failed source before retrying. Do not append incomplete
 markup, rely on unsaved streamed code, or resend the entire page merely shortened.
 Map every local module in the page's `execution.files` and resolve links from outputs.
 Use semantic markup, realistic copy, accessible controls, visible focus and
-responsive relationships. Implement relevant navigation, states and recovery with
-local state or mock data; record real integrations as unresolved dependencies.
+responsive relationships. For interactive designs, implement relevant navigation,
+states and recovery with local state or mock data; record real integrations as
+unresolved dependencies.
 
 For showcases, shape the story around actual work with meaningful captions and
 inspectable full/detail views. Preserve image proportions. Keep prompts, generation
@@ -39,6 +72,43 @@ fonts, network requests, iframe, eval, service workers and base elements are
 unsupported. Use system fonts and local constants instead of fetch; prevent local
 forms from submitting. Ordinary navigation and evidence links may use HTTPS,
 mailto, tel, query or hash URLs.
+
+## References for non-UI/UX showcases
+
+Include a visible final `<section id="references">` headed
+"参考文献 / References" in the existing project entry. Use a plain semantic list
+with hanging-indent styling and wrapping links; no JavaScript or extra page is needed.
+List sources actually used to inform the proposal, primarily from Researcher's
+`context/research.json` evidence.bibliography, official_sources, findings and source
+receipts. Preserve original titles/languages and verified metadata. Include adopted
+visual precedents with creator/project/publication provenance, not generated outputs.
+
+Default to IEEE numeric citation style, unless the user specifies another academic
+style. Assign consecutive [1], [2], ... by first citation; repeated citations reuse
+the same source number. Show an explicit text label before every entry, e.g.
+`<li id="ref-source-id"><span class="ref-number">[1]</span> ...</li>`.
+An ordered list alone is insufficient when CSS hides its markers. Keep the label
+visible on every viewport; never hide it for decoration. With explicit labels,
+list-style:none prevents duplicate markers. Use hanging indents and wrapping links.
+
+For a webpage, retain author/organization, page title, website, attributable date,
+canonical URL and actual access date. For a journal article, retain authors, title,
+journal, volume/issue, pages or article number, year and verified DOI. Format these
+elements according to the selected style and source type. Omit unavailable details
+honestly; never invent them or substitute a copyright/review/access date for
+publication. User-requested author-date styles use their own citation and ordering
+rules; do not mix those rules with numeric labels.
+
+Use linked [n] citations beside evidence-based claims or captions, targeting stable
+reference ids (e.g. `<a href="#ref-source-id">[1]</a>`). Each link's number must
+match the visible label of its target entry. Check all entries and repeated citations
+before publication; link existence alone is insufficient. Deduplicate, and do not dump all collected
+URLs: unused results and inaccessible/search-only leads belong in research limitations,
+not as evidence for claims. If no external source was used, keep the section and state
+that explicitly; never add filler references. Keep assumptions and original design
+proposals distinguishable from sourced facts.
+
+Formatting guidance: [IEEE Reference Guide](https://journals.ieeeauthorcenter.ieee.org/wp-content/uploads/sites/7/IEEE_Reference_Guide.pdf).
 
 ## Declare the current deliverable
 
@@ -76,8 +146,10 @@ other scopes' `scope_id`, `category`, loaded `skill_refs` and `purpose`.
 
 `files` maps authored HTML/CSS/JS/SVG sources to `artifacts/`. `resources` maps concrete
 asset `{source,output}` pairs. Source/output mapping does not rewrite page URLs:
-resolve URLs relative to the containing output. From `artifacts/cabin/index.html`
-to `artifacts/seats/index.html`, use `../seats/index.html`.
+resolve each URL relative to the containing file's output, then verify it matches a
+declared `files[].output` or `resources[].output`. Use the mapped resource output,
+not its producer source path. From `artifacts/cabin/index.html` to
+`artifacts/seats/index.html`, use `../seats/index.html`.
 
 New/changed images need their own image deliverables. Reference producer ids in
 `execution.uses`; runtime derives execution order. Supply edit pixels through
@@ -123,12 +195,25 @@ usually defaults to any, hidden to all, text/value to unique.
 Put responsive `{min_width,max_width}` bounds on the whole check, alongside name
 and steps; tested dimensions belong in `execution.viewports`. Bounds are inclusive
 and must include a declared viewport. Match actual CSS breakpoints. Test mobile
-menus by opening them before selecting links; a desktop-only check does not verify
-mobile navigation. Filtering checks should show matching content, hide nonmatches
-and reset. Repair failing behavior instead of removing necessary checks or viewports.
+menus by opening them before selecting links. Without bounds a check runs at every
+declared viewport; limit direct clicks on desktop navigation to widths where it is
+visible, and declare a separate mobile flow. Filtering checks should show matching
+content, hide nonmatches and reset. Repair failing behavior instead of removing
+necessary checks or viewports.
+Each check reloads the page and starts without earlier scroll/menu state. Reveal
+scroll-dependent navigation first (for example, press PageDown on body until the
+navigation appears, then expect_visible on its container before clicking). Preserve
+intentional reveal behavior instead of making navigation always visible for a test.
+Bounds include their endpoints: if CSS hides desktop links at max-width:768px,
+use min_width:769 for the desktop flow and test the actual mobile entry separately
+at widths up to 768. A not_applicable desktop result is not mobile navigation evidence;
+do not raise bounds just to skip a required failing flow.
 Use `expect_in_viewport` to verify navigation reaches its target; it waits for
 arrival within a bounded timeout. `expect_visible` checks rendered visibility,
 including offscreen content, and cannot substitute for navigation arrival.
+`expect_in_viewport` does not scroll. Put the actual navigation click or keyboard
+scroll before the arrival assertion, not after it. For static content whose requirement
+is rendered visibility rather than arrival, use `expect_visible`.
 
 ## Validate and publish
 

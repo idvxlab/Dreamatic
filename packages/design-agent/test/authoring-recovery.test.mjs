@@ -37,6 +37,30 @@ test('C919 failure shape: misplaced named envelope fields preserve all values, c
  assert.throws(()=>prepareContextChanges({changes:{strategy:{skill_selection:[]}}},'designer',2),/runtime_owned_field/);
 });
 
+test('Reviewer nesting errors identify exact destinations without dropping or moving findings', () => {
+ const fields={issues:[{id:'issue-1',severity:'minor',status:'open',impact:'Original finding'}],resolved_issue_ids:['issue-old'],remaining_risks:['Original risk']};
+ for(const version of [1,2]) {
+  const input={changes:{assessment:{verdict:'pass',summary:'Original assessment'},intentCoverage:{overall:'Original coverage'},...fields}};
+  const before=structuredClone(input);
+  assert.throws(()=>prepareContextChanges(input,'reviewer',version),error=>{
+   const report=JSON.parse(error.message);
+   assert.equal(report.code,'invalid_named_fields');assert.equal(report.saved,false);assert.equal(report.committed,false);
+   for(const field of Object.keys(fields)) assert.ok(report.message.includes(`changes.${field} to changes.assessment.${field}`));
+   assert.match(report.message,/do not drop issues or risks/);
+   return true;
+  });
+  assert.deepEqual(input,before);
+  const corrected={changes:{assessment:{...input.changes.assessment,...fields},intentCoverage:input.changes.intentCoverage}};
+  assert.deepEqual(prepareContextChanges(corrected,'reviewer',version),corrected);
+  assert.throws(()=>prepareContextChanges({changes:{unknown_review_field:[]}},'reviewer',version),error=>{
+   assert.doesNotMatch(JSON.parse(error.message).message,/Move changes.unknown_review_field/);return true;
+  });
+ }
+ const description=contextUpdateDescription('reviewer',2);
+ assert.match(description,/entire review belongs inside changes.assessment/);
+ assert.ok(description.includes('{changes:{assessment:{issues:[...]}}}'));
+});
+
 test('v2 model-visible instructions and loaded Skill agree with execution storage', async () => {
  const description=contextUpdateDescription('designer',2);
  assert.equal(/replaceTasks|removeTasks|assessment/.test(description),false);
@@ -46,7 +70,7 @@ test('v2 model-visible instructions and loaded Skill agree with execution storag
  assert.match(protocol.resourcePolicy.pageImages,/execution.uses/);
  const skill=await readFile(join(cwd,'.pi/skills/image-prompting/SKILL.md'),'utf8');
  assert.equal(skill.includes('In unified Context, every image is one `tasks` item'),false);
- assert.match(skill,/nested `execution`/);
+ assert.match(skill,/nested `execution`/i);
 });
 
 test('real extension preserves partial design updates and parallel Skill receipts across C919 scope failures',async()=>{

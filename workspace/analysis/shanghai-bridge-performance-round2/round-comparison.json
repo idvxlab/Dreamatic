@@ -1,0 +1,86 @@
+{
+  "previous": {
+    "count": 8,
+    "meanMinutes": 27.77658125,
+    "medianMinutes": 23.661558333333332,
+    "meanWorkflowMinutes": 25.205222916666667,
+    "medianWorkflowMinutes": 21.971008333333337,
+    "meanTokens": 2099918.5,
+    "meanInput": 568656.375,
+    "meanRequests": 52.75,
+    "usage": {
+      "input": 4549251,
+      "output": 467569,
+      "cacheRead": 11782528,
+      "reasoning": 83613,
+      "totalTokens": 16799348
+    },
+    "cacheRate": 0.7214479206459994,
+    "toolErrors": 18,
+    "imageAttempts": 41,
+    "imageRetries": 5
+  },
+  "new": {
+    "count": 3,
+    "meanMinutes": 24.83713888888889,
+    "medianMinutes": 24.361383333333333,
+    "meanWorkflowMinutes": 23.565155555555553,
+    "medianWorkflowMinutes": 22.753516666666666,
+    "meanTokens": 2262324.6666666665,
+    "meanInput": 542306.0,
+    "meanRequests": 62,
+    "usage": {
+      "input": 1626918,
+      "output": 161528,
+      "cacheRead": 4998528,
+      "reasoning": 43082,
+      "totalTokens": 6786974
+    },
+    "cacheRate": 0.7544440027131758,
+    "toolErrors": 10,
+    "imageAttempts": 20,
+    "imageRetries": 1
+  },
+  "previousWithoutImageOutlier": {
+    "count": 7,
+    "meanMinutes": 24.414514285714287,
+    "medianMinutes": 23.640716666666666,
+    "meanWorkflowMinutes": 21.625207142857143,
+    "medianWorkflowMinutes": 21.13021666666667,
+    "meanTokens": 2141834.285714286,
+    "meanInput": 582794.2857142857,
+    "meanRequests": 52.714285714285715,
+    "usage": {
+      "input": 4079560,
+      "output": 423808,
+      "cacheRead": 10489472,
+      "reasoning": 75875,
+      "totalTokens": 14992840
+    },
+    "cacheRate": 0.7199841417055025,
+    "toolErrors": 16,
+    "imageAttempts": 33,
+    "imageRetries": 2
+  },
+  "all": {
+    "count": 11,
+    "meanMinutes": 26.97491515151515,
+    "medianMinutes": 23.682399999999998,
+    "meanWorkflowMinutes": 24.757931818181817,
+    "medianWorkflowMinutes": 22.753516666666666,
+    "meanTokens": 2144211.090909091,
+    "meanInput": 561469.9090909091,
+    "meanRequests": 55.27272727272727,
+    "usage": {
+      "input": 6176169,
+      "output": 629097,
+      "cacheRead": 16781056,
+      "reasoning": 126695,
+      "totalTokens": 23586322
+    },
+    "cacheRate": 0.7309705768009853,
+    "toolErrors": 28,
+    "imageAttempts": 61,
+    "imageRetries": 6
+  }
+}

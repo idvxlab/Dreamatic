@@ -35,8 +35,10 @@ and confirmation to actual consequences rather than adding confirmation everywhe
 ## Make the experience inspectable
 
 Link journeys, interaction sequences and edge states to specific user decisions.
-For UI tasks author actual HTML/CSS/JS under `plan/html/<scope-id>/`; screen images
-alone do not demonstrate a working flow. Use UI/Web knowledge for composition and
+UI/UX's primary deliverable is complete HTML page design under `plan/html/<scope-id>/`,
+with CSS/JS as needed. Realize visual composition, realistic copy and relevant
+states/flows; screen images or journey descriptions alone are insufficient.
+Use UI/Web knowledge for composition and
 html-interface for execution. Builder materializes approved behavior.
 
 Retain exact behavior/content rules and proposed evaluation in the specification:

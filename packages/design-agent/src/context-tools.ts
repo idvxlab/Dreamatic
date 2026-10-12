@@ -151,7 +151,15 @@ export function prepareContextChanges(input: unknown, role?: string, version = 1
       const errors = [...Errors(schema, args.changes)];
       const unknown = Object.keys(args.changes).filter(key => !Object.hasOwn(schema.properties, key));
       const hint = unknown.length ? ` Unknown role roots: ${unknown.join(", ")}. Allowed changes fields: ${Object.keys(schema.properties).join(", ")}.` + (role === "designer" ? " Put typography, palette and consistency/exclusion rules inside changes.system; creative decisions belong inside changes.strategy. Keep deliverables and presentation inside changes. Preserve their original values and split updates into small named-field calls." : "") : "";
-      throw inputError(`/changes${errors[0]?.instancePath ?? ""}`, "invalid_named_fields", errors.map(error => `${error.instancePath}: ${error.message}`).join("; ") + hint);
+      const roleSchema = roleContextSchema(role, version);
+      const reviewFields = "assessment" in roleSchema.properties ? roleSchema.properties.assessment.properties : {};
+      const misplacedReviewFields = role === "reviewer"
+        ? unknown.filter(key => Object.hasOwn(reviewFields, key))
+        : [];
+      const reviewHint = misplacedReviewFields.length
+        ? ` Move ${misplacedReviewFields.map(key => `changes.${key} to changes.assessment.${key}`).join("; ")}. Preserve the original values and other assessment fields; do not drop issues or risks to make the call pass. Keep intentCoverage beside assessment inside changes. Resubmit with the corrected nesting; no fields were saved.`
+        : "";
+      throw inputError(`/changes${errors[0]?.instancePath ?? ""}`, "invalid_named_fields", errors.map(error => `${error.instancePath}: ${error.message}`).join("; ") + hint + reviewHint);
     }
     const namedChanges = args.changes as Record<string, unknown>;
     if (role === "designer") for (const [field, replacement, removal] of [["tasks", "replaceTasks", "removeTasks"], ["deliverables", "replaceDeliverables", "removeDeliverables"]]) {
@@ -167,6 +175,7 @@ export function contextUpdateDescription(role: string, version = 1) {
     : role === "researcher" ? "evidence, findings, usageConditions" : "assessment, intentCoverage";
   return `Update only your ${role} working Context. Arguments are {changes:{...}} and optional reset only; omit runId/path/schemaVersion/revision/hash arguments. Put ALL named fields (${fields}) inside changes. Example: ${JSON.stringify(contextChangesExample(role))}. Objects merge; ordinary arrays replace; omitted fields stay. changes:{} reads without saving. ` +
     (role === "designer" ? (version === 2 ? "Deliverables upsert by id and own execution/presentation; tasks are read-only derived views. Put typography/palette/consistency rules in system. " : "Tasks and deliverables upsert by matching id. ") + "removeDeliverables deletes ids; replaceDeliverables atomically replaces full items. Never combine replacement with upserts/removals. [] clears arrays. " : "") +
+    (role === "reviewer" ? "The entire review belongs inside changes.assessment: review_stage, verdict, round, summary, scores, issues, resolved_issue_ids and remaining_risks. Never put these beside assessment. intentCoverage belongs beside assessment inside changes. For an issues-only patch use {changes:{assessment:{issues:[...]}}}; preserve original issues and risks when correcting nesting. " : "") +
     "unsetFields deletes optional fields locally. Read design_context_read before resuming work; runtime owns versions and Skill receipts. reset:true discards work only after a complete canonical:true read. Commit separately with commit_design_context({}). Submit small updates (one section or a few deliverables) instead of repeatedly regenerating the entire design.";
 }
 /** Deletion is explicit and local, never a writable JSON path. */

@@ -44,7 +44,8 @@ assumptions when unverified. Commercial and usability success remain hypotheses.
 
 Choose pages, states and scenarios from actual journeys, roles and consequences,
 including empty/loading/error cases and relevant device contexts. A polished landing
-screen cannot explain a multi-step product. Develop UI tasks into authored HTML/CSS/JS
-with realistic content and local interactions; use html-interface for the execution
+screen cannot explain a multi-step product. Deliver UI tasks as complete HTML page
+designs with realistic content, visual composition and necessary local interactions,
+using CSS/JS as needed. Use html-interface for the execution
 contract. Builder materializes approved sources. A local prototype does not establish
 backend integration or a deployed service.

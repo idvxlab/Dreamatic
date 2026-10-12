@@ -21,6 +21,53 @@ async function fixture(source, images, checks = []) {
   } };
 }
 
+test('numeric citations reject hidden list numbering in source preview and final browser checks', async () => {
+  const { run, contract } = await fixture(`<html><head><title>Citations</title><style>ol{list-style:none}</style></head><body>
+    <p>Evidence <a href="#ref-a">[1]</a>.</p><section id="references"><ol>
+    <li id="ref-a">Author. Source A.</li><li id="ref-b">Author. Source B.</li></ol></section></body></html>`, []);
+  try {
+    for (const options of [{ interactionsOnly: true, sourcePreview: true }, {}]) {
+      const result = await checkHtmlBrowser(run, contract, undefined, options);
+      assert.equal(result.status, 'completed');
+      assert.equal(result.passed, false);
+      assert.ok(result.issues.some(issue => issue.includes('#ref-a has no visible numeric label')));
+      assert.ok(result.issues.some(issue => issue.includes('#ref-b has no visible numeric label')));
+      assert.ok(result.issues.every(issue => issue.includes('plan/html/demo/index.html')));
+    }
+  } finally { await rm(run, { recursive: true, force: true }); }
+});
+
+test('numeric citation mismatches, duplicate labels and invisible explicit labels have targeted diagnostics', async () => {
+  const { run, contract } = await fixture(`<html><head><title>Citations</title><style>ol{list-style:none}.hidden{opacity:0}</style></head><body>
+    <p><a href="#ref-a">[1]</a> and again <a href="#ref-a">[3]</a>.</p><section id="references"><ol>
+    <li id="ref-a"><span>[2]</span> Source A.</li><li id="ref-b">[2] Source B.</li>
+    <li id="ref-c"><span class="hidden">[3]</span> Source C.</li></ol></section></body></html>`, []);
+  try {
+    const result = await checkHtmlBrowser(run, contract, undefined, { interactionsOnly: true, sourcePreview: true });
+    assert.equal(result.passed, false);
+    assert.ok(result.issues.some(issue => issue.includes('citation [1]') && issue.includes('label [2]')));
+    assert.ok(result.issues.some(issue => issue.includes('citation [3]') && issue.includes('label [2]')));
+    assert.ok(result.issues.some(issue => issue.includes('duplicates label [2]')));
+    assert.ok(result.issues.some(issue => issue.includes('#ref-c has no visible numeric label')));
+  } finally { await rm(run, { recursive: true, force: true }); }
+});
+
+test('visible numeric labels, native numbering, requested author-date and source-free pages stay compatible', async () => {
+  for (const content of [
+    '<style>ol{list-style:none}</style><a href="#ref-a">[1]</a><a href="#ref-a">[1]</a><section id="references"><ol><li id="ref-a"><span>[1]</span> Source A.</li></ol></section>',
+    '<a href="#ref-a">[1]</a><section id="references"><ol><li id="ref-a">Source A.</li></ol></section>',
+    '<a href="#ref-a">(Author, 2026)</a><section id="references"><ul><li id="ref-a">Author. (2026). Source A.</li></ul></section>',
+    '<section id="references">No external sources were used.</section>',
+  ]) {
+    const { run, contract } = await fixture(`<html><head><title>Citations</title></head><body>${content}</body></html>`, []);
+    try {
+      const result = await checkHtmlBrowser(run, contract, undefined, { interactionsOnly: true, sourcePreview: true });
+      assert.equal(result.status, 'completed');
+      assert.equal(result.passed, true, result.issues.join('\n'));
+    } finally { await rm(run, { recursive: true, force: true }); }
+  }
+});
+
 test('publication recognizes delayed and scroll-revealed mapped images independently of interaction order', async () => {
   const source = `<!doctype html><html><head><title>Reveal</title><style>
     body{margin:0}img{display:block;width:180px;height:120px}section{height:1000px}

@@ -253,10 +253,34 @@ function runIdFromPath(workspaceDir: string, path: string): string | undefined {
   return segments[0] === "runs" ? segments[1] : undefined;
 }
 
+/** Resource copies serve pages; independently declared deliverables remain assets. */
+async function pageResourceCopies(runDir: string): Promise<Map<string, string>> {
+  const design = await readFile(join(runDir, CONTEXT_FILES.design), "utf8")
+    .then(source => record(JSON.parse(source))).catch(() => ({} as Record<string, unknown>));
+  const deliverables = Array.isArray(design.deliverables) ? design.deliverables.map(record) : [];
+  const outputs = new Set(deliverables.map(item => item.file));
+  const copies = new Map<string, string>();
+  const localImage = (path: unknown): path is string => typeof path === "string" &&
+    /^(artifacts|inputs\/user-assets)\/.+\.(png|jpe?g|webp|gif|svg)$/iu.test(path) &&
+    !path.includes("\\") && !path.split("/").some(part => !part || part === "." || part === "..");
+  for (const item of deliverables) {
+    const execution = record(item.execution);
+    if (execution.method !== "html_generate" || !Array.isArray(execution.resources)) continue;
+    for (const resource of execution.resources.map(record)) {
+      const { source, output } = resource;
+      if (localImage(source) && localImage(output) && source !== output && !outputs.has(output) &&
+          (outputs.has(source) || source.startsWith("inputs/user-assets/"))) copies.set(output, source);
+    }
+  }
+  return copies;
+}
+
 export async function assetInventory(workspaceDir: string, runId?: string): Promise<AssetView[]> {
   const root = runId ? join(workspaceDir, "runs", runId) : join(workspaceDir, "runs");
   const result: AssetView[] = [];
-  for (const path of await walk(root)) {
+  const files = await walk(root), existingFiles = new Set(files);
+  const resourceCopies = new Map<string, Promise<Map<string, string>>>();
+  for (const path of files) {
     if (!/\.(png|jpe?g|webp|gif|svg|html|mp4|webm|glb|gltf)$/i.test(path)) continue;
     const workspacePath = relative(workspaceDir, path).replaceAll("\\", "/");
     const resolvedRunId = runId ?? runIdFromPath(workspaceDir, path);
@@ -264,6 +288,9 @@ export async function assetInventory(workspaceDir: string, runId?: string): Prom
       const runDir = join(workspaceDir, "runs", resolvedRunId);
       const runPath = relative(runDir, path).replaceAll("\\", "/");
       if (runPath.startsWith("plan/html/") || runPath.startsWith(".performance/")) continue;
+      if (!resourceCopies.has(resolvedRunId)) resourceCopies.set(resolvedRunId, pageResourceCopies(runDir));
+      const source = (await resourceCopies.get(resolvedRunId)!).get(runPath);
+      if (source && existingFiles.has(join(runDir, source))) continue;
       if (runPath.startsWith("final/") && runPath !== "final/00-index.html") {
         const sourcePath = join(runDir, runPath.slice("final/".length));
         if (await stat(sourcePath).then(() => true).catch(() => false)) continue;
@@ -605,6 +632,7 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
     const state: Record<string, unknown> = await readFile(join(runDir, "run-state.json"), "utf8").then((source) => record(JSON.parse(source) as unknown)).catch(() => ({}));
     const scope = record(brief.resolvedScope);
     const files = await walk(runDir);
+    const resourceCopies = await pageResourceCopies(runDir), existingFiles = new Set(files);
     const documents = files
       .filter((path) => {
         const runPath = relative(runDir, path).replaceAll("\\", "/");
@@ -637,6 +665,8 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       stages,
       assetCount: files.filter((file) => {
         const runPath = relative(runDir, file).replaceAll("\\", "/");
+        const source = resourceCopies.get(runPath);
+        if (source && existingFiles.has(join(runDir, source))) return false;
         return !runPath.startsWith("plan/html/") && !runPath.startsWith(".performance/") && /\.(png|jpe?g|webp|gif|svg|html)$/i.test(file) && (!runPath.startsWith("final/") || runPath === "final/00-index.html");
       }).length,
       documents: options.summary ? [] : documents,

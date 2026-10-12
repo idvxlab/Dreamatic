@@ -57,13 +57,13 @@ export function imageRequestScheduler(): ImageRequestScheduler {
 }
 
 /** A valid JSON overview, with explicit pointers for details that need native read. */
-export function projectContext(value: unknown, maxChars = 12_000): { content: unknown; omittedPointers: string[] } {
+export function projectContext(value: unknown, maxChars = 12_000, maxStringChars = 700): { content: unknown; omittedPointers: string[] } {
   const omittedPointers: string[] = [];
   let remaining = Math.max(256, maxChars);
   const pointer = (key: string) => key.replaceAll('~', '~0').replaceAll('/', '~1');
   const visit = (item: unknown, path: string, depth: number): unknown => {
     if (typeof item === 'string') {
-      const limit = Math.max(0, Math.min(700, remaining)); remaining -= Math.min(item.length, limit);
+      const limit = Math.max(0, Math.min(maxStringChars, remaining)); remaining -= Math.min(item.length, limit);
       if (item.length > limit) { omittedPointers.push(path); return item.slice(0, limit) + ' [detail omitted]'; }
       return item;
     }
