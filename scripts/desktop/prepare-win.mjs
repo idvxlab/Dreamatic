@@ -131,15 +131,30 @@ await mkdir(join(stage, 'bin'), { recursive: true });
 await cp(join(extracted, 'node.exe'), join(stage, 'bin/node.exe'));
 await cp(join(extracted, 'LICENSE'), join(stage, 'NODE-LICENSE.txt'));
 
-// Ask Pi to provision its own supported Windows tools, then freeze them into
-// the application runtime so end users do not need rg or fd installed.
-const toolScript = `import { ensureTool } from './node_modules/@earendil-works/pi-coding-agent/dist/utils/tools-manager.js'; import { copyFile } from 'node:fs/promises'; import { execFileSync } from 'node:child_process'; import { isAbsolute, resolve } from 'node:path'; for (const name of ['rg', 'fd']) { let source = await ensureTool(name); if (!source) throw new Error('Missing '+name); if (!isAbsolute(source)) source = execFileSync('where.exe', [source], { encoding: 'utf8' }).split(/\\r?\\n/).find(Boolean); const destination = resolve('./bin/'+name+'.exe'); if (resolve(source) !== destination) await copyFile(source, destination); }`;
-await run(join(stage, 'bin/node.exe'), ['--input-type=module', '-e', toolScript], {
-  PI_CODING_AGENT_DIR: join(stage, '.tool-cache'),
-  // Exclude developer-installed shims so Pi downloads self-contained tools
-  // that remain valid after the runtime is copied to another computer.
-  PATH: [join(stage, 'bin'), join(windowsRoot, 'System32')].join(';'),
-});
+// Pin and verify the same native tools Pi uses. Resolving "latest" through the
+// GitHub redirect is unreliable behind some Windows proxies, and a release
+// must not silently pick up a different binary between builds.
+const windowsTools = [
+  {
+    name: 'rg',
+    file: 'ripgrep-15.2.0-x86_64-pc-windows-msvc.zip',
+    expected: '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5',
+    url: 'https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip',
+  },
+  {
+    name: 'fd',
+    file: 'fd-v10.5.0-x86_64-pc-windows-msvc.zip',
+    expected: 'a227701b8551c35a9931d9f6da75503cf86d88e182d71fb849a70864c5d57cd7',
+    url: 'https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-pc-windows-msvc.zip',
+  },
+];
+for (const tool of windowsTools) {
+  const toolArchive = await cachedDownload({ file: tool.file, expected: tool.expected, sources: [tool.url] });
+  const toolRoot = join(downloads, tool.file.replace(/\.zip$/u, ''));
+  await extractZip(toolArchive, downloads, toolRoot);
+  await cp(join(toolRoot, `${tool.name}.exe`), join(stage, 'bin', `${tool.name}.exe`));
+  await run(join(stage, 'bin', `${tool.name}.exe`), ['--version']);
+}
 
 await run(join(stage, 'bin/node.exe'), ['node_modules/playwright-core/cli.js', 'install', 'chromium-headless-shell'], {
   PLAYWRIGHT_BROWSERS_PATH: join(stage, 'browsers'),
