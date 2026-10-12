@@ -3,9 +3,13 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../..', import.meta.url));
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-const dataDir = await mkdtemp('/private/tmp/dreamatic-desktop-ui-');
+const dataDir = await mkdtemp(join(tmpdir(), 'dreamatic-desktop-ui-'));
+const electronExecutable = process.platform === 'win32'
+  ? join(root, 'node_modules/electron/dist/electron.exe')
+  : join(root, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron');
 let app, originalClipboard;
 const previewServer = createServer((_request, response) => {
   response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -14,15 +18,17 @@ const previewServer = createServer((_request, response) => {
 await new Promise(resolve => previewServer.listen(0, '127.0.0.1', resolve));
 const previewUrl = `http://127.0.0.1:${previewServer.address().port}/${'b'.repeat(48)}/artifacts/index.html`;
 try {
-  app = await _electron.launch({ executablePath: join(root, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'), args: [join(root, 'apps/desktop')], env: { ...process.env, DREAMATIC_DESKTOP_TEST_DATA: dataDir } });
+  app = await _electron.launch({ executablePath: electronExecutable, args: [join(root, 'apps/desktop')], env: { ...process.env, DREAMATIC_DESKTOP_TEST_DATA: dataDir } });
   app.process().stderr.on('data', data => process.stderr.write(data));
   const page = await app.firstWindow();
   await page.waitForLoadState();
   await page.bringToFront();
-  await page.getByRole('button', { name: 'DreamaticArt menu', exact: true }).click();
+  const brandMenu = page.getByRole('button', { name: 'DreamaticArt menu', exact: true });
+  if (!await brandMenu.isVisible()) await page.getByRole('button', { name: 'EN', exact: true }).click();
+  await brandMenu.click();
   await page.getByRole('menuitem', { name: 'Settings' }).click();
   await page.getByRole('dialog').waitFor();
-  await page.screenshot({ path: '/private/tmp/dreamatic-desktop-settings.png' });
+  await page.screenshot({ path: join(dataDir, 'desktop-settings.png') });
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
   await page.getByRole('tab', { name: 'Image model', exact: true }).click();
   await page.getByRole('textbox', { name: 'Image model', exact: true }).fill('desktop-image-model');

@@ -24,9 +24,13 @@
     "desktop:prepare": "npm run build && node scripts/desktop/prepare.mjs",
     "desktop": "npm run desktop:prepare && electron apps/desktop",
     "desktop:package": "npm run desktop:prepare && node scripts/desktop/package.mjs",
+    "desktop:prepare:win": "npm run build && node scripts/desktop/prepare-win.mjs",
+    "desktop:win": "npm run desktop:prepare:win && electron apps/desktop",
+    "desktop:package:win": "npm run desktop:prepare:win && node scripts/desktop/package-win.mjs",
     "desktop:test": "node --test apps/desktop/test/*.test.mjs",
     "desktop:test:ui": "node apps/desktop/test-ui.mjs",
-    "release:mac": "node scripts/release.mjs"
+    "release:mac": "node scripts/release.mjs",
+    "release:win": "node scripts/release-win.mjs"
   },
   "devDependencies": {
     "electron": "44.5.1",

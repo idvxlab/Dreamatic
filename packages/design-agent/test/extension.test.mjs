@@ -647,7 +647,7 @@ test("export_package rejects unapproved or unimplemented design context", async 
 test("persona tool policies keep reasoning separate from execution", () => {
   assert.throws(() => dreamaticPersonaTools("orchestrator", ["read", "user_asset_import", "user_material_extract", "websearch_batch", "html_generate", "image_generate"]), /disallowed:.*user_asset_import/);
   const researcher = dreamaticPersonaTools("researcher", ["update_design_context", "commit_design_context", "user_material_extract", "user_asset_import", "read", "write", "write_json", "patch_json", "design_bus_post", "design_bus_read", "design_context_read", "websearch_batch", "research_fetch_batch", "research_asset_discover", "research_asset_fetch", "research_asset_fetch_batch"]);
-  const designer = dreamaticPersonaTools("designer", ["design_context_validate", "update_design_context", "commit_design_context", "user_asset_import", "read", "write", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
+  const designer = dreamaticPersonaTools("designer", ["design_context_validate", "update_design_context", "commit_design_context", "user_asset_import", "read", "write", "edit", "ls", "list_skills", "use_skill", "design_bus_post", "design_bus_read", "design_context_read", "view_image"]);
   const reviewer = dreamaticPersonaTools("reviewer", ["update_design_context", "commit_design_context", "read", "design_bus_post", "design_bus_read", "design_context_read"]);
   const builder = dreamaticPersonaTools("builder", ["read", "ls", "design_bus_read", "design_context_read", "execute_design_plan", "html_generate", "build_finalize"]);
   assert.equal(researcher.includes("view_image"), false);
