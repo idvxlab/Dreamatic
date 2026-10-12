@@ -1,0 +1,53 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-2022
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out dev
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.1
+          cache: npm
+
+      - name: Cache verified desktop downloads
+        uses: actions/cache@v4
+        with:
+          path: .desktop-runtime-win-x64/.downloads
+          key: windows-desktop-downloads-${{ hashFiles('package-lock.json', 'scripts/desktop/prepare-win.mjs') }}
+
+      - name: Build and verify Windows installer
+        shell: pwsh
+        run: npm run release:win
+
+      - name: Upload Windows installer
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DreamaticArt-windows-x64-${{ github.sha }}
+          path: |
+            release/DreamaticArt-*-windows-x64-setup.exe
+            release/DreamaticArt-*-windows-x64-setup.exe.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Upload release logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DreamaticArt-windows-build-logs-${{ github.sha }}
+          path: release/logs/*.log
+          if-no-files-found: warn
+          retention-days: 30
