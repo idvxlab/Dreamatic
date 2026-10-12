@@ -26,7 +26,7 @@ await rm(`${output}.sha256`, { force: true });
 
 await run(process.execPath, [
   join(root, 'node_modules/electron-builder/cli.js'),
-  '--config', 'apps/desktop/builder-win.cjs', '--win', '--x64',
+  '--config', 'apps/desktop/builder-win.cjs', '--win', '--x64', '--publish', 'never',
 ]);
 
 const unpacked = join(root, 'release/win-unpacked');
