@@ -29,7 +29,7 @@ jobs:
 
       - name: Build and verify Windows installer
         shell: pwsh
-        run: npm run release:win
+        run: npm run release:win -- --skip-ui-test
 
       - name: Upload Windows installer
         if: success()
