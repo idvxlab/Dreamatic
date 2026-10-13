@@ -10,10 +10,11 @@ Use DreamaticArt through the macOS or Windows desktop app, the Web interface, or
 
 ![DreamaticArt](docs/assets/dreamatic-hero.png)
 
-> This README describes the **current source tree after the V2.1.0 release**. The root and desktop package versions remain **2.1.0**; subsequent development changes are included below without assigning a new release number. A downloaded installer may not contain these changes; check its build details.
+> **v2.2.0 — upcoming release.** This README describes the `v2.2.0` release branch and its improvements over the published `v2.1.0` tag. Release scripts synchronize package versions from the release branch before building. The website's available installers may still be from an earlier release; check the version and build details before downloading.
 
 ## Contents
 
+- [What's new in v2.2.0](#whats-new-in-v220)
 - [Who it is for](#who-it-is-for)
 - [Core capabilities](#core-capabilities)
 - [Design philosophy](#design-philosophy)
@@ -26,6 +27,36 @@ Use DreamaticArt through the macOS or Windows desktop app, the Web interface, or
 - [Development](#development)
 - [Troubleshooting](#troubleshooting)
 - [Documentation](#documentation)
+
+## What's new in v2.2.0
+
+Compared with the `v2.1.0` release tag, v2.2.0 strengthens project memory, role ownership, delivery validation, and model recovery, and adds native Windows packaging. The complete project introduction, architecture, installation, and usage guide follow this release summary.
+
+| Area | v2.2.0 improvement | What it means for users |
+| --- | --- | --- |
+| Project memory | Unified `context/project.json`, `research.json`, `design.json`, and `review.json`, with named updates, editable drafts, runtime-managed versions, and atomic commits | Requirements, evidence, design, and review have clear owners; corrections preserve previously saved work |
+| Design contract | Each new Designer deliverable owns its identity, scope, output, presentation obligations, and nested execution specification; task views are derived | Production parameters and delivery requirements are kept together, reducing repeated authoring and inconsistent plans |
+| Agent boundaries | Orchestrator coordinates; Designer authors specifications and HTML; Reviewer assesses them; Builder executes the approved stored plan | Builder does not redesign pages or create a second specification; source/design corrections return to their owner |
+| Project presentation | New projects use a Designer-authored HTML entry; non-UX/UI showcases default to simple static layouts, while UX/UI retains required states and flows | Image projects get an intentional presentation without unnecessary interface complexity or extra pages per discipline |
+| Review and delivery checks | Discipline-specific review, approved-source receipts, local resource closure, required-output access, and browser interaction checks with real final assets | A generated file alone is insufficient: required work must be accessible, and changed approved sources need renewed approval |
+| Citations | Non-UX/UI showcases include a visible References section, default IEEE numbering, matching citation links, and research provenance | Readers can trace adopted factual sources; missing metadata is retained honestly |
+| Skills | One Skill can bind to several scopes in one validated call; repeated body loads are reused within an invocation; seven optional supporting Skills were added | Shared knowledge is loaded with less repetition, while professional responsibility and per-scope selection remain explicit |
+| Model compatibility | Exact-model, endpoint-specific Pi capability declarations, including thinking formats, level mappings, budget fields, and model limits | Thinking controls depend on the actual provider contract rather than assumptions about model names |
+| Diagnosis and recovery | Separate first-output, generation, idle, and total response limits; actual request/response diagnostics; one bounded recovery for pure reasoning exhaustion | Long or failed attempts are easier to explain; unchanged reasoning-exhaustion retries stop when a lower control is unavailable |
+| Tool feedback | Targeted missing-source guidance for research fetches; content-free matching-Run commit arguments can be normalized safely | Avoidable argument mistakes can be corrected without repeating successful research; ambiguous or conflicting content is still rejected |
+| Completion and navigation | Runtime-generated completion summaries, reported text-token and elapsed-time accounting, project-bound stream/status updates, and a browser favicon | Completed work has a durable summary, and switching projects preserves the correct conversation and progress context |
+| Configuration | Externally edited settings are reported as pending; saving validates and applies the persisted snapshot | Opening Settings does not silently change the running configuration |
+| Windows desktop | Native Windows 10/11 x64 NSIS installer workflow, bundled Node/Pi tools/browser, package verification, checksum output, and a manually triggered Windows CI build | Windows packaging is available alongside Apple Silicon macOS packaging; release UI acceptance remains a real-hardware step |
+
+The seven added supporting Skills cover typographic detail, accessibility, interface writing, interaction motion, concept showcase storytelling, icon systems, and generative art. They complement existing professional Skills and do not enable CAD, video generation, engineering-grade 3D, or game-engine execution. See [Skill sources](docs/DESIGN-SKILL-SOURCES.md) for their scope and provenance.
+
+### Upgrading from v2.1.0
+
+- Back up the workspace and configuration before replacing an installation. Source users should install the locked dependencies, rebuild, restart the backend, and refresh the browser; desktop users need a new application build.
+- Existing projects are not silently converted. Historical formats retain their original records and receipts; split-file projects require explicit Context migration before specialist dispatch. A supported completed unified project can request an explicit contract upgrade during revision, followed by new review and execution.
+- New design documents use design contract version 2. That schema version is separate from the application version `2.2.0` and the storage format label `unified-v1`.
+- Verify thinking capabilities for the actual endpoint before enabling them. Local thinking `off` is not proof of remote behavior, and no live-provider latency, token-saving percentage, or creative-quality gain is guaranteed by these changes.
+- Preview and Export remain available for valid HTML deliveries. Public Gallery upload still requires delivered design images; the pure-HTML publication restriction has not been lifted.
 
 ## Who it is for
 
@@ -414,12 +445,12 @@ On an Apple Silicon Mac:
 npm run release:mac
 ```
 
-The script works on the current branch. Version selection uses `--version X.Y.Z` first, then a version-named branch such as `v2.1.0`, then `package.json`. The script builds, checks, runs regression and desktop validation, and produces `release/DreamaticArt-<version>-mac-arm64.dmg` with a SHA256 file.
+The script works on the current branch. Version selection uses `--version X.Y.Z` first, then a version-named branch such as `v2.2.0`, then `package.json`. On this release branch it synchronizes the root package, desktop package, and lockfile to `2.2.0` before building. The script builds, checks, runs regression and desktop validation, and produces `release/DreamaticArt-<version>-mac-arm64.dmg` with a SHA256 file.
 
 To set an explicit version or reuse installed dependencies:
 
 ```bash
-npm run release:mac -- --version 2.1.0
+npm run release:mac -- --version 2.2.0
 npm run release:mac -- --skip-install
 ```
 
@@ -440,11 +471,13 @@ Windows builds are native: macOS builds the macOS DMG, while Windows builds and 
 The Windows command supports the same release options:
 
 ```powershell
-npm run release:win -- --version 2.1.0
+npm run release:win -- --version 2.2.0
 npm run release:win -- --skip-install
 ```
 
 Use `npm run desktop:win` for Windows desktop development and `npm run desktop:package:win` for a faster package-only development build. The final release gate is one manual install and uninstall on Windows. If electron-builder signing credentials such as `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD` are supplied through secure local or CI environment variables, the executable and installer are signed automatically; never commit certificate files or passwords.
+
+The manually triggered [Windows installer workflow](.github/workflows/build-windows-installer.yml) uses `--skip-ui-test` for hosted builders and uploads the installer, checksum, and logs as CI artifacts. It does not publish a GitHub release automatically. Before distributing the installer, complete Settings/Preview/Export UI acceptance and install/uninstall checks on a real Windows computer. A CI artifact alone does not establish completion of those manual checks.
 
 ## Troubleshooting
 
@@ -484,7 +517,7 @@ This command analyzes local historical records without invoking a design agent. 
 | [Migration notes](docs/MIGRATION.md) | Historical compatibility and explicit contract upgrades |
 | [V2.0.3 background](docs/V2.0.3.md) | Versioned introduction of scoped Skills and HTML execution; historical details defer to the current Context contract |
 
-Since the V2.1.0 release tag, the source has added unified Context authoring, stronger role boundaries, Designer-owned project HTML, source/access validation, scoped multi-binding Skill reuse, additional supporting Skills, citation requirements, completion summaries, project-switch isolation, and more precise model diagnostics and recovery. The sections above describe the complete current system rather than only these changes. Downloaded builds and existing project contracts may differ from the current source tree.
+For the release summary and compatibility guidance, see [What's new in v2.2.0](#whats-new-in-v220). Downloaded builds and historical project contracts may differ from this release branch.
 
 ## License
 
