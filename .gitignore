@@ -11,5 +11,6 @@ workspace/.trash/
 .desktop-runtime-win-x64/
 release/
 docs/research/
+/research/
 output/
 data/
