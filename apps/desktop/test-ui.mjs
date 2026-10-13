@@ -21,6 +21,9 @@ try {
   app = await _electron.launch({ executablePath: electronExecutable, args: [join(root, 'apps/desktop')], env: { ...process.env, DREAMATIC_DESKTOP_TEST_DATA: dataDir } });
   app.process().stderr.on('data', data => process.stderr.write(data));
   const page = await app.firstWindow();
+  // Hosted Windows runners expose a smaller virtual desktop than the production window.
+  // Keep the renderer viewport deterministic so visible controls remain interactable in CI.
+  await page.setViewportSize({ width: 1440, height: 940 });
   await page.waitForLoadState();
   await page.bringToFront();
   const brandMenu = page.getByRole('button', { name: 'DreamaticArt menu', exact: true });

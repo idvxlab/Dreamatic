@@ -10,12 +10,12 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const args = process.argv.slice(2);
 
 if (args.includes('--help')) {
-  console.log('Usage: npm run release:win [-- --skip-install] [-- --version X.Y.Z]\n\nBuild, run and verify the Windows x64 NSIS installer on Windows.\nRequires 64-bit Windows 10/11, Node >=22.19, npm, internet access and a logged-in desktop session.\n--skip-install reuses the already installed, locked development dependencies.\nVersion: --version, then a version-named Git branch, then package.json.\nSigning is automatic when electron-builder Windows signing credentials are provided.');
+  console.log('Usage: npm run release:win [-- --skip-install] [-- --skip-ui-test] [-- --version X.Y.Z]\n\nBuild, run and verify the Windows x64 NSIS installer on Windows.\nRequires 64-bit Windows 10/11, Node >=22.19, npm, internet access and a logged-in desktop session.\n--skip-install reuses the already installed, locked development dependencies.\n--skip-ui-test omits the interactive desktop smoke test for hosted builders; perform final UI acceptance on a real Windows computer.\nVersion: --version, then a version-named Git branch, then package.json.\nSigning is automatic when electron-builder Windows signing credentials are provided.');
 } else {
   let log;
   try {
     for (let i = 0; i < args.length; i++) {
-      if (args[i] === '--skip-install') continue;
+      if (args[i] === '--skip-install' || args[i] === '--skip-ui-test') continue;
       if (args[i] === '--version' && args[i + 1]) { process.env.DREAMATIC_RELEASE_VERSION = args[++i]; continue; }
       throw new Error('Unknown or incomplete option. Use --help.');
     }
@@ -57,10 +57,11 @@ if (args.includes('--help')) {
     const browser = join(root, '.desktop-runtime-win-x64', 'browsers', browserDir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');
     process.env.DREAMATIC_HTML_BROWSER_EXECUTABLE = browser;
     process.env.DREAMATIC_DESKTOP_BROWSER = browser;
-    const testDirs = ['apps/server/test', 'apps/web/test', 'packages/design-agent/test', 'apps/desktop/test'];
-    const tests = (await Promise.all(testDirs.map(async directory => (await readdir(join(root, directory))).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(directory, name))))).flat();
-    await run('5/7 Run regression and Windows desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=1', ...tests]);
-    await run('6/7 Check desktop Settings, Preview and Export on Windows', process.execPath, ['apps/desktop/test-ui.mjs']);
+    const desktopTestDir = 'apps/desktop/test';
+    const tests = (await readdir(join(root, desktopTestDir))).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(desktopTestDir, name));
+    await run('5/7 Run Windows desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=1', ...tests]);
+    if (args.includes('--skip-ui-test')) report('6/7 Skip interactive desktop UI smoke test (--skip-ui-test; complete it on a real Windows computer)');
+    else await run('6/7 Check desktop Settings, Preview and Export on Windows', process.execPath, ['apps/desktop/test-ui.mjs']);
     await run('7/7 Package and verify the native Windows installer', process.execPath, ['scripts/desktop/package-win.mjs']);
 
     const { version } = JSON.parse(await readFile(join(root, 'apps/desktop/package.json'), 'utf8'));

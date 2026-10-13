@@ -1,12 +1,32 @@
 import { hasUnifiedContext, CONTEXT_PROJECTIONS, annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/design-agent";
+import { ZipFile } from "yazl";
 import { createHash } from "node:crypto";
-import { execFile } from "node:child_process";
+import { createWriteStream } from "node:fs";
 import { copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { promisify } from "node:util";
 
-const exec = promisify(execFile);
+async function writeZip(source: string, destination: string, rootName: string): Promise<void> {
+  const zip = new ZipFile();
+  async function addDirectory(directory: string, relative = ""): Promise<void> {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))) {
+      const path = join(directory, entry.name);
+      const archivePath = [rootName, relative, entry.name].filter(Boolean).join("/");
+      if (entry.isDirectory()) await addDirectory(path, [relative, entry.name].filter(Boolean).join("/"));
+      else if (entry.isFile()) zip.addFile(path, archivePath, { compressionLevel: 9 });
+      else throw new Error(`Unsupported export snapshot entry: ${archivePath}`);
+    }
+  }
+  await addDirectory(source);
+  const output = createWriteStream(destination, { flags: "wx", mode: 0o600 });
+  await new Promise<void>((resolveZip, rejectZip) => {
+    output.once("close", resolveZip);
+    output.once("error", rejectZip);
+    zip.once("error", rejectZip);
+    zip.outputStream.pipe(output);
+    zip.end();
+  });
+}
 
 /** Download-only snapshot. Never alter a Run or start an agent/export workflow. */
 export async function prepareProjectExport(workspaceDir: string, runId: string, options: { publication?: Record<string, unknown>; modelFallback?: ModelUsage } = {}): Promise<{ path: string; filename: string; cleanup: () => Promise<void> }> {
@@ -90,12 +110,11 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
     await writeFile(join(packageDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), entry, files: [...files, "index.html", "package-manifest.json"] }, null, 2));
     if (options.publication) await writeFile(join(packageDir, "publication.json"), JSON.stringify(options.publication, null, 2));
     const archive = join(temp, `${runId}.zip`);
-    // Argument array (no shell); work on the snapshot so concurrent Run updates cannot enter the archive.
-    await exec("zip", ["-q", "-r", archive, runId], { cwd: temp, timeout: 120_000 });
+    // Archive the immutable snapshot in-process so export works on macOS and Windows without system tools.
+    await writeZip(packageDir, archive, runId);
     return { path: archive, filename: `${runId}.zip`, cleanup };
   } catch (error) {
     await cleanup();
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" && (error as NodeJS.ErrnoException).syscall?.startsWith("spawn")) throw new Error("ZIP export requires the zip utility on the server");
     throw error;
   }
 }
