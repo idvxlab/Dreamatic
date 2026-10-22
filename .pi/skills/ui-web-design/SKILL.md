@@ -51,7 +51,7 @@ automatically complete; avoid both missing flows and duplicate views.
 
 Deliver complete HTML page designs under `plan/html/<scope-id>/`, with CSS/JS as
 needed: realize layout, hierarchy, typography, exact copy, values and behavior.
-Builder materializes approved sources without redesign. Cover consequential scripted
+Preserve the specified design when implementing sources. Cover consequential scripted
 flows and responsive behavior with interaction checks; discover supporting HTML authoring knowledge
 from the installed Skill catalog. Image assets support rather than replace inspectable behavior.
 A local prototype does not prove backend integration or deployed services.

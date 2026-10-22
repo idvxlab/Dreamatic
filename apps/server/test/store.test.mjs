@@ -1,3 +1,14 @@
+async function historicalProject(_call, input) {
+  const runDir = join(input.workspace, 'runs', input.runIdOverride);
+  await mkdir(join(runDir, 'context'), { recursive: true });
+  const brief = { runId: input.runIdOverride, title: input.projectTitle, brief: input.brief, originalRequest: null, contextFormat: 'unified-v1', createdAt: '2026-01-01T00:00:00Z', resolvedScope: { designScopes: input.designScopes } };
+  await writeFile(join(runDir, 'brief.json'), JSON.stringify(brief));
+  await writeFile(join(runDir, 'context/project.json'), JSON.stringify({ schemaVersion: 1, revision: 1, runId: brief.runId, brief }));
+  const { designClassificationMessage } = await import('@dreamatic/project-data');
+  await writeFile(join(runDir, 'bus.jsonl'), JSON.stringify({ id: `${brief.runId}-classification`, type: 'design_categories_identified', from_agent: 'orchestrator', ...designClassificationMessage(input.designScopes), at: brief.createdAt }) + '\n');
+  await writeFile(join(runDir, 'run-state.json'), JSON.stringify({ runId: brief.runId, status: 'active', stages: {} }));
+  return { content: [{ text: JSON.stringify({ runDir }) }] };
+}
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -42,8 +53,8 @@ test("persisted and streamed retries settle on success, failure and legacy compl
     const runDir = join(workspace, "runs", "retry-test");
     await mkdir(runDir, { recursive: true });
     const source = await readFile(new URL("../../web/src/workflow-live.ts", import.meta.url), "utf8");
-    const helperUrl = new URL("../../../packages/design-agent/dist/workflow-retries.js", import.meta.url).href;
-    const compiled = ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL("../../../packages/design-agent/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const helperUrl = new URL("../../../packages/project-data/dist/workflow-retries.js", import.meta.url).href;
+    const compiled = ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"', JSON.stringify(new URL("../../../packages/project-data/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
     const events = [
       { type: "agent_started", invocationId: "builder-1", agent: "builder", at: "2026-01-01T00:00:00Z" },
@@ -331,12 +342,9 @@ test("a Reviewer fail verdict is a revision milestone rather than a transport er
 
 
 test("actual classification appears as a top-level conversation message in live and restored workflows", async () => {
-  const { createDreamaticExtension } = await import('@dreamatic/design-agent');
   const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-classification-message-'));
   try {
-    const tools = new Map();
-    createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
-    await tools.get('run_init').execute('init', { runIdOverride: 'classified', projectTitle: 'Connected product', brief: 'Design a device, UI and campaign', designScopes: [
+    await historicalProject('init', { workspace, runIdOverride: 'classified', projectTitle: 'Connected product', brief: 'Design a device, UI and campaign', designScopes: [
       { id: 'hardware', category: 'industrial', task: 'Device shape and ergonomics', rationale: 'Physical hardware was requested' },
       { id: 'control', category: 'ux', task: 'Responsive control page', rationale: 'Interactive UI was requested' },
       { id: 'campaign', category: 'media_communication', task: 'Campaign poster', rationale: 'An advertising poster was requested' },
@@ -351,8 +359,8 @@ test("actual classification appears as a top-level conversation message in live 
     assert.match(message.detail, /工业设计.*UX 设计.*媒体传达设计/s);
     assert.match(message.detail, /判断依据：Physical hardware was requested/);
     const source = await readFile(new URL('../../web/src/workflow-live.ts', import.meta.url), 'utf8');
-    const helperUrl = new URL('../../../packages/design-agent/dist/workflow-retries.js', import.meta.url).href;
-    const compiled = ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL("../../../packages/design-agent/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const helperUrl = new URL('../../../packages/project-data/dist/workflow-retries.js', import.meta.url).href;
+    const compiled = ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"', JSON.stringify(new URL("../../../packages/project-data/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"', JSON.stringify(helperUrl)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
     let live = applyWorkflowStreamEvent([], { type: 'agent_started', invocationId: 'designer', agent: 'designer', at: event.at });
     live = applyWorkflowStreamEvent(live, event);
@@ -362,7 +370,9 @@ test("actual classification appears as a top-level conversation message in live 
     const state = JSON.parse(await readFile(join(runDir, 'run-state.json'), 'utf8'));
     state.status = 'complete';
     await writeFile(join(runDir, 'run-state.json'), JSON.stringify(state));
-    await tools.get('run_revision').execute('revision', { runId: 'classified', feedback: 'Only improve the interface', designScopes: [{ id: 'control', category: 'ux', task: 'Improve the control page', rationale: 'User narrowed the requested scope' }] });
+    const { designClassificationMessage } = await import('@dreamatic/project-data');
+    const revision = { id: 'classified-revision', type: 'design_categories_identified', from_agent: 'orchestrator', ...designClassificationMessage([{ id: 'control', category: 'ux', task: 'Improve the control page', rationale: 'User narrowed the requested scope' }], true), at: '2026-01-01T00:01:00Z' };
+    await writeFile(join(runDir, 'bus.jsonl'), [event, revision].map(JSON.stringify).join('\n') + '\n');
     const revised = await workflowInventory(workspace, 'classified');
     assert.equal(revised.filter((node) => node.kind === 'message' && node.actor === 'Orchestrator').length, 2);
     assert.match(revised.find((node) => node.label.startsWith('设计类型已更新')).detail, /UX 设计.*Improve the control page/s);
@@ -388,9 +398,9 @@ test("historical classification display is read-only and does not invent unknown
 test('running image progress is visible inside its tool in server snapshots and live updates, while finished output is retained', async () => {
   const workspace=await mkdtemp(join(tmpdir(),'dreamatic-image-progress-view-'));
   try {
-    const helperUrl=new URL('../../../packages/design-agent/dist/workflow-retries.js',import.meta.url).href;
+    const helperUrl=new URL('../../../packages/project-data/dist/workflow-retries.js',import.meta.url).href;
     const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
-    const compiled=ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL("../../../packages/design-agent/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"',JSON.stringify(helperUrl)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+    const compiled=ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"', JSON.stringify(new URL("../../../packages/project-data/dist/workflow-progress.js",import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"',JSON.stringify(helperUrl)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
     const live=await import('data:text/javascript;base64,'+Buffer.from(compiled).toString('base64'));
     const runDir=join(workspace,'runs/image-progress');await mkdir(runDir,{recursive:true});
     const base={invocationId:'builder-1',agent:'builder'};
@@ -418,10 +428,7 @@ test('running image progress is visible inside its tool in server snapshots and 
 test("unified project metadata stays consistent through session attachment and rename", async () => {
   const workspace = await mkdtemp(join(tmpdir(), "dreamatic-unified-project-"));
   try {
-    const { createDreamaticExtension } = await import("@dreamatic/design-agent");
-    const tools = new Map();
-    createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
-    await tools.get("run_init").execute("init", { runIdOverride: "demo", projectTitle: "Academic work", brief: "Design a page", designScopes: [{ id: "ui", category: "ux", task: "Academic page" }] });
+    await historicalProject("init", { workspace, runIdOverride: "demo", projectTitle: "Academic work", brief: "Design a page", designScopes: [{ id: "ui", category: "ux", task: "Academic page" }] });
     await attachSessionToRun(workspace, "demo", "session-new");
     const beforeProject = await readFile(join(workspace,"runs/demo/context/project.json"),"utf8");
     const beforeBrief = await readFile(join(workspace,"runs/demo/brief.json"),"utf8");
@@ -441,12 +448,10 @@ test("unified project metadata stays consistent through session attachment and r
 });
 
 test('unified product notes render canonical Context without persisted Markdown reports', async () => {
-  const { createDreamaticExtension, CONTEXT_FILES } = await import('@dreamatic/design-agent');
+  const { CONTEXT_FILES } = await import('@dreamatic/project-data');
   const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-canonical-notes-'));
   try {
-    const tools = new Map();
-    createDreamaticExtension({ workspaceDir: workspace })({ on() {}, registerTool(tool) { tools.set(tool.name, tool); } });
-    const result = await tools.get('run_init').execute('init', { runIdOverride: 'notes', projectTitle: 'Context notes', brief: 'Render notes', designScopes: [{ id: 'page', category: 'ux', task: 'Page' }] });
+    const result = await historicalProject('init', { workspace, runIdOverride: 'notes', projectTitle: 'Context notes', brief: 'Render notes', designScopes: [{ id: 'page', category: 'ux', task: 'Page' }] });
     const runDir = JSON.parse(result.content[0].text).runDir;
     await writeFile(join(runDir, CONTEXT_FILES.research), JSON.stringify({ schemaVersion: 1, runId: 'notes', revision: 1, evidence: { target: 'Notes', summary: 'Research', official_sources: [], open_questions: [] }, findings: '# Findings\nCanonical research', usageConditions: 'References only' }));
     await writeFile(join(runDir, CONTEXT_FILES.design), JSON.stringify({ schemaVersion: 1, runId: 'notes', revision: 1, system: { system_thesis: 'Notes', palette: {}, typography: {} }, strategy: { design_intent: 'Notes' }, tasks: [{ id: 'page', method: 'manual' }], deliverables: [{ id: 'page', kind: 'html_page', purpose: 'Notes', acceptance_test: 'Readable', required: true, file: 'artifacts/page.html' }], presentation: { mode: 'html', entry: 'artifacts/page.html' }, executionNotes: 'Canonical rationale' }));
@@ -471,7 +476,7 @@ test('completion summary restores as one top-level message and live replay does 
   const restored=(await workflowInventory(workspace,'demo')).filter(event=>event.stage==='completion');
   assert.equal(restored.length,1);assert.equal(restored[0].kind,'message');assert.equal(restored[0].detail,completion.detail);
   const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
-  const compiled=ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"',JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-progress.js',import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"',JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-retries.js',import.meta.url).href)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  const compiled=ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"',JSON.stringify(new URL('../../../packages/project-data/dist/workflow-progress.js',import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"',JSON.stringify(new URL('../../../packages/project-data/dist/workflow-retries.js',import.meta.url).href)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   const {applyWorkflowStreamEvent}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
   const live=applyWorkflowStreamEvent(applyWorkflowStreamEvent([],completion),completion);
   assert.equal(live.length,1);assert.deepEqual(live,restored);
@@ -492,7 +497,7 @@ test('denied Designer writes retain error status without a successful-write titl
     await writeFile(join(runDir, 'bus.jsonl'), events.map(JSON.stringify).join('\n') + '\n');
     const restored = (await workflowInventory(workspace, 'demo')).find(event => event.id === 'designer-1').children[0];
     const source = await readFile(new URL('../../web/src/workflow-live.ts', import.meta.url), 'utf8');
-    const compiled = ts.transpileModule(source.replace('"@dreamatic/design-agent/workflow-progress"', JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-progress.js', import.meta.url).href)).replace('"../../../packages/design-agent/src/workflow-retries"', JSON.stringify(new URL('../../../packages/design-agent/dist/workflow-retries.js', import.meta.url).href)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const compiled = ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"', JSON.stringify(new URL('../../../packages/project-data/dist/workflow-progress.js', import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"', JSON.stringify(new URL('../../../packages/project-data/dist/workflow-retries.js', import.meta.url).href)), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const { applyWorkflowStreamEvent } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
     const live = events.reduce(applyWorkflowStreamEvent, []).find(event => event.id === 'designer-1').children[0];
     for (const tool of [restored, live]) {

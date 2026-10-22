@@ -42,14 +42,9 @@ runtime limit or revisable creative choice. Accurate subject depiction is distin
 from copying an existing design. For critical invariants decide whether text is
 sufficient or dependent image editing needs a real source and preservation rules.
 
-## Author the current Context
+## Record the system
 
-Submit system decisions through `update_design_context({changes:{system:{...}}})`.
-Keep `system_thesis`, `palette`, `typography`, `consistency_rules`, `asset_rules`,
-`consistency_anchor` and `prohibited` inside `changes.system`. Palette and typography
-use named-role objects; these fields do not belong at the changes root or in strategy.
-Runtime owns identity and versions.
-
-Include domain-specific decisions only when useful. Keep research, review history
-and workflow state out of the system. Judge traceability, coherence, useful
-specificity and flexibility across the actual outputs.
+Document the thesis, palette, typography, consistency rules, protected assets and
+prohibited treatments in the design specification. Use named roles for palette
+and typography. Keep research, review history and workflow state separate from
+these reusable design decisions.

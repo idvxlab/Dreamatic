@@ -67,7 +67,7 @@ Explain open design questions and plausible next development steps using the
 actual proposal. Speculative direction remains speculative. Choose section depth
 from the amount of meaningful work; no fixed section count, forced manifesto or
 mandatory interactive spectacle is needed. Author the resulting page through the
-existing HTML expression contract; Builder executes that design.
+presentation requirements and verify the implemented design.
 
 ## Cite the design's sources
 

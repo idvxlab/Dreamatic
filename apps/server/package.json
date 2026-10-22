@@ -4,18 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "predev": "npm run build -w @dreamatic/design-agent && npm run build",
+    "predev": "npm run build -w @dreamatic/project-data && npm run build",
     "dev": "node dist/index.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
-    "prestart": "npm run build -w @dreamatic/design-agent && npm run build",
+    "prestart": "npm run build -w @dreamatic/project-data && npm run build",
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@dreamatic/design-agent": "0.1.0",
+    "@dreamatic/project-data": "0.1.0",
     "@earendil-works/pi-coding-agent": "0.85.1",
-    "yazl": "^3.3.1"
+    "yazl": "^3.3.1",
+    "playwright-core": "1.60.0"
   },
   "devDependencies": {
     "@types/node": "22.18.6",

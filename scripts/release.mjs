@@ -41,10 +41,10 @@ if (args.includes('--help')) {
     }
     if (!args.includes('--skip-install')) await run('1/7 Install locked dependencies', 'npm', ['ci', '--include=dev', '--no-audit', '--no-fund']);
     else report('1/7 Reuse installed dependencies (--skip-install)');
-    await run('2/7 Build Web, CLI, server and design agents', 'npm', ['run', 'build']);
+    await run('2/7 Build Web, CLI, server and project data', 'npm', ['run', 'build']);
     await run('3/7 Check types', 'npm', ['run', 'check']);
-    await run('4/7 Prepare the bundled Node, Pi tools, browser and icon', process.execPath, ['scripts/desktop/prepare.mjs']);
-    const testDirs = ['apps/server/test', 'apps/web/test', 'packages/design-agent/test', 'apps/desktop/test'];
+    await run('4/7 Prepare the bundled Node, browser and icon', process.execPath, ['scripts/desktop/prepare.mjs']);
+    const testDirs = ['apps/server/test', 'apps/web/test', 'apps/desktop/test'];
     const tests = (await Promise.all(testDirs.map(async directory => (await readdir(join(root, directory))).filter(name => name.endsWith('.test.mjs')).sort().map(name => join(directory, name))))).flat();
     await run('5/7 Run regression and desktop lifecycle tests', process.execPath, ['--test', '--test-concurrency=1', ...tests]);
     await run('6/7 Check desktop Settings, Preview and Export', process.execPath, ['apps/desktop/test-ui.mjs']);

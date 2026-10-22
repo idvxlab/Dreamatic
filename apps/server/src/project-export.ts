@@ -1,4 +1,4 @@
-import { hasUnifiedContext, CONTEXT_PROJECTIONS, annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/design-agent";
+import { hasUnifiedContext, CONTEXT_PROJECTIONS, annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/project-data";
 import { ZipFile } from "yazl";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";

@@ -29,7 +29,7 @@ try {
   console.log(`PACKAGED_VERSION_OK: v${expectedVersion}`);
   const runtime = join(app, 'Contents/Resources/runtime');
   await access(join(runtime, 'node_modules/playwright-core/index.mjs'));
-  await access(join(runtime, 'node_modules/@dreamatic/design-agent/dist/index.js'));
+  await access(join(runtime, 'node_modules/@dreamatic/project-data/dist/index.js'));
   try { await access(join(runtime, '.env')); throw new Error('Developer configuration must not be packaged'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
   await run(join(app, 'Contents/MacOS/DreamaticArt'), [], { DREAMATIC_DESKTOP_SMOKE: '1', DREAMATIC_DESKTOP_TEST_DATA: join(temp, 'data') });

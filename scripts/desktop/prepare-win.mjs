@@ -108,21 +108,21 @@ for (const path of ['.pi', 'apps', 'packages', 'node_modules', 'bin', 'browsers'
 
 // Only approved runtime resources are copied. Developer secrets, sessions,
 // generated runs and caches never enter the installer.
-for (const path of ['.pi', 'apps/server/dist', 'apps/web/dist', 'packages/design-agent/dist', 'apps/cli/dist']) {
+for (const path of ['.pi', 'apps/server/dist', 'apps/web/dist', 'packages/project-data/dist', 'apps/cli/dist']) {
   await cp(join(root, path), join(stage, path), { recursive: true });
 }
-for (const path of ['package.json', 'package-lock.json', '.env.example', 'apps/server/package.json', 'apps/web/package.json', 'apps/cli/package.json', 'packages/design-agent/package.json']) {
+for (const path of ['package.json', 'package-lock.json', '.env.example', 'apps/server/package.json', 'apps/web/package.json', 'apps/cli/package.json', 'packages/project-data/package.json']) {
   await mkdir(resolve(stage, path, '..'), { recursive: true });
   await cp(join(root, path), join(stage, path));
 }
 
 const manifest = JSON.parse(await readFile(join(stage, 'package.json'), 'utf8'));
-manifest.workspaces = ['apps/server', 'apps/web', 'apps/cli', 'packages/design-agent'];
+manifest.workspaces = ['apps/server', 'apps/web', 'apps/cli', 'packages/project-data'];
 await writeFile(join(stage, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
 await runNpm([
   'ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund',
-  '--workspace=@dreamatic/server', '--workspace=@dreamatic/design-agent',
+  '--workspace=@dreamatic/server', '--workspace=@dreamatic/project-data',
   '--workspace=@dreamatic/cli', '--include-workspace-root=false',
 ]);
 
@@ -152,34 +152,6 @@ await cp(join(extracted, 'LICENSE'), join(stage, 'NODE-LICENSE.txt'));
 // Pin and verify the same native tools Pi uses. Resolving "latest" through the
 // GitHub redirect is unreliable behind some Windows proxies, and a release
 // must not silently pick up a different binary between builds.
-const windowsTools = [
-  {
-    name: 'rg',
-    file: 'ripgrep-15.2.0-x86_64-pc-windows-msvc.zip',
-    expected: '71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5',
-    url: 'https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-pc-windows-msvc.zip',
-  },
-  {
-    name: 'fd',
-    file: 'fd-v10.5.0-x86_64-pc-windows-msvc.zip',
-    expected: 'a227701b8551c35a9931d9f6da75503cf86d88e182d71fb849a70864c5d57cd7',
-    url: 'https://github.com/sharkdp/fd/releases/download/v10.5.0/fd-v10.5.0-x86_64-pc-windows-msvc.zip',
-  },
-];
-for (const tool of windowsTools) {
-  const toolArchive = await cachedDownload({
-    file: tool.file,
-    expected: tool.expected,
-    // Mirrors are acceptable only because every byte is checked against the
-    // digest published for the upstream GitHub release asset.
-    sources: [tool.url, `https://ghfast.top/${tool.url}`, `https://gh-proxy.com/${tool.url}`],
-  });
-  const toolRoot = join(downloads, tool.file.replace(/\.zip$/u, ''));
-  await extractZip(toolArchive, downloads, toolRoot);
-  await cp(join(toolRoot, `${tool.name}.exe`), join(stage, 'bin', `${tool.name}.exe`));
-  await run(join(stage, 'bin', `${tool.name}.exe`), ['--version']);
-}
-
 await run(join(stage, 'bin/node.exe'), ['node_modules/playwright-core/cli.js', 'install', 'chromium-headless-shell'], {
   PLAYWRIGHT_BROWSERS_PATH: join(stage, 'browsers'),
 });

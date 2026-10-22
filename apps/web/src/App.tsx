@@ -9,7 +9,7 @@ import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
 import type { Asset, ClarificationRequest, RunView, SessionView, TimelineItem, WorkflowEvent } from "./types";
 import { applyWorkflowStreamEvent } from "./workflow-live";
-import { clarificationFromToolResult } from "../../../packages/design-agent/src/clarification";
+import { clarificationFromToolResult } from "../../../packages/project-data/src/clarification";
 
 function eventName(event: Record<string, unknown>): string {
   return typeof event.type === "string" ? event.type : "agent_event";

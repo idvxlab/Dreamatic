@@ -14,7 +14,7 @@ metadata:
 # Image Prompting
 
 Translate resolved design decisions into self-contained generation or edit
-instructions. Designer specifies images; Builder executes approved deliverables.
+instructions. Specify the intended image and its acceptance criteria before generation.
 
 ## Choose the operation and references
 
@@ -72,38 +72,24 @@ components may need pixel conditioning; independent generation does not guarante
 geometry. For dependent edits:
 
 1. Identify the source deliverable and its exact local output.
-2. List its id in the edit's `execution.uses` and path in `execution.referenceImagePaths`.
+2. Record the source image and its relationship to the edited result.
 3. Provide self-contained `prompt_seed`, `negative_prompt_seed`, `diagnosis`, `changes`
    and `preserve`, distinguishing retained features from additions or removals.
 4. Specify composition, copy, size and observable acceptance for that application.
 
-Diagnosis can explain a transformation, not only a defect. Runtime resolves local
-paths and executes sources before their edits. Sibling edits may share an existing
+Diagnosis can explain a transformation, not only a defect. Create source images before dependent edits. Sibling edits may share an existing
 source; unrelated views need not be serialized merely for a shared style.
 
 Sources may be appropriately authorized existing assets or newly generated outputs.
 Viewing does not establish pixel-use permission; future generated sources have not
-been visually inspected. Execution does not add a new visual-review loop. Editing
+been visually inspected. Review edited results against the specified preservation rules. Editing
 cannot guarantee exact reproduction; disclose unsupported fidelity requirements.
 
-## Author the current deliverable
+## Describe the deliverable
 
-For each image, put stable `id`, assigned `scope_id`, loaded `skill_refs`, `kind:"image"`,
-`file`, `purpose`, `acceptance_test`, `required`, `user_requested` and `presentation`
-on the deliverable. Nested `execution` owns `method`, `prompt_seed`,
-`negative_prompt_seed`, `size`, `size_rationale` and any edit/reference fields.
-Use `execution.uses` for producer ids; runtime derives ordering.
-
-Declare one exact `artifacts/...` filename. PNG is default; JPG/JPEG are supported
-opaque lossy formats. Extension selects saved encoding; URL/base64 transport does
-not select delivery format. Consult Context's `outputContract` for current capabilities.
-
-Use `WIDTHxHEIGHT` within the injected image-size ceiling, including permitted swapped
-orientation. Choose the lowest adequate size for the view; reserve larger outputs
-for detail-critical imagery. Do not hard-code a provider-specific maximum.
-
-Designer authors the HTML entry in `presentation.entry` and makes required imagery
-accessible through embed/link/download and declared resources. User-requested outputs
-require both production and presentation access. Internal-only outputs need a rationale.
-Use observable acceptance criteria rather than another design-review loop; repair
-specific save-time diagnostics while preserving resolved content.
+Record each image's purpose, exact output filename, dimensions, edit references,
+required content and observable acceptance criteria. Keep prompts self-contained.
+Choose the lowest adequate resolution for the view and respect the configured
+provider's supported sizes and formats. Provide access to requested images from
+the presentation, preserving proportions and distinguishing concept imagery from
+verified technical claims.

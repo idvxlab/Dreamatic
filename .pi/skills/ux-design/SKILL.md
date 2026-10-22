@@ -49,7 +49,7 @@ UI/UX's primary deliverable is complete HTML page design under `plan/html/<scope
 with CSS/JS as needed. Realize visual composition, realistic copy and relevant
 states/flows; screen images or journey descriptions alone are insufficient.
 Discover supporting knowledge for interface composition and HTML authoring
-by description, capabilities and supported output. Builder materializes approved behavior.
+by description, capabilities and supported output. Verify the implemented behavior against the design.
 
 Retain exact behavior/content rules and proposed evaluation in the specification:
 realistic tasks, participant needs, observable success, friction and assumptions.

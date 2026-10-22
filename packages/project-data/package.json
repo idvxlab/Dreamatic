@@ -1,0 +1,29 @@
+{
+  "name": "@dreamatic/project-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./workflow-progress": {
+      "types": "./dist/workflow-progress.d.ts",
+      "import": "./dist/workflow-progress.js"
+    },
+    "./workflow-retries": {
+      "types": "./dist/workflow-retries.d.ts",
+      "import": "./dist/workflow-retries.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "typescript": "5.9.3"
+  }
+}

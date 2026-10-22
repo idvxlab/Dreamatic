@@ -11,15 +11,12 @@
     "packages/*"
   ],
   "scripts": {
-    "predev": "npm run build -w @dreamatic/design-agent && npm run build -w @dreamatic/server",
-    "precheck": "npm run build -w @dreamatic/design-agent && node scripts/check-skills.mjs",
+    "predev": "npm run build -w @dreamatic/project-data && npm run build -w @dreamatic/server",
     "dev": "node scripts/dev.mjs",
-    "build": "npm run build -w @dreamatic/design-agent && npm run build -w @dreamatic/cli && npm run build -w @dreamatic/server && npm run build -w @dreamatic/web",
-    "check": "npm run check -w @dreamatic/design-agent && npm run check -w @dreamatic/cli && npm run check -w @dreamatic/server && npm run check -w @dreamatic/web",
+    "build": "npm run build -w @dreamatic/project-data && npm run build -w @dreamatic/cli && npm run build -w @dreamatic/server && npm run build -w @dreamatic/web",
+    "check": "npm run check -w @dreamatic/project-data && npm run check -w @dreamatic/cli && npm run check -w @dreamatic/server && npm run check -w @dreamatic/web",
     "start": "npm run start -w @dreamatic/server",
     "cli": "npm run start -w @dreamatic/cli --",
-    "diagnose:image-edit": "node scripts/diagnose-image-edit.mjs",
-    "compact-session": "node scripts/compact-visual-session.mjs",
     "diagnose:performance": "node scripts/diagnose-performance.mjs",
     "desktop:prepare": "npm run build && node scripts/desktop/prepare.mjs",
     "desktop": "npm run desktop:prepare && electron apps/desktop",
@@ -31,7 +28,7 @@
     "desktop:test:ui": "node apps/desktop/test-ui.mjs",
     "release:mac": "node scripts/release.mjs",
     "release:win": "node scripts/release-win.mjs",
-    "check:skills": "npm run build -w @dreamatic/design-agent && node scripts/check-skills.mjs"
+    "precheck": "npm run build -w @dreamatic/project-data"
   },
   "devDependencies": {
     "electron": "44.5.1",

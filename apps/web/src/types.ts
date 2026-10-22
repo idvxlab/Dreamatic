@@ -117,7 +117,7 @@ export interface WorkflowEvent {
   assets?: Array<{ path: string; label: string }>;
   children?: WorkflowEvent[];
   updatedAt?: string;
-  imageProgress?: import("@dreamatic/design-agent/workflow-progress").ImageProgress;
+  imageProgress?: import("@dreamatic/project-data/workflow-progress").ImageProgress;
   actionCount?: number;
   agent?: string;
 }

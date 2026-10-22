@@ -95,7 +95,7 @@ test('export omits Finder metadata and private hidden files from public project 
 });
 
 test('unified ZIP export preserves canonical Context and excludes stale split files without deleting originals', async t => {
-  const { CONTEXT_PROJECTIONS } = await import('@dreamatic/design-agent');
+  const { CONTEXT_PROJECTIONS } = await import('@dreamatic/project-data');
   const f = await fixture(t, 'html');
   await writeFile(join(f.run, 'brief.json'), JSON.stringify({ title: 'Unified export', contextFormat: 'unified-v1' }));
   const retired = Object.values(CONTEXT_PROJECTIONS).flat();

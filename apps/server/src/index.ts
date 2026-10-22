@@ -6,12 +6,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, resolve, sep } from "node:path";
 import { loadEnvFile } from "node:process";
 import { fileURLToPath } from "node:url";
-import { validateDreamaticPersonaContracts } from "@dreamatic/design-agent";
 import { readCanvasState, writeCanvasState } from "./canvas-store.js";
-import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, newProjectId, primeDraftRun, renameRun, runAgentSessions, runInventory } from "./run-store.js";
+import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, newProjectId, renameRun, runAgentSessions, runInventory } from "./run-store.js";
 import { workflowInventory } from "./workflow-store.js";
 import { recordRequest, serverPerformance } from "./performance-store.js";
-import { compactPromptEvent, streamWriter } from "./stream-writer.js";
+import { streamWriter } from "./stream-writer.js";
 import { SessionRegistry } from "./session-registry.js";
 import { PreviewService } from "./preview-service.js";
 import { readRuntimeConfig, saveRuntimeConfig } from "./config-store.js";
@@ -31,7 +30,6 @@ let workspaceDir = configuredWorkspace
   : join(configRoot, "workspace");
 const webDist = join(repoRoot, "apps", "web", "dist");
 const port = desktop ? 0 : Number(process.env.PORT ?? 4310);
-await validateDreamaticPersonaContracts(repoRoot);
 await mkdir(workspaceDir, { recursive: true });
 
 let registry = new SessionRegistry(repoRoot, workspaceDir);
@@ -296,36 +294,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         json(response, 409, { error: "Create or select a project before sending a message" });
         return;
       }
-      await primeDraftRun(workspaceDir, projectId, promptMatch[1], input.text);
-      const images = Array.isArray(input.images)
-        ? input.images.flatMap((value) => {
-            const item = record(value);
-            return typeof item.data === "string" && typeof item.mimeType === "string"
-              ? [{ type: "image" as const, data: item.data, mimeType: item.mimeType, ...(typeof item.name === "string" ? { name: item.name } : {}) }]
-              : [];
-          })
-        : [];
-      if (applyingConfiguration) { json(response, 503, { error: "Configuration is being applied. Please wait." }); return; }
-      response.writeHead(200, {
-        "Content-Type": "application/x-ndjson; charset=utf-8",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      });
-      const writer = streamWriter(response);
-      const send = (value: unknown) => writer.send(`${JSON.stringify(value)}\n`);
-      const unsubscribe = registry.subscribe(promptMatch[1], (event) => {
-        const value = input.compactEvents ? compactPromptEvent(event as unknown as Record<string, unknown>) : event;
-        if (value) send({ type: "agent_event", event: value });
-      });
-      try {
-        await registry.prompt(promptMatch[1], input.text, images, projectId);
-        send({ type: "snapshot", session: registry.view(promptMatch[1], !input.compactEvents) });
-      } catch (error) {
-        send({ type: "error", message: error instanceof Error ? error.message : String(error) });
-      } finally {
-        unsubscribe();
-        writer.end();
-      }
+      json(response, 503, { error: "Design execution is unavailable while Dreamatic is being redesigned.", code: "AGENT_RUNTIME_UNAVAILABLE" });
       return;
     }
     const abortMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/abort$/);

@@ -1,6 +1,6 @@
-import { imageProgress } from "@dreamatic/design-agent/workflow-progress";
+import { imageProgress } from "@dreamatic/project-data/workflow-progress";
 import type { WorkflowEvent } from "./types";
-import { settleWorkflowRetries } from "../../../packages/design-agent/src/workflow-retries";
+import { settleWorkflowRetries } from "../../../packages/project-data/src/workflow-retries";
 
 const agentTitles: Record<string, string> = {
   researcher: "Researcher",

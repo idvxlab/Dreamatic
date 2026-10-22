@@ -56,5 +56,5 @@ including empty/loading/error cases and relevant device contexts. A polished lan
 screen cannot explain a multi-step product. Deliver UI tasks as complete HTML page
 designs with realistic content, visual composition and necessary local interactions,
 using CSS/JS as needed. Discover suitable HTML authoring knowledge
-from the installed Skill catalog. Builder materializes approved sources. A local prototype does not establish
+from the installed Skill catalog. Verify authored sources against the specified requirements. A local prototype does not establish
 backend integration or a deployed service.

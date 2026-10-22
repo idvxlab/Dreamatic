@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';import test from 'node:test';import {createServer} from 'node:http';import {fileURLToPath} from 'node:url';import {readFile} from 'node:fs/promises';import {build} from 'vite';import {browserExecutable} from '../../../packages/design-agent/dist/html-delivery.js';
+import assert from 'node:assert/strict';import test from 'node:test';import {createServer} from 'node:http';import {fileURLToPath} from 'node:url';import {readFile} from 'node:fs/promises';import {build} from 'vite';import {browserExecutable} from '../../../scripts/browser-executable.mjs';
 test('fixed status displays live receipts without opening tool details and keeps successful thumbnails after completion',{timeout:60000},async t=>{
  const executablePath=await browserExecutable();if(!executablePath){t.skip('Chromium unavailable');return}
  const root=fileURLToPath(new URL('..',import.meta.url)),panel=fileURLToPath(new URL('../src/components/AgentPanel.tsx',import.meta.url)),entry='virtual:run-status';

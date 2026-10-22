@@ -49,9 +49,9 @@ if (args.includes('--help')) {
 
     if (!args.includes('--skip-install')) await runNpm('1/7 Install locked dependencies', ['ci', '--include=dev', '--no-audit', '--no-fund']);
     else report('1/7 Reuse installed dependencies (--skip-install)');
-    await runNpm('2/7 Build Web, CLI, server and design agents', ['run', 'build']);
+    await runNpm('2/7 Build Web, CLI, server and project data', ['run', 'build']);
     await runNpm('3/7 Check types', ['run', 'check']);
-    await run('4/7 Prepare the bundled Windows Node, Pi tools, browser and icon', process.execPath, ['scripts/desktop/prepare-win.mjs']);
+    await run('4/7 Prepare the bundled Windows Node, browser and icon', process.execPath, ['scripts/desktop/prepare-win.mjs']);
     const browserDir = (await readdir(join(root, '.desktop-runtime-win-x64', 'browsers'))).find(name => name.startsWith('chromium_headless_shell-'));
     if (!browserDir) throw new Error('Prepared Windows HTML review browser is missing.');
     const browser = join(root, '.desktop-runtime-win-x64', 'browsers', browserDir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe');

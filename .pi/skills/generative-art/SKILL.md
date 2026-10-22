@@ -37,8 +37,7 @@ parameters that produce useful aesthetic changes, with an understandable reset.
 ## Deliver the actual medium
 
 Use local JavaScript with native SVG or Canvas drawing for procedural HTML.
-Designer authors the complete algorithm and presentation; Builder materializes
-the approved sources. No remote drawing library, fixed vendor template or new
+Author complete algorithms and presentation sources. No remote drawing library, fixed vendor template or new
 executor is required. Provide meaningful text alongside non-text art when needed;
 animated work should have a still/reduced-motion path and bounded rendering work.
 
@@ -46,7 +45,7 @@ If image generation is the chosen medium, describe the visual rules and composit
 in the prompt, but treat it as an illustrative result: it does not prove algorithmic
 reproducibility, exact tiling or physical behavior. A browser's optional image-save
 interaction does not itself create a packaged image deliverable; declare required
-files through the existing supported execution methods.
+files explicitly in the delivery requirements.
 
 Compare chosen variations for composition and character. Keep rules and parameter
 decisions in the existing specification without an additional manifesto file.

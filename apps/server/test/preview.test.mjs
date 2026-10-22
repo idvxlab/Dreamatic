@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { PreviewService } from '../dist/preview-service.js';
 import { assetInventory, runInventory } from '../dist/run-store.js';
-import { browserExecutable } from '../../../packages/design-agent/dist/html-delivery.js';
+import { browserExecutable } from '../../../scripts/browser-executable.mjs';
 const hash = (source) => createHash('sha256').update(source).digest('hex');
 async function fixture(workspace, mode = 'html') {
   const runDir = join(workspace, 'runs/demo');

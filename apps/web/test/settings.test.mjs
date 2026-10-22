@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { build } from 'vite';
-import { browserExecutable } from '../../../packages/design-agent/dist/html-delivery.js';
+import { browserExecutable } from '../../../scripts/browser-executable.mjs';
 import { readRuntimeConfig, saveRuntimeConfig } from '../../server/dist/config-store.js';
 test('Settings entry opens grouped .env settings; examples, persisted fields, secret retention and validation work', {timeout:60_000}, async(t)=>{
  const executablePath=await browserExecutable();if(!executablePath){t.skip('Chromium unavailable');return;}

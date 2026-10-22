@@ -1,6 +1,7 @@
-import { SessionManager, type AgentSession, type AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { clarificationFromToolResult, createDreamaticSession, dreamaticSessionFailure, prepareDreamaticPrompt, stopAfterCommittedTurn, withRetry, type DreamaticPromptImage } from "@dreamatic/design-agent";
-import { mkdir } from "node:fs/promises";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { clarificationFromToolResult } from "@dreamatic/project-data";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 export interface SessionView {
@@ -31,15 +32,6 @@ export interface ClarificationRequest {
   questions: ClarificationQuestion[];
 }
 
-interface ManagedSession {
-  id: string;
-  title: string;
-  createdAt: string;
-  session: AgentSession;
-  abortRequested: boolean;
-  projectId?: string;
-}
-
 export function clarificationFromMessages(messages: readonly unknown[]): ClarificationRequest | undefined {
   let pending: ClarificationRequest | undefined;
   const calls = new Set<string>();
@@ -62,198 +54,46 @@ export function clarificationFromMessages(messages: readonly unknown[]): Clarifi
   return pending;
 }
 
+// Application session records and read-only Pi history; no agent sessions are created.
 export class SessionRegistry {
+  readonly #sessions = new Map<string, SessionView>();
   readonly #repoRoot: string;
   readonly #workspaceDir: string;
-  readonly #prompting = new Set<string>();
-  get busy(): boolean { return this.#prompting.size > 0 || [...this.#sessions.values()].some(managed => managed.session.isStreaming); }
-  readonly #sessions = new Map<string, ManagedSession>();
-
-  constructor(repoRoot: string, workspaceDir: string) {
-    this.#repoRoot = repoRoot;
-    this.#workspaceDir = workspaceDir;
-  }
-
+  get busy(): boolean { return false; }
+  constructor(repoRoot: string, workspaceDir: string) { this.#repoRoot = repoRoot; this.#workspaceDir = workspaceDir; }
   async initialize(): Promise<void> {
-    await this.#syncSavedSessions();
-  }
-
-  async #syncSavedSessions(): Promise<void> {
-    const root = join(this.#workspaceDir, "sessions");
-    const sessionDirs = [root, join(root, "cli")];
-    await Promise.all(sessionDirs.map((directory) => mkdir(directory, { recursive: true })));
-    for (const sessionDir of sessionDirs) {
-      const saved = await SessionManager.list(this.#repoRoot, sessionDir);
-      for (const info of saved) {
+    const directory = join(this.#workspaceDir, "sessions");
+    await mkdir(directory, { recursive: true });
+    const saved: SessionView[] = await readFile(join(directory, "registry.json"), "utf8").then(JSON.parse).catch(error => { if (error.code === "ENOENT") return []; throw error; });
+    for (const session of saved) this.#sessions.set(session.id, { ...session, running: false });
+    for (const sessionDir of [directory, join(directory, "cli")]) {
+      for (const info of await SessionManager.list(this.#repoRoot, sessionDir)) {
         if (this.#sessions.has(info.id)) continue;
         try {
-          const { session } = await createDreamaticSession({
-            repoRoot: this.#repoRoot,
-            workspaceDir: this.#workspaceDir,
-            sessionDir,
-            sessionFile: info.path,
-            getProjectId: () => this.#sessions.get(info.id)?.projectId,
-          });
-          this.#sessions.set(info.id, {
-            id: info.id,
-            title: info.name?.trim() || info.firstMessage.trim().slice(0, 72) || "Untitled design",
-            createdAt: info.created.toISOString(),
-            session,
-            abortRequested: false,
-          });
-        } catch {
-          // One damaged session must not prevent the local workspace from loading.
-        }
+          const messages = SessionManager.open(info.path).buildSessionContext().messages;
+          const pendingClarification = clarificationFromMessages(messages);
+          this.#sessions.set(info.id, { id: info.id, title: info.name?.trim() || info.firstMessage.trim().slice(0, 72) || "Untitled design", createdAt: info.created.toISOString(), running: false, messages, ...(pendingClarification ? { pendingClarification } : {}) });
+        } catch { /* A damaged historical file must not block other projects. */ }
       }
     }
   }
-
   async create(title = "Untitled design", projectId?: string): Promise<SessionView> {
-    await mkdir(join(this.#workspaceDir, "sessions"), { recursive: true });
-    let createdSessionId: string | undefined;
-    const { session } = await createDreamaticSession({
-      repoRoot: this.#repoRoot,
-      workspaceDir: this.#workspaceDir,
-      sessionDir: join(this.#workspaceDir, "sessions"),
-      ...(projectId ? { projectId } : {}),
-      getProjectId: () => createdSessionId ? this.#sessions.get(createdSessionId)?.projectId : projectId,
-    });
-    createdSessionId = session.sessionId;
-    const managed: ManagedSession = {
-      id: session.sessionId,
-      title,
-      createdAt: new Date().toISOString(),
-      session,
-      abortRequested: false,
-      ...(projectId ? { projectId } : {}),
-    };
-    this.#sessions.set(managed.id, managed);
-    return this.view(managed.id);
+    const session: SessionView = { id: randomUUID(), title, createdAt: new Date().toISOString(), running: false, messages: [], ...(projectId ? { projectId } : {}) };
+    this.#sessions.set(session.id, session);
+    const path = join(this.#workspaceDir, "sessions/registry.json");
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    try { await writeFile(temporary, JSON.stringify([...this.#sessions.values()], null, 2)); await rename(temporary, path); }
+    catch (error) { this.#sessions.delete(session.id); throw error; }
+    finally { await rm(temporary, { force: true }); }
+    return this.view(session.id);
   }
-
-  #lastSessionSync = 0;
-  #syncInFlight: Promise<void> | undefined;
-
-  async list(): Promise<SessionView[]> {
-    // CLI tasks may be created while the web server is already running. Pi's
-    // session directory remains the source of truth for both entry points.
-    if (Date.now() - this.#lastSessionSync > 5_000) {
-      this.#syncInFlight ??= this.#syncSavedSessions().then(() => { this.#lastSessionSync = Date.now(); }).finally(() => { this.#syncInFlight = undefined; });
-      await this.#syncInFlight;
-    }
-    return [...this.#sessions.keys()]
-      .map((id) => this.view(id, false))
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
+  async list(): Promise<SessionView[]> { return [...this.#sessions.keys()].map(id => this.view(id, false)).sort((a,b) => b.createdAt.localeCompare(a.createdAt)); }
   view(id: string, includeMessages = true): SessionView {
-    const managed = this.get(id);
-    const pendingClarification = clarificationFromMessages(managed.session.messages);
-    return {
-      id: managed.id,
-      title: managed.title,
-      createdAt: managed.createdAt,
-      running: managed.session.isStreaming,
-      messages: includeMessages ? managed.session.messages : [],
-      ...(pendingClarification ? { pendingClarification } : {}),
-      ...(managed.projectId ? { projectId: managed.projectId } : {}),
-    };
+    const session = this.#sessions.get(id);
+    if (!session) throw new Error(`Unknown session: ${id}`);
+    return { ...session, messages: includeMessages ? session.messages : [] };
   }
-
-  subscribe(id: string, listener: (event: AgentSessionEvent) => void): () => void {
-    return this.get(id).session.subscribe(listener);
-  }
-
-  async prompt(id: string, text: string, images: DreamaticPromptImage[], projectId?: string): Promise<void> {
-    this.#prompting.add(id);
-    try { await this.#prompt(id, text, images, projectId); }
-    finally { this.#prompting.delete(id); }
-  }
-
-  async #prompt(
-    id: string,
-    text: string,
-    images: DreamaticPromptImage[],
-    projectId?: string,
-  ): Promise<void> {
-    const managed = this.get(id);
-    if (managed.projectId && projectId && managed.projectId !== projectId) throw new Error("This session belongs to a different project");
-    const ownedProjectId = managed.projectId ?? projectId;
-    if (ownedProjectId && !managed.projectId) managed.projectId = ownedProjectId;
-    managed.abortRequested = false;
-    if (managed.title === "Untitled design" && text.trim()) managed.title = text.trim().slice(0, 54);
-    const prepared = await prepareDreamaticPrompt({
-      workspaceDir: this.#workspaceDir,
-      scopeId: `web-${id}`,
-      text,
-      images,
-    });
-    const projectInstruction = ownedProjectId
-      ? `\n\n[DREAMATIC PROJECT OWNERSHIP]\nThis conversation belongs only to project ${ownedProjectId}. History may contain other project ids; their briefs, deliverables, preferences and assumptions are not confirmed requirements for this project unless the user explicitly asks to reuse them. Assess missing intent from the current project's request and answers, not another project's completed design. If starting its full design workflow, call run_init with runIdOverride exactly \"${ownedProjectId}\". For explicit user-requested changes after completion, call run_revision with this same project id and the feedback delta; do not call run_init again. Never create, select, or reuse another Run, even if its title or brief is similar.`
-      : "";
-    let committedPause = false;
-    const restoreTurnStop = stopAfterCommittedTurn(managed.session.agent, () => committedPause);
-    const unsubscribe = managed.session.subscribe((event) => {
-      if (event.type !== "tool_execution_end" || event.isError) return;
-      if ((event.toolName === "ask_user" && clarificationFromToolResult(event.result, event.toolCallId)) || event.toolName === "export_package") {
-        committedPause = true;
-      }
-    });
-    try {
-      await withRetry(async (attempt) => {
-        try {
-          await managed.session.prompt(
-            attempt === 1 ? `${prepared.text}${projectInstruction}` : "The previous provider call failed transiently. Resume from completed tool results and durable Run files. Do not repeat completed work or create a new Run.",
-            attempt === 1 ? { images: prepared.images } : undefined,
-          );
-        } catch (error) {
-          if (committedPause && !managed.abortRequested) return;
-          throw error;
-        }
-        if (managed.abortRequested) throw new Error("Run interrupted by user");
-        if (committedPause) return;
-        const failure = dreamaticSessionFailure(managed.session.messages);
-        if (failure) throw new Error(failure);
-      }, { attempts: Math.max(1, Number(process.env.DREAMATIC_AGENT_RETRY_ATTEMPTS ?? 3)) });
-    } finally {
-      unsubscribe();
-      restoreTurnStop();
-      managed.abortRequested = false;
-    }
-  }
-
-  async abort(id: string): Promise<{ id: string; interrupted: boolean }> {
-    const managed = this.get(id);
-    if (!managed.session.isStreaming) return { id, interrupted: false };
-    managed.abortRequested = true;
-    await managed.session.abort();
-    return { id, interrupted: true };
-  }
-
-  async reloadConfiguration(): Promise<void> {
-    if (this.busy) throw new Error("Wait for the current task or publication to finish before saving configuration.");
-    const replacements = new Map<string, AgentSession>();
-    try {
-      for (const managed of this.#sessions.values()) {
-        const { session } = await createDreamaticSession({
-          repoRoot: this.#repoRoot, workspaceDir: this.#workspaceDir,
-          sessionManager: managed.session.sessionManager,
-          getProjectId: () => this.#sessions.get(managed.id)?.projectId,
-        });
-        replacements.set(managed.id, session);
-      }
-    } catch (error) { for (const session of replacements.values()) session.dispose(); throw error; }
-    for (const managed of this.#sessions.values()) { managed.session.dispose(); managed.session = replacements.get(managed.id)!; }
-  }
-
-  async dispose(): Promise<void> {
-    for (const managed of this.#sessions.values()) managed.session.dispose();
-    this.#sessions.clear();
-  }
-
-  private get(id: string): ManagedSession {
-    const managed = this.#sessions.get(id);
-    if (!managed) throw new Error(`Unknown session: ${id}`);
-    return managed;
-  }
+  async abort(id: string): Promise<{ id: string; interrupted: boolean }> { this.view(id); return { id, interrupted: false }; }
+  async reloadConfiguration(): Promise<void> { /* Configuration is consumed by application services directly. */ }
+  async dispose(): Promise<void> { this.#sessions.clear(); }
 }

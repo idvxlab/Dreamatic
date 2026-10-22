@@ -21,7 +21,7 @@ test('synchronizes manifests and lockfile from Git without changing internal pac
     for (const path of ['package.json', 'apps/desktop/package.json']) {
       await writeFile(join(root, path), JSON.stringify({ version: '0.1.0' }));
     }
-    await writeFile(join(root, 'package-lock.json'), JSON.stringify({ version: '0.1.0', packages: { '': { version: '0.1.0' }, 'apps/desktop': { version: '0.1.0' }, 'packages/design-agent': { version: '0.1.0' } } }));
+    await writeFile(join(root, 'package-lock.json'), JSON.stringify({ version: '0.1.0', packages: { '': { version: '0.1.0' }, 'apps/desktop': { version: '0.1.0' }, 'packages/project-data': { version: '0.1.0' } } }));
     assert.equal(await syncReleaseVersion(root), '2.0.3');
     for (const path of ['package.json', 'apps/desktop/package.json', 'package-lock.json']) {
       assert.equal(JSON.parse(await readFile(join(root, path), 'utf8')).version, '2.0.3');
@@ -29,7 +29,7 @@ test('synchronizes manifests and lockfile from Git without changing internal pac
     const lock = JSON.parse(await readFile(join(root, 'package-lock.json'), 'utf8'));
     assert.equal(lock.packages[''].version, '2.0.3');
     assert.equal(lock.packages['apps/desktop'].version, '2.0.3');
-    assert.equal(lock.packages['packages/design-agent'].version, '0.1.0');
+    assert.equal(lock.packages['packages/project-data'].version, '0.1.0');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

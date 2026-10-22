@@ -1,10 +1,10 @@
-import { hasUnifiedContext, syncProjectContext, readRunContext, CONTEXT_FILES } from "@dreamatic/design-agent";
+import { hasUnifiedContext, syncProjectContext, readRunContext, CONTEXT_FILES } from "@dreamatic/project-data";
 import type { Dirent } from "node:fs";
 import { indexedJsonl } from "./jsonl-index.js";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
-import { RUN_CONTEXT_SECTIONS, RUN_FILES, findRunDocument } from "@dreamatic/design-agent";
+import { RUN_CONTEXT_SECTIONS, RUN_FILES, findRunDocument } from "@dreamatic/project-data";
 
 export type TimelineKind = "thought" | "tool" | "result" | "error";
 

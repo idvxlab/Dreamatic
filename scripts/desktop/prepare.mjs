@@ -12,21 +12,24 @@ async function run(bin, args, env = {}) {
 }
 await syncReleaseVersion(root);
 await mkdir(stage, { recursive: true });
+// Remove the retired workspace from a previously prepared runtime.
+await rm(join(stage, "packages/design-agent"), { recursive: true, force: true });
+for (const name of ["rg", "fd"]) await rm(join(stage, "bin", name), { force: true });
 await run(process.execPath, [join(root, 'scripts/desktop/electron-runtime.mjs')]);
 // Only approved source resources: never package developer secrets, runs, sessions or caches.
-for (const path of ['.pi', 'apps/server/dist', 'apps/web/dist', 'packages/design-agent/dist', 'apps/cli/dist']) {
+for (const path of ['.pi', 'apps/server/dist', 'apps/web/dist', 'packages/project-data/dist', 'apps/cli/dist']) {
   await rm(join(stage, path), { recursive: true, force: true });
   await cp(join(root, path), join(stage, path), { recursive: true });
 }
-for (const path of ['package.json', 'package-lock.json', '.env.example', 'apps/server/package.json', 'apps/web/package.json', 'apps/cli/package.json', 'packages/design-agent/package.json']) {
+for (const path of ['package.json', 'package-lock.json', '.env.example', 'apps/server/package.json', 'apps/web/package.json', 'apps/cli/package.json', 'packages/project-data/package.json']) {
   await mkdir(resolve(stage, path, '..'), { recursive: true });
   await cp(join(root, path), join(stage, path));
 }
 // Retain the source lockfile; dev/build dependencies are not part of the runtime.
 const manifest = JSON.parse(await readFile(join(stage, 'package.json'), 'utf8'));
-manifest.workspaces = ['apps/server', 'apps/web', 'apps/cli', 'packages/design-agent'];
+manifest.workspaces = ['apps/server', 'apps/web', 'apps/cli', 'packages/project-data'];
 await writeFile(join(stage, 'package.json'), JSON.stringify(manifest, null, 2));
-await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--workspace=@dreamatic/server', '--workspace=@dreamatic/design-agent', '--workspace=@dreamatic/cli', '--include-workspace-root=false']);
+await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--workspace=@dreamatic/server', '--workspace=@dreamatic/project-data', '--workspace=@dreamatic/cli', '--include-workspace-root=false']);
 // Pi's published package includes esbuild binaries for other platforms; retain only this target.
 const esbuildPlatforms = join(stage, 'node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild');
 for (const platform of await import('node:fs/promises').then(fs => fs.readdir(esbuildPlatforms))) {
@@ -51,9 +54,6 @@ await run('/usr/bin/tar', ['-xzf', archivePath, '-C', cache]);
 await cp(join(cache, `node-${nodeVersion}-darwin-arm64/bin/node`), join(stage, 'bin/node'));
 await chmod(join(stage, 'bin/node'), 0o755);
 await cp(join(cache, `node-${nodeVersion}-darwin-arm64/LICENSE`), join(stage, 'NODE-LICENSE.txt'));
-// Use Pi's own tool provisioning, without duplicating its resolver implementation.
-const toolScript = `import { ensureTool } from './node_modules/@earendil-works/pi-coding-agent/dist/utils/tools-manager.js'; import { copyFile, chmod } from 'node:fs/promises'; import { execFileSync } from 'node:child_process'; import { resolve } from 'node:path'; for (const name of ['rg', 'fd']) { const path = await ensureTool(name); if (!path) throw new Error('Missing '+name); const source = path.startsWith('/') ? path : execFileSync('/usr/bin/which', [path], { encoding: 'utf8' }).trim(); if (resolve(source) !== resolve('./bin/'+name)) await copyFile(source, './bin/'+name); await chmod('./bin/'+name, 0o755); }`;
-await run(join(stage, 'bin/node'), ['--input-type=module', '-e', toolScript], { PI_CODING_AGENT_DIR: join(stage, '.tool-cache'), PATH: [join(stage, 'bin'), process.env.PATH, '/usr/bin', '/bin'].filter(Boolean).join(':') });
 // Bundle the matching headless browser so HTML review needs no Chrome installation.
 await run(join(stage, 'bin/node'), ['node_modules/playwright-core/cli.js', 'install', 'chromium-headless-shell'], { PLAYWRIGHT_BROWSERS_PATH: join(stage, 'browsers') });
 await rm(join(stage, '.tool-cache'), { recursive: true, force: true });

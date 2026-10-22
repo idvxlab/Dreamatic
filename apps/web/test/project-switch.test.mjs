@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { build } from 'vite';
-import { browserExecutable } from '../../../packages/design-agent/dist/html-delivery.js';
+import { browserExecutable } from '../../../scripts/browser-executable.mjs';
 
 test('project switches isolate live callbacks, completion, stop and delayed session creation', {timeout:60_000}, async t => {
   const executablePath = await browserExecutable();

@@ -2,7 +2,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
-import { HTML_PREVIEW_CSP, HTML_CONTENT_TYPES, physicalRunFile } from "@dreamatic/design-agent";
+import { HTML_PREVIEW_CSP, HTML_CONTENT_TYPES, physicalRunFile } from "@dreamatic/project-data";
 
 interface PreviewGrant { runDir: string; manifestHash: string; files: Map<string, string>; entry: string }
 /** Dedicated origin: this server has no session/config/assets API and only serves committed files. */

@@ -1,11 +1,11 @@
-import { imageProgress } from "@dreamatic/design-agent/workflow-progress";
-import { briefDesignScopes, designClassificationMessage } from "@dreamatic/design-agent";
+import { imageProgress } from "@dreamatic/project-data/workflow-progress";
+import { briefDesignScopes, designClassificationMessage } from "@dreamatic/project-data";
 import { indexedJsonl } from "./jsonl-index.js";
 import { readFile, readdir, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { basename, extname, join, relative } from "node:path";
 import { createInterface } from "node:readline";
-import { settleWorkflowRetries } from "@dreamatic/design-agent/workflow-retries";
+import { settleWorkflowRetries } from "@dreamatic/project-data/workflow-retries";
 
 export type WorkflowKind = "message" | "tool" | "agent" | "references" | "milestone" | "retry" | "error";
 export type WorkflowStatus = "running" | "completed" | "interrupted" | "error" | "info";
@@ -34,7 +34,7 @@ export interface WorkflowEventView {
   actionCount?: number;
   agent?: string;
   updatedAt?: string;
-  imageProgress?: import("@dreamatic/design-agent/workflow-progress").ImageProgress;
+  imageProgress?: import("@dreamatic/project-data/workflow-progress").ImageProgress;
 }
 
 interface SessionInvocation extends WorkflowEventView {

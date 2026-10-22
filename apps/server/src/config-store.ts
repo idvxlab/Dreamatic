@@ -1,4 +1,4 @@
-import { modelCapabilities } from "@dreamatic/design-agent";
+import { modelCapabilities } from "@dreamatic/project-data";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";

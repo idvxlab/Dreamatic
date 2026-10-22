@@ -1,4 +1,4 @@
-import type { ModelUsage } from "@dreamatic/design-agent";
+import type { ModelUsage } from "@dreamatic/project-data";
 import { randomBytes, randomUUID } from "node:crypto";
 import { openAsBlob } from "node:fs";
 import { lstat, mkdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";

@@ -13,7 +13,8 @@
     "lucide-react": "0.544.0",
     "react": "19.1.1",
     "react-dom": "19.1.1",
-    "vite": "7.1.7"
+    "vite": "7.1.7",
+    "@dreamatic/project-data": "0.1.0"
   },
   "devDependencies": {
     "@types/react": "19.1.16",
@@ -21,4 +22,3 @@
     "typescript": "5.9.3"
   }
 }
-

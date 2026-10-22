@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { browserExecutable } from '../../../packages/design-agent/dist/html-delivery.js';
+import { browserExecutable } from '../../../scripts/browser-executable.mjs';
 
 test('web Save configuration applies models to the current project, navigates to a new port, and reloads a changed workspace', { timeout: 60000 }, async t => {
   const executablePath = await browserExecutable(); if (!executablePath) { t.skip('Chromium unavailable'); return; }
@@ -47,8 +47,9 @@ test('web Save configuration applies models to the current project, navigates to
     const appliedHealth = await page.evaluate(() => fetch('/api/health').then(response => response.json()));
     assert.equal(appliedHealth.model, 'web-reasoning-model');assert.equal(appliedHealth.imageModel, 'web-image-model');assert.equal(appliedHealth.processId, health.processId);
     assert.equal((await page.evaluate(() => fetch('/api/sessions').then(response => response.json())))[0].id, initialSessions[0].id);
-    await page.evaluate(async session => { const response = await fetch(`/api/sessions/${session.id}/messages`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Reply briefly.',projectId:session.projectId})});await response.text(); }, initialSessions[0]);
-    assert.equal(modelCalls.at(-1), 'web-reasoning-model');
+    const unavailable = await page.evaluate(async session => { const response = await fetch(`/api/sessions/${session.id}/messages`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Reply briefly.',projectId:session.projectId})}); return { status: response.status, body: await response.json() }; }, initialSessions[0]);
+    assert.equal(unavailable.status, 503); assert.equal(unavailable.body.code, 'AGENT_RUNTIME_UNAVAILABLE');
+    assert.deepEqual(modelCalls, []);
     await openSettings();await page.getByRole('tab', { name: 'System parameters', exact: true }).click();await page.locator('.config-advanced summary').click();
     await page.getByRole('spinbutton', { name: 'Server port', exact: true }).fill(String(nextPort));
     await save();await page.waitForURL(`http://127.0.0.1:${nextPort}/`);await page.getByRole('button', { name: 'New project', exact: true }).waitFor();

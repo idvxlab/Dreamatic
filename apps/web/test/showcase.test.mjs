@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { build } from 'vite';
-import { browserExecutable } from '../../../packages/design-agent/dist/html-delivery.js';
+import { browserExecutable } from '../../../scripts/browser-executable.mjs';
 
 // Render the actual React Canvas in a browser; API responses represent committed deliveries.
 test('Preview opens the designed HTML with working interactions, retries failures and preserves Gallery routing', {timeout:60_000}, async (t) => {

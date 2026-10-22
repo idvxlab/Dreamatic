@@ -25,8 +25,6 @@ const runtime = join(resources, 'runtime');
 const application = join(unpacked, 'DreamaticArt.exe');
 await expectPortableExecutable(application);
 await expectPortableExecutable(join(runtime, 'bin/node.exe'));
-await expectPortableExecutable(join(runtime, 'bin/rg.exe'));
-await expectPortableExecutable(join(runtime, 'bin/fd.exe'));
 await expectPortableExecutable(installer);
 if ((await stat(installer)).size < 1024 * 1024) throw new Error('Windows installer is unexpectedly small.');
 
@@ -35,7 +33,7 @@ if (!browserDir) throw new Error('The packaged Windows HTML review browser is mi
 await expectPortableExecutable(join(runtime, 'browsers', browserDir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'));
 await expectPortableExecutable(join(runtime, 'node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild/win32-x64/esbuild.exe'));
 await access(join(runtime, 'node_modules/playwright-core/index.mjs'));
-await access(join(runtime, 'node_modules/@dreamatic/design-agent/dist/index.js'));
+await access(join(runtime, 'node_modules/@dreamatic/project-data/dist/index.js'));
 
 for (const forbidden of ['.env', '.downloads', '.tool-cache']) {
   try {
