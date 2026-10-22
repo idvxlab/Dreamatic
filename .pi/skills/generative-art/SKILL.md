@@ -1,11 +1,12 @@
 ---
 name: generative-art
-description: "Develop algorithmic artwork and procedural motifs through reproducible rules, bounded variation and native browser drawing. Supporting knowledge for generative visuals and interactive art, not an engineering simulation."
+description: "Develop algorithmic art and procedural motifs with explicit rules, seeded variation and native browser drawing. Use when procedural visual behavior adds meaning; HTML can carry the implemented algorithm, while generated images only illustrate its intended appearance. Not an engineering simulation."
 metadata:
   audience: designer
   domain_type: generative_art
   design_categories: []
   module_type: cross_domain
+  capabilities: [generative-art, procedural-graphics, seeded-randomness, canvas-drawing, svg-drawing]
   supported_outputs: [image, html]
   version: "1.0"
 ---

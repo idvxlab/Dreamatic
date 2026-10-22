@@ -1,11 +1,12 @@
 ---
 name: interaction-motion
-description: "Design purposeful browser microinteractions and page motion with interruption, continuity, reduced-motion alternatives and bounded rendering work. Use for interactive HTML, rather than film or storyboard planning."
+description: "Design browser microinteractions and page transitions with continuity, interruption handling and reduced-motion alternatives. Use when motion communicates an interface state or viewing action; supports HTML interactions rather than film narrative, storyboards or video production."
 metadata:
   audience: designer
   domain_type: interaction_motion
   design_categories: []
   module_type: cross_domain
+  capabilities: [microinteractions, browser-motion, transition-design, reduced-motion]
   supported_outputs: [html]
   version: "1.0"
 ---

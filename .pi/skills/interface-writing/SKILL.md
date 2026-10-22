@@ -1,11 +1,12 @@
 ---
 name: interface-writing
-description: "Write precise labels, actions, guidance and recovery messages for HTML interfaces and showcases. Use when terminology, state copy or localization affects comprehension."
+description: "Write UX writing and microcopy for labels, actions, guidance, errors and recovery in HTML interfaces and showcases. Use when terminology or state messages affect comprehension; supports actual interface tasks rather than brand positioning or long-form publication writing."
 metadata:
   audience: designer
   domain_type: interface_writing
   design_categories: []
   module_type: cross_domain
+  capabilities: [ux-writing, microcopy, error-messages, localization]
   supported_outputs: [html]
   version: "1.0"
 ---

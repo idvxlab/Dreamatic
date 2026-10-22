@@ -51,7 +51,8 @@ import { encodeImageOutput, imageBytesMatchPath, imageOutputFormat, type ImageOu
 import { imageSizeCeiling, assertImageSizeWithinCeiling } from "./image-size.js";
 import { assertHtmlSourcePreflight } from "./html-preflight.js";
 import { finalizeDelivery, pendingRequiredOutputs } from "./finalize-delivery.js";
-import { skillMetadata, skillMatchesCategory, type SkillMetadata } from "./skill-metadata.js";
+import { skillMetadata, skillMatchesCategory } from "./skill-metadata.js";
+import { SkillCatalog, SKILL_LOADING_INSTRUCTION } from "./skill-catalog.js";
 import { DESIGN_CATEGORIES, briefDesignScopes, designScopes, designScopeSkillProtocol, designClassificationMessage, isDesignCategory } from "./design-categories.js";
 import { SkillActivation, skillReloadChecklist } from "./skill-activation.js";
 import { validateDesignScopes } from "./design-scope-validation.js";
@@ -1460,24 +1461,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
   };
   const researchPages = new Map<string, { html: string; url: string }>();
   const todos: Array<{ id: string; text: string; status: string }> = [];
-  const skillCatalogs = new Map<string, Promise<ReturnType<DefaultResourceLoader["getSkills"]>["skills"]>>();
+  const skillCatalog = new SkillCatalog();
   const skillActivation = new SkillActivation();
-  let skillDescriptors: Promise<Array<{ name: string; description: string; path: string } & SkillMetadata>> | undefined;
-  let skillDescriptorCwd: string | undefined;
-  const discoverSkills = (cwd: string, refresh = false) => {
-    if (refresh) skillCatalogs.delete(cwd);
-    let catalog = skillCatalogs.get(cwd);
-    if (!catalog) {
-      catalog = (async () => {
-        const loaded = new DefaultResourceLoader({ cwd, agentDir: getAgentDir() });
-        await loaded.reload();
-        return loaded.getSkills().skills;
-      })();
-      skillCatalogs.set(cwd, catalog);
-      void catalog.catch(() => { if (skillCatalogs.get(cwd) === catalog) skillCatalogs.delete(cwd); });
-    }
-    return catalog;
-  };
+  const discoverSkills = async (cwd: string, refresh = false) => (await skillCatalog.load(cwd, refresh)).skills;
   const imageConcurrency = Math.max(1, Math.min(8, Math.floor(Number(process.env.DREAMATIC_IMAGE_CONCURRENCY ?? 2)) || 2));
   let activeSpecialistInvocation: { id: string; agent: string } | undefined;
   let revisionOpening = false;
@@ -1774,6 +1760,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           try { input.path = resolveInside(resolveInside(workspaceDir, join("runs", assignedRunId)), input.path); }
           catch (error) { return { block: true, reason: error instanceof Error ? error.message : String(error) }; }
         }
+        if (event.toolName === "read" && typeof input.path === "string") {
+          const absolute = resolve(context?.cwd ?? workspaceDir, input.path);
+          const physical = await realpath(absolute).catch(() => absolute);
+          const isEntry = basename(physical) === "SKILL.md" || basename(absolute) === "SKILL.md";
+          const catalog = !isEntry ? await skillCatalog.load(context?.cwd ?? workspaceDir) : undefined;
+          if (isEntry || (catalog?.entryPaths.has(physical))) {
+            return { block: true, reason: designerPersona ? "Load Skill entry files through use_skill so body availability and scope bindings stay consistent. Discover exact names and load arguments with list_skills. Referenced resources remain readable through read." : "Skill entry loading is not available to this role. Follow the assigned role contract." };
+          }
+        }
         if (["read", "write", "edit"].includes(event.toolName) && typeof input.path === "string") {
           const absolute = resolve(context?.cwd ?? workspaceDir, input.path);
           const local = relative(resolveInside(workspaceDir, "runs"), absolute).replaceAll("\\", "/");
@@ -1902,7 +1897,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     // comparisons can actually be inspected together. On later model turns,
     // compact historical visual payloads to the newest observation; any older
     // path can be reloaded because view_image is intentionally idempotent.
-    pi.on("session_compact", () => { skillActivation.forgetLoadedBodies(); });
+    pi.on("session_compact", async () => { skillActivation.forgetLoadedBodies(); await persistSkillReceipt(); });
     pi.on("context", async (event, context) => {
       const messages = structuredClone(event.messages);
       await compactPersistedHistory(messages, { cwd: context?.cwd ?? workspaceDir,
@@ -2439,8 +2434,9 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const childLoader = new DefaultResourceLoader({
           cwd: context.cwd,
           agentDir: getAgentDir(),
+          skillsOverride: () => ({ skills: [], diagnostics: [] }),
           systemPromptOverride: () => `${unifiedHandoff ? unifiedContextPrompt(dreamaticPersonaPromptBlock(body)) : dreamaticPersonaPromptBlock(legacyContextPrompt(body))}\n\n${runtimeLimits}\n\n${requestProvenance}\n\n${scopeHandoff}${recoveryHandoff}${unifiedHandoff}\n\n${runAssignment}${executionProfile}`,
-          appendSystemPromptOverride: (base) => base,
+          appendSystemPromptOverride: (base) => params.agent === "designer" ? [...base, SKILL_LOADING_INSTRUCTION] : base,
           extensionFactories: [createDreamaticExtension({
             ...options,
             personaPath,
@@ -2818,16 +2814,14 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
       },
     });
 
-    // Compatibility bridge for the existing DreamaticArt Skill contracts. Pi
-    // already discovers Skills natively; these tools remain until each Skill
-    // has been reviewed and migrated without losing its executable contract.
+    // Pi owns Skill discovery; Dreamatic owns knowledge loading and scoped selections.
     const availableProfessionals: Record<string, string[]> = {};
     let lastSkillReceipt: string | undefined;
     const persistSkillReceipt = async () => {
       if (!assignedRunId || !options.parentInvocation) return;
       const path = resolveInside(workspaceDir, join("runs", assignedRunId, ".performance", `skills-${options.parentInvocation.agent}.json`));
       await serializeJsonWrite(path, async () => {
-        const source = JSON.stringify({ runId: assignedRunId, agent: options.parentInvocation!.agent, invocationId: options.parentInvocation!.id, availableProfessionals, activeSkills: skillActivation.all() });
+        const source = JSON.stringify({ runId: assignedRunId, agent: options.parentInvocation!.agent, invocationId: options.parentInvocation!.id, availableProfessionals, activeSkills: skillActivation.all(), loadedSkills: skillActivation.loadedBindings() });
         if (source === lastSkillReceipt) return;
         await mkdir(dirname(path), { recursive: true });
         const temporary = `${path}.${randomUUID()}.tmp`;
@@ -2845,20 +2839,15 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
     pi.registerTool({
       name: "list_skills",
       label: "List design skills",
-      description: "Discover Pi Skills once for all assigned scopes by omitting scopeId/category. selectionByScope groups legal primary and supporting candidates; reuse each Skill's per-scope load arguments. Designer chooses and loads professional knowledge; discovery never activates it. Refresh only after catalog changes.",
-      parameters: Type.Object({ query: Type.Optional(Type.String({ description: "Search Skill names, descriptions and domain types" })), refresh: Type.Optional(Type.Boolean()), scopeId: Type.Optional(Type.String({ description: "Exact Orchestrator-assigned designScopes[].id, not a Skill name or category. Omit to discover all assigned scopes." })), category: Type.Optional(Type.String({ description: "Filter by category registry id, e.g. ux, industrial or media_communication; never a Skill name." })) }),
+      description: "Discover installed Pi Skills by task keywords, free-form capability tags or supported output. Names come from this catalog, never a hardcoded routing table. Scope category recommends professional primary knowledge; supporting knowledge can cross categories. Discovery never loads bodies. Refresh after catalog changes.",
+      parameters: Type.Object({ query: Type.Optional(Type.String({ description: "Search task keywords across names, descriptions, domains, capabilities and outputs; terms are matched independently" })), capabilities: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { description: "Require all supplied free-form metadata.capabilities tags; omit for broad discovery" })), output: Type.Optional(Type.String({ minLength: 1, description: "Filter by metadata.supported_outputs, e.g. html or image" })), refresh: Type.Optional(Type.Boolean()), scopeId: Type.Optional(Type.String({ description: "Exact Orchestrator-assigned designScopes[].id, not a Skill name or category. Omit to discover all assigned scopes." })), category: Type.Optional(Type.String({ description: "Filter by category registry id, e.g. ux, industrial or media_communication; never a Skill name." })) }),
       async execute(_id, params, _signal, _update, context) {
         if (params.category && !isDesignCategory(params.category)) throw new Error(`Unknown design category: ${params.category}`);
         const assignment = await scopeForSkill(params.scopeId);
         const scopes = assignment.scopes;
         let scope = assignment.scope;
-        if (params.refresh || skillDescriptorCwd !== context.cwd) skillDescriptors = undefined;
-        skillDescriptorCwd = context.cwd;
-        skillDescriptors ??= discoverSkills(context.cwd, params.refresh).then((catalog) => Promise.all(catalog.map(async (skill) => {
-          const frontmatter = await readFile(skill.filePath, "utf8").then((content) => parseFrontmatter<{ metadata?: unknown }>(content).frontmatter).catch(() => undefined);
-          return { name: skill.name, description: skill.description, path: skill.filePath, ...skillMetadata(frontmatter?.metadata) };
-        }))).catch((error) => { skillDescriptors = undefined; throw error; });
-        const skills = await skillDescriptors;
+        const catalog = await skillCatalog.load(context.cwd, params.refresh);
+        const skills = catalog.descriptors;
         const audience = options.parentInvocation?.agent;
         let scopeResolution: Record<string, unknown> | undefined;
         if (params.scopeId && audience === "designer" && scopes.length && !scopes.some((item) => item.id === scope)) {
@@ -2876,19 +2865,22 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           for (const assignment of scopes) availableProfessionals[assignment.id] = skills.filter((skill) => (skill.audience === "designer" || skill.audience === "unspecified") && skill.moduleType === "discipline" && skill.designCategories.includes(assignment.category)).map((skill) => skill.name);
           await persistSkillReceipt();
         }
+        const terms = params.query?.toLowerCase().split(/\s+/u).filter(Boolean) ?? [];
         const selected = skills.filter((skill) => (!audience || skill.audience === "unspecified" || skill.audience === audience)
-          && (!category || skillMatchesCategory(skill, category))
-          && (!params.query || `${skill.name} ${skill.description} ${skill.domainType}`.toLowerCase().includes(params.query.toLowerCase())));
+          && (!params.category || skillMatchesCategory(skill, params.category as typeof DESIGN_CATEGORIES[number]["id"]))
+          && (!params.output || skill.supportedOutputs.some(output => output.toLowerCase() === params.output!.trim().toLowerCase()))
+          && (!params.capabilities || params.capabilities.every(capability => skill.capabilities.some(tag => tag.toLowerCase() === capability.trim().toLowerCase())))
+          && terms.every(term => `${skill.name} ${skill.description} ${skill.domainType} ${skill.capabilities.join(" ")} ${skill.supportedOutputs.join(" ")}`.toLowerCase().includes(term)));
         const bindings = skillActivation.all();
         // Reference the shared catalog by name; do not repeat metadata per scope.
-        const selectionByScope = scopes.filter((item) => !category || item.category === category).map((item) => ({
+        const selectionByScope = scopes.filter((item) => params.scopeId && (!scopeResolution || scopeResolution.status === "resolved_unique_hint") ? item.id === scope : !params.category || item.category === params.category).map((item) => ({
           scopeId: item.id,
           primaryCandidates: selected.filter((skill) => skill.moduleType === "discipline" && skill.designCategories.includes(item.category)).map((skill) => skill.name),
-          supportingCandidates: selected.filter((skill) => skillMatchesCategory(skill, item.category) && !(skill.moduleType === "discipline" && skill.designCategories.includes(item.category))).map((skill) => skill.name),
+          supportingCandidates: selected.filter((skill) => !(skill.moduleType === "discipline" && skill.designCategories.includes(item.category))).map((skill) => skill.name),
         }));
-        return textResult({ ok: true, scopeId: params.scopeId && (!scopeResolution || scopeResolution.status === "resolved_unique_hint") ? scope : null, category: category ?? null, ...(scopeResolution ? { scopeResolution } : {}), scopeProtocol: designScopeSkillProtocol(scopes), count: selected.length, skills: selected.map((skill) => ({ ...skill, primaryEligible: skill.moduleType === "discipline" && (!category || skill.designCategories.includes(category)), applicableScopes: scopes.filter((item) => skillMatchesCategory(skill, item.category)).map((item) => ({ scopeId: item.id, category: item.category, task: item.task, primaryEligible: skill.moduleType === "discipline" && skill.designCategories.includes(item.category), load: { tool: "use_skill", arguments: { name: skill.name, scopeId: item.id, role: skill.moduleType === "discipline" && skill.designCategories.includes(item.category) ? "primary" : "supporting" } } })) })), designScopes: scopes, categories: DESIGN_CATEGORIES, capabilities: DESIGN_CAPABILITIES,
-          activeSkills: bindings.filter((binding) => binding.scope === scope).map(({ name, role }) => ({ name, role })), skillBindings: bindings,
-          selectionByScope, source: "pi-resource-loader", instruction: "Use selectionByScope.primaryCandidates for each scope's professional primary and supportingCandidates for auxiliary methods. Skill metadata is shared in skills; copy the intended scope's applicableScopes[].load.arguments and add a task-specific rationale. Supporting candidates cannot become primary merely because they match an output format. Orchestrator owns categories; report responsibility conflicts instead of inventing scopes. Candidate discovery is not loading. New invocations must load required bodies. Cross-category supporting knowledge may be found through an unfiltered query." });
+        return textResult({ ok: true, scopeId: params.scopeId && (!scopeResolution || scopeResolution.status === "resolved_unique_hint") ? scope : null, category: category ?? null, ...(scopeResolution ? { scopeResolution } : {}), scopeProtocol: designScopeSkillProtocol(scopes), count: selected.length, skills: selected.map(({ sha256: _sha256, ...skill }) => ({ ...skill, primaryEligible: skill.moduleType === "discipline" && (!category || skill.designCategories.includes(category)), applicableScopes: scopes.map((item) => ({ scopeId: item.id, category: item.category, task: item.task, primaryEligible: skill.moduleType === "discipline" && skill.designCategories.includes(item.category), load: { tool: "use_skill", arguments: { name: skill.name, scopeId: item.id, role: skill.moduleType === "discipline" && skill.designCategories.includes(item.category) ? "primary" : "supporting" } } })) })), designScopes: scopes, categories: DESIGN_CATEGORIES, capabilities: DESIGN_CAPABILITIES, diagnostics: catalog.diagnostics, availableSkillCapabilities: [...new Set(skills.filter(skill => !audience || skill.audience === "unspecified" || skill.audience === audience).flatMap(skill => skill.capabilities))],
+          activeSkills: bindings.filter((binding) => binding.scope === scope).map(({ name, role }) => ({ name, role })), skillBindings: bindings, loadedSkills: skillActivation.loadedBindings(),
+          selectionByScope, source: "pi-resource-loader", instruction: "Use selectionByScope.primaryCandidates for each scope's professional primary and supportingCandidates for auxiliary methods. Skill metadata is shared in skills; copy the intended scope's applicableScopes[].load.arguments and add a task-specific rationale. Supporting candidates cannot become primary merely because they match an output format. Orchestrator owns categories; report responsibility conflicts instead of inventing scopes. Candidate discovery is not loading. New invocations must load required bodies. Supporting candidates may cross categories; choose by actual contribution and give rationale. Query capability tags or output types without assuming installed names. Category is a professional primary constraint, not a knowledge-loading permission." });
       },
     });
 
@@ -2918,11 +2910,11 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         if (scopes.length && options.parentInvocation?.agent === "designer" && !scopes.some((item) => item.id === scope)) return textResult({ ok: false, error: "unknown_design_scope", requestedScopeId: scope, designScopes: scopes, scopeProtocol: designScopeSkillProtocol(scopes), instruction: "No Skill was loaded or switched. scopeId must be an exact Orchestrator-assigned task id; name is the Skill name. Call list_skills without scopeId to obtain valid per-scope load arguments, then choose the intended task." });
         let catalog = await discoverSkills(context.cwd);
         let skill = catalog.find((candidate) => candidate.name === params.name);
-        if (!skill) { skillDescriptors = undefined; catalog = await discoverSkills(context.cwd, true); skill = catalog.find((candidate) => candidate.name === params.name); }
+        if (!skill) { catalog = await discoverSkills(context.cwd, true); skill = catalog.find((candidate) => candidate.name === params.name); }
         if (!skill) return textResult({ ok: false, name: params.name, availableSkills: catalog.map((candidate) => candidate.name), instruction: "This Skill is unavailable. Select another discovered module or continue from professional judgment and record a knowledge gap; do not retry the unchanged name or block an unclassified design/presentation workflow." });
         let content: string;
         try { content = await readFile(skill.filePath, "utf8"); }
-        catch (error) { skillCatalogs.delete(context.cwd); skillDescriptors = undefined; return textResult({ ok: false, name: params.name, error: error instanceof Error ? error.message : String(error), instruction: "Skill unavailable; retain the current selection and select another applicable module." }); }
+        catch (error) { skillCatalog.invalidate(context.cwd); return textResult({ ok: false, name: params.name, error: error instanceof Error ? error.message : String(error), instruction: "Skill unavailable; retain the current selection and select another applicable module." }); }
         const metadata = skillMetadata(parseFrontmatter<{ metadata?: unknown }>(content).frontmatter.metadata);
         if (options.parentInvocation && metadata.audience !== "unspecified" && metadata.audience !== options.parentInvocation.agent) return textResult({ ok: false, name: params.name, instruction: `This Skill is for ${metadata.audience}, not ${options.parentInvocation.agent}. Select role-appropriate guidance; do not change the assigned design or retry this name.` });
         const requested = params.bindings ?? [{ scopeId: scope, role: params.role, rationale: params.rationale }];
@@ -2938,6 +2930,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
         const category = scopes.find((item) => item.id === scope)?.category;
         if (params.role === "primary" && category && (metadata.moduleType !== "discipline" || !metadata.designCategories.includes(category))) throw new Error(`Primary Skill ${skill.name} does not cover ${category}; select matching professional knowledge. Auxiliary Skills belong in supporting.`);
         const hash = createHash("sha256").update(content).digest("hex");
+        if ((await skillCatalog.load(context.cwd)).descriptors.find(candidate => candidate.path === skill.filePath)?.sha256 !== hash) skillCatalog.invalidate(context.cwd);
         const selection = await serializeJsonWrite(`${workspaceDir}/skill-activation/${options.parentInvocation?.id ?? "root"}`, async () => {
           const rollback = skillActivation.checkpoint();
           const selections = requested.map((binding, index) => skillActivation.activate(skill.name, skill.filePath, hash, metadata, binding.scopeId, binding.role, params.deactivate, index === 0 && params.reload, binding.rationale));
@@ -3664,7 +3657,7 @@ export function createDreamaticExtension(options: DreamaticExtensionOptions): Ex
           instruction: "This checklist follows the current working selection and does not activate knowledge. Load retained primary and supporting Skills before commit; change selections through use_skill and update actual skill_refs." } : undefined;
         const workingContext = draft ? (() => { const projection = params.full || draftParams.canonical ? undefined : contextOverview(draft.data, params.audience, 6000); return { ...draft, data: projection?.content ?? draft.data, ...(projection ? { omittedPointers: projection.omittedPointers,
           expansionReads: Object.keys(requiredRecord(draft.data, "working Context")).filter(section => Object.hasOwn(roleContextSchema(role!, contractVersion).properties, section)).map(section => ({ runId: params.runId, audience: params.audience, section })) } : {}) }; })() : undefined;
-        return textResult({ ok: true, ...(unified ? { contextFormat: "unified-v1", authoringContract: unifiedContextInstruction(params.audience, designVersion), ...(["researcher", "designer", "reviewer"].includes(params.audience) ? { authoringExample: contextChangesExample(params.audience) } : {}), ...(workingContext ? { workingContext } : {}), ...(params.audience === "designer" ? { associationContract: { assignedScopes: designScopeList, loadedSkills: skillActivation.all(), rule: designVersion === 2 ? "Deliverables own identity, scope, output and nested execution; tasks are derived read-only views. Declare production, user_requested and presentation access separately. Use execution.uses for deliverable references. " : "Tasks and deliverables share one stable id. New deliverables require kind,purpose,acceptance_test,required,file. Choose each deliverable's assigned scope_id and actually used skill_refs. Runtime derives category from that scope and task scope/category from the matching deliverable id; supplied conflicting values are rejected. contributing_scopes contains only additional scopes, excluding the primary; [] clears additional contributions. A unified design requires system, strategy, tasks, deliverables and presentation in the same saved document; runtime provides the section skeleton; supply actual content through named changes." } } : {}) } : { contextFormat: "legacy" }), runId: params.runId, audience: params.audience, researchAcquisition: acquisition, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: { ...await designerDraftReadiness(runDir), source: unified ? "canonical" : "legacy", purpose: "Publication/execution checks on committed specifications and sources; working readiness is separate." }, outputContract: unified ? unifiedDesignSpecificationProtocol(imageSizeCeiling(), designVersion) : designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), userMaterials: await userMaterialInventory(runDir), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, ...(["designer", "reviewer"].includes(params.audience) || params.full ? { referenceInventory, referenceReview, referenceReadArguments: { runId: params.runId, audience: params.audience, paths: ["research/assets/manifest.json"], full: true }, referenceInstruction: "Inventory descriptions are previews. Read the manifest for full provenance and relevance. Designer must inspect adopted or visually judged references with view_image; metadata is not visual evidence." } : {}),
+        return textResult({ ok: true, ...(unified ? { contextFormat: "unified-v1", authoringContract: unifiedContextInstruction(params.audience, designVersion), ...(["researcher", "designer", "reviewer"].includes(params.audience) ? { authoringExample: contextChangesExample(params.audience) } : {}), ...(workingContext ? { workingContext } : {}), ...(params.audience === "designer" ? { associationContract: { assignedScopes: designScopeList, selectedSkills: skillActivation.all(), loadedSkills: skillActivation.loadedBindings(), rule: designVersion === 2 ? "Deliverables own identity, scope, output and nested execution; tasks are derived read-only views. Declare production, user_requested and presentation access separately. Use execution.uses for deliverable references. " : "Tasks and deliverables share one stable id. New deliverables require kind,purpose,acceptance_test,required,file. Choose each deliverable's assigned scope_id and actually used skill_refs. Runtime derives category from that scope and task scope/category from the matching deliverable id; supplied conflicting values are rejected. contributing_scopes contains only additional scopes, excluding the primary; [] clears additional contributions. A unified design requires system, strategy, tasks, deliverables and presentation in the same saved document; runtime provides the section skeleton; supply actual content through named changes." } } : {}) } : { contextFormat: "legacy" }), runId: params.runId, audience: params.audience, researchAcquisition: acquisition, designScopes: designScopeList, scopeProtocol: designScopeSkillProtocol(designScopeList), ...(params.audience === "designer" ? { draftReadiness: { ...await designerDraftReadiness(runDir), source: unified ? "canonical" : "legacy", purpose: "Publication/execution checks on committed specifications and sources; working readiness is separate." }, outputContract: unified ? unifiedDesignSpecificationProtocol(imageSizeCeiling(), designVersion) : designSpecificationProtocol(imageSizeCeiling()) } : {}), ...(skillLoading ? { skillLoading } : {}), files, missingFiles, designSources: sourcePaths.map((path) => ({ path })), userMaterials: await userMaterialInventory(runDir), capabilities: DESIGN_CAPABILITIES, recentEvents: cycleEvents, ...(["designer", "reviewer"].includes(params.audience) || params.full ? { referenceInventory, referenceReview, referenceReadArguments: { runId: params.runId, audience: params.audience, paths: ["research/assets/manifest.json"], full: true }, referenceInstruction: "Inventory descriptions are previews. Read the manifest for full provenance and relevance. Designer must inspect adopted or visually judged references with view_image; metadata is not visual evidence." } : {}),
           instruction: "files contains existing authoritative data; missingFiles is an inventory, not a tool failure. Do not read a missing file. On recovery, preserve valid existing outputs and create the missing outputs. For repairs to your working draft, use section and optional ids for complete affected objects. paths/full reads authoritative files; an overview may omit working fields. Preserve all deliverable and reference identities; an overview is not the complete specification." });
       },
     });

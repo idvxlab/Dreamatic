@@ -1,12 +1,13 @@
 ---
 name: visual-composition
-description: "Strengthen visual hierarchy, grid, spacing, typography, contrast, balance, and cross-format composition for graphic and presentation-oriented design."
+description: "Refine hierarchy, grids, spacing, typography, contrast and balance across graphic and presentation formats. Use when attention and reading relationships need improvement; supports an established professional direction rather than deciding brand strategy, product value or interface behavior. Applies to image and HTML composition."
 license: MIT
 metadata:
   audience: designer
   domain_type: visual_composition
   design_categories: []
   module_type: cross_domain
+  capabilities: [visual-hierarchy, layout-composition, grid-systems, spacing, contrast]
   supported_outputs: [image, html]
 ---
 

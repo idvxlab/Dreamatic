@@ -1,11 +1,12 @@
 ---
 name: html-interface
-description: "Author complete UI/UX pages or image-based project showcases in responsive HTML/CSS, with local JavaScript as needed. Supporting knowledge for page delivery."
+description: "Author complete HTML/CSS/JS product prototypes or design showcases, including responsive structure, local resources and observable interactions. Use when a design must become inspectable browser sources; this is supporting HTML authoring knowledge, not the primary design discipline or production execution permission."
 metadata:
   audience: designer
   domain_type: html_interface_expression
   design_categories: []
   module_type: execution
+  capabilities: [html-authoring, responsive-layout, interaction-implementation, asset-mapping]
   supported_outputs: [html]
 ---
 
@@ -20,6 +21,15 @@ purpose or confirmed intent, not merely an HTML deliverable.
 Designer authors sources; Builder materializes approved files without redesign.
 Every project has one required HTML entry. An existing product page can be that
 entry; this Skill does not require extra pages, scopes or a fixed section count.
+
+## Selection boundary
+
+Load when approved or still-developing design decisions must become inspectable
+HTML sources. The professional primary owns what is designed; this supporting
+module explains how to express it in the browser. Here execution knowledge means
+source/specification methods, not permission for Designer to execute production.
+Use returned catalog names and the owning scope; do not create a UX scope merely
+because another discipline needs a showcase.
 
 ## Lightweight showcase default
 
@@ -120,7 +130,7 @@ Use the exact assigned scope id and actually loaded Skill names.
 ```json
 {
   "id": "project-page", "scope_id": "actual-owning-scope",
-  "skill_refs": ["loaded-professional-skill", "html-interface"],
+  "skill_refs": ["loaded-professional-skill", "loaded-html-authoring-skill"],
   "kind": "html_page", "file": "artifacts/project/index.html",
   "purpose": "Present the project", "acceptance_test": "Required works are accessible",
   "required": true, "user_requested": false,

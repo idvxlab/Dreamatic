@@ -1,17 +1,26 @@
 ---
 name: digital-product-design
-description: "Define digital product concepts, feature architecture, value propositions and coherent experiences for apps, SaaS and connected services. Use when product-level decisions are central."
+description: "Define digital product value, capabilities, feature architecture and core experience loops for apps, SaaS and connected services. Use when deciding what a product should do and why; add task-interaction or interface-composition knowledge for detailed UX and UI decisions. Express concepts as HTML prototypes."
 metadata:
   audience: designer
   domain_type: digital_product_design
   design_categories: [ux]
   module_type: discipline
+  capabilities: [product-strategy, value-proposition, feature-architecture, experience-loops]
   supported_outputs: [html]
 ---
 
 # Digital Product Design
 
 Resolve product-level value, capability and experience for digital or connected services.
+
+## Selection boundary
+
+Choose as primary when value proposition, core capabilities, feature scope or the
+product's experience loop is unresolved. Use task-interaction knowledge when the
+main question is how a person completes a defined task, and interface-composition
+knowledge when the main question is how defined behavior is presented. Those can
+support the same scope without inventing extra scopes or competing primaries.
 
 ## Frame the outcome
 
@@ -46,6 +55,6 @@ Choose pages, states and scenarios from actual journeys, roles and consequences,
 including empty/loading/error cases and relevant device contexts. A polished landing
 screen cannot explain a multi-step product. Deliver UI tasks as complete HTML page
 designs with realistic content, visual composition and necessary local interactions,
-using CSS/JS as needed. Use html-interface for the execution
-contract. Builder materializes approved sources. A local prototype does not establish
+using CSS/JS as needed. Discover suitable HTML authoring knowledge
+from the installed Skill catalog. Builder materializes approved sources. A local prototype does not establish
 backend integration or a deployed service.

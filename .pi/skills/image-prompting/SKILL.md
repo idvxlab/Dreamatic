@@ -1,12 +1,13 @@
 ---
 name: image-prompting
-description: "Specify executable image-generation or image-editing prompts, references, consistency anchors, acceptance criteria, aspect ratios, and efficient output sizes."
+description: "Translate resolved design decisions into image generation or editing specifications, including references, visible features, exact copy and consistency. Use to express an existing design as executable image prompts; does not replace professional concept decisions or grant image-production tools."
 license: MIT
 metadata:
   audience: designer
   domain_type: image_execution_specification
   design_categories: []
   module_type: execution
+  capabilities: [image-prompting, visual-specification, image-editing, visual-consistency]
   supported_outputs: [image]
 ---
 

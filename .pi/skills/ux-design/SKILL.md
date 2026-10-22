@@ -1,17 +1,27 @@
 ---
 name: ux-design
-description: "Design user experiences through task analysis, information architecture, journeys, interaction behavior and usability hypotheses. Use for workflows across digital or physical touchpoints."
+description: "Design task flows, information architecture, interaction models and usability hypotheses. Use when task completion and behavior are central; product value and feature scope precede this work, while visual component composition is a separate emphasis. Express inspectable digital flows as HTML prototypes."
 metadata:
   audience: designer
   domain_type: ux_design
   design_categories: [ux]
   module_type: discipline
+  capabilities: [ux-design, task-flows, information-architecture, interaction-design, usability]
   supported_outputs: [html]
 ---
 
 # User Experience Design
 
 Resolve tasks, information architecture, behavior and usability hypotheses.
+
+## Selection boundary
+
+Choose as primary when task completion, information architecture, navigation or
+state transitions are the main acceptance criteria. Product value and capability
+scope are upstream questions; layout, visual hierarchy and component styling are
+interface-composition questions. Use those methods as supporting knowledge where
+needed. Service or game touchpoints can inform this scope without determining its
+primary professional responsibility.
 
 ## Understand the task
 
@@ -38,8 +48,8 @@ Link journeys, interaction sequences and edge states to specific user decisions.
 UI/UX's primary deliverable is complete HTML page design under `plan/html/<scope-id>/`,
 with CSS/JS as needed. Realize visual composition, realistic copy and relevant
 states/flows; screen images or journey descriptions alone are insufficient.
-Use UI/Web knowledge for composition and
-html-interface for execution. Builder materializes approved behavior.
+Discover supporting knowledge for interface composition and HTML authoring
+by description, capabilities and supported output. Builder materializes approved behavior.
 
 Retain exact behavior/content rules and proposed evaluation in the specification:
 realistic tasks, participant needs, observable success, friction and assumptions.

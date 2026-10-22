@@ -1,17 +1,26 @@
 ---
 name: ui-web-design
-description: "Specify visual interfaces, responsive layouts and component states for websites, dashboards and mobile screens. Use when interface composition and behavior must be explicit."
+description: "Design UI composition, responsive layouts, components and visual states for websites, dashboards and mobile-screen prototypes. Use when interface presentation is central; product value and task-flow choices require product and UX methods. Express inspectable screens in HTML without implying native-app implementation."
 metadata:
   audience: designer
   domain_type: ui_web_design
   design_categories: [ux]
   module_type: discipline
+  capabilities: [ui-design, responsive-layout, component-design, interface-states]
   supported_outputs: [html]
 ---
 
 # UI and Web Design
 
 Specify interface composition, responsive relationships and consequential states.
+
+## Selection boundary
+
+Choose as primary when the requested outcome is interface composition, responsive
+relationships and component/state presentation. If product value or task behavior
+is unresolved, use the appropriate product or UX method as primary and retain UI
+composition as supporting knowledge. Mobile screens are browser prototypes here;
+this module does not provide native-app production or backend integration.
 
 ## Establish structure
 
@@ -43,8 +52,8 @@ automatically complete; avoid both missing flows and duplicate views.
 Deliver complete HTML page designs under `plan/html/<scope-id>/`, with CSS/JS as
 needed: realize layout, hierarchy, typography, exact copy, values and behavior.
 Builder materializes approved sources without redesign. Cover consequential scripted
-flows and responsive behavior with interaction checks; use html-interface for the
-execution contract. Image assets support rather than replace inspectable behavior.
+flows and responsive behavior with interaction checks; discover supporting HTML authoring knowledge
+from the installed Skill catalog. Image assets support rather than replace inspectable behavior.
 A local prototype does not prove backend integration or deployed services.
 
 ## Knowledge source

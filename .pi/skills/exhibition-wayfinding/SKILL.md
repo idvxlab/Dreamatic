@@ -1,17 +1,25 @@
 ---
 name: exhibition-wayfinding
-description: "Design exhibitions, visitor interpretation and wayfinding through narrative, spatial sequence, signage hierarchy and environmental legibility."
+description: "Design visitor interpretation, spatial sequences and signage systems for exhibitions and public environments. Use when visitor orientation and information in space are central; can own spatial or communication decisions, while building-wide architecture may need separate knowledge. Outputs are concept views."
 metadata:
   audience: designer
   domain_type: exhibition_wayfinding
   design_categories: [space, media_communication]
   module_type: discipline
+  capabilities: [exhibition-design, wayfinding, signage, visitor-journeys]
   supported_outputs: [image]
 ---
 
 # Exhibition and Wayfinding Design
 
 Connect curatorial narrative, visitor movement and environmental information.
+
+## Selection boundary
+
+Own spatial-category visitor sequences and orientation, communication-category
+signage and interpretation, or their assigned integration. Building-wide program
+and architecture are broader spatial decisions; an unrelated graphic campaign is
+a different communication task. Keep the scope tied to the actual visitor problem.
 
 ## Model the visit
 

@@ -146,6 +146,10 @@ assertions can declare any/all/unique matching where supported.
 
 ## Scoped Skill loading
 
+Discover installed Skills by task description, capability tags or output types
+with `list_skills`; choose names from its results. See [Skill loading](SKILL-LOADING.md)
+for metadata, refresh and knowledge availability.
+
 Designer chooses professional/supporting knowledge through `use_skill` with a
 specific rationale. A primary replaces only the primary in its scope. One call may
 load a Skill once and bind it to multiple scopes:

@@ -1,17 +1,26 @@
 ---
 name: information-design
-description: "Design data visualization, infographics and explanatory diagrams through truthful encoding, hierarchy and reader questions. Use when factual relationships must be communicated precisely."
+description: "Design data visualization, infographics and explanatory diagrams through truthful encoding and reader questions. Use when information relationships or data-centered interfaces are the primary problem; supports media communication and focused UX, not unrelated application workflows. Express precise geometry in HTML/SVG or use concept imagery."
 metadata:
   audience: designer
   domain_type: information_design
   design_categories: [media_communication, ux]
   module_type: discipline
+  capabilities: [data-visualization, information-design, infographics, data-encoding, explanatory-diagrams]
   supported_outputs: [image, html]
 ---
 
 # Information and Data Visualization Design
 
 Choose representations that answer the reader's question without distorting evidence.
+
+## Selection boundary
+
+Own communication-category explanatory graphics, or a UX scope centered on data
+inspection and interpretation. A dashboard's truthful encodings can be the primary
+design problem; unrelated application workflows still require task-interaction
+knowledge. Multi-category eligibility expresses these specific responsibilities,
+not an ability to own every interface task.
 
 ## Establish evidence and encoding
 

@@ -385,6 +385,25 @@ const change = (h,changes) => h.invoke('update_design_context',{changes});
 const commit = h => h.invoke('commit_design_context',{});
 const draftSource = runDir => readFile(join(runDir,'.performance/context-draft-designer.json'),'utf8');
 
+test('named design commit requires reloading selected knowledge after compaction', async () => {
+ const {workspace,runDir}=await setup();
+ try {
+  const h=harness(workspace,'designer');
+  const args={name:'ui-web-design',scopeId:'ui',role:'primary',rationale:'Academic interface'};
+  await h.invoke('use_skill',args);
+  await change(h,domainData(design));
+  const before=await draftSource(runDir);
+  await h.handlers.get('session_compact')({});
+  const rejected=await commit(h);
+  assert.equal(rejected.committed,false);
+  assert.ok(rejected.issues.some(issue=>issue.code==='skill_body_not_loaded'));
+  assert.equal(await draftSource(runDir),before);
+  const reloaded=await h.invoke('use_skill',args);
+  assert.equal(reloaded.details.reused,false);
+  assert.equal((await commit(h)).committed,true);
+ } finally {await rm(workspace,{recursive:true,force:true});}
+});
+
 test('named authoring starts incomplete, preserves nested evidence and never asks the model for hashes',async()=>{
  const {workspace,runDir}=await setup();
  try{

@@ -46,7 +46,9 @@ feedback; titles and Agent proposals are not user confirmation. Correct topic dr
 and preserve successful checkpoints during recovery.
 
 Use returned designScopes and scopeProtocol. Discover professional candidates with
-list_skills and load them through use_skill before developing concepts. scopeId is
+list_skills and load them through use_skill before developing concepts.
+Use task keywords, capability tags and supported outputs to discover installed
+knowledge. Load entry files only through use_skill; read is for referenced resources. scopeId is
 an assigned scope id, category is its domain, and name is a discovered Skill name.
 Discovery does not load knowledge. Start with list_skills({}) once for all assigned
 scopes. Use selectionByScope to distinguish primaryCandidates from
@@ -171,7 +173,9 @@ layouts with prominent images and concise explanations. Add showcase interaction
 only for useful inspection or comparison. Motion needs a design purpose or confirmed
 intent in either case; it is not a mark of completeness. Sources may precede image
 generation; Builder generates assets and assembles pages through declared dependencies.
-Load html-interface as supporting knowledge in the owning scope. Bind relevant
+Discover and load supporting knowledge for HTML authoring in the owning scope.
+Choose from descriptions, capabilities and supported outputs; do not assume a
+particular Skill name. For example, list_skills({output:"html"}) finds candidates. Bind relevant
 contributing scopes for shared outputs. Arrange planned assets without claiming
 observations of images that have not been generated.
 

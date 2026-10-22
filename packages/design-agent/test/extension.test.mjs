@@ -170,7 +170,7 @@ test("specialists receive authoritative Run identity and reject cross-project co
     }
     await assert.rejects(tools.get("view_image").execute("image", { path: join(otherDir, "reference.png") }), /assigned Run current/);
     assert.equal(await handlers.get("tool_call")({ toolName: "read", input: { path: join(runDir, "brief.json") } }), undefined);
-    assert.equal(await handlers.get("tool_call")({ toolName: "read", input: { path: join(workspaceDir, ".pi/skills/example/SKILL.md") } }), undefined);
+    assert.match((await handlers.get("tool_call")({ toolName: "read", input: { path: join(workspaceDir, ".pi/skills/example/SKILL.md") } })).reason, /use_skill/);
     await tools.get("write_json").execute("correct-write", { runId: "current", path: "plan/design_system.json", data: { runId: "current" } });
     await assert.rejects(tools.get("design_bus_post").execute("wrong-post", { runId: "previous", from_agent: "designer", to: "orchestrator", type: "design_spec_ready", summary: "Wrong assignment" }), /Assigned runId: current/);
     assert.equal(JSON.parse(await readFile(join(otherDir, "brief.json"), "utf8")).brief, "Other task");
@@ -199,41 +199,10 @@ test("Designer recovery exposes existing checkpoints and missing outputs without
 test("discoverable Skills have matching names and role-specific audiences", async () => {
   const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
   const skillsRoot = join(repoRoot, ".pi", "skills");
-  const expected = [
-    "accessible-interface",
-    "architecture-space",
-    "brand-identity",
-    "concept-showcase-storytelling",
-    "design-system",
-    "digital-product-design",
-    "editorial-design",
-    "exhibition-wayfinding",
-    "fashion-textile-design",
-    "game-experience-design",
-    "generative-art",
-    "html-interface",
-    "icon-system",
-    "image-prompting",
-    "industrial-design",
-    "information-design",
-    "interaction-motion",
-    "interface-writing",
-    "illustration-art-direction",
-    "media-motion-design",
-    "packaging-design",
-    "poster-advertising",
-    "product-design",
-    "service-design",
-    "typographic-detail",
-    "ui-web-design",
-    "ux-design",
-    "visual-composition",
-  ];
   const discovered = [];
 
-  for (const folder of await readdir(skillsRoot)) {
-    const source = await readFile(join(skillsRoot, folder, "SKILL.md"), "utf8").catch(() => undefined);
-    if (!source) continue;
+  for (const folder of (await readdir(skillsRoot, { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name)) {
+    const source = await readFile(join(skillsRoot, folder, "SKILL.md"), "utf8");
     const { frontmatter } = parseFrontmatter(source);
     assert.equal(frontmatter.name, folder);
     assert.equal(frontmatter.metadata?.audience, "designer");
@@ -241,7 +210,8 @@ test("discoverable Skills have matching names and role-specific audiences", asyn
     discovered.push(folder);
   }
 
-  assert.deepEqual(discovered.sort(), expected.sort());
+  assert.ok(discovered.length > 0);
+  assert.equal(new Set(discovered).size, discovered.length);
 });
 
 async function registeredTools(workspaceDir, options = {}) {

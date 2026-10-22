@@ -1,11 +1,12 @@
 ---
 name: concept-showcase-storytelling
-description: "Turn approved design work into a distinctive concept showcase through a clear thesis, evidence-led sequencing and purposeful detail views. Use when a project needs an authored presentation beyond an image grid."
+description: "Organize a design proposal into an HTML showcase with a clear thesis, evidence-led sequence and inspectable detail views. Use while authoring the proposal before review; supports presentation storytelling, not approval or product-interface design."
 metadata:
   audience: designer
   domain_type: concept_showcase_storytelling
   design_categories: []
   module_type: cross_domain
+  capabilities: [design-storytelling, presentation-narrative, concept-showcase, evidence-sequencing]
   supported_outputs: [html]
   version: "1.0"
 ---
@@ -16,6 +17,13 @@ For image-based design proposals, organize the primary images and their supporti
 explanations in the existing HTML entry. Shape the presentation around what the
 viewer needs to understand. This module does not require another page or scope;
 for UI/UX, the designed HTML interface itself remains the primary outcome.
+
+## Selection boundary
+
+Load while organizing existing proposal material, including before its first
+review. The proposal need not already be approved. Choose this for the argument
+and viewing sequence, not source implementation or approval. The owning discipline
+keeps its primary role; an existing product page can serve as the project entry.
 
 ## Build an argument from the work
 
@@ -68,8 +76,8 @@ Use the Researcher's actual source metadata and list only sources adopted in the
 proposal, including visual precedents. Default to IEEE numeric citation style or
 the user's requested academic style. For numeric style, show [n] before every
 entry, number by first citation and reuse that number in linked claims/captions.
-Do not mix numeric citations with an unnumbered author-date list. Follow
-html-interface for formatting and missing metadata.
+Do not mix numeric citations with an unnumbered author-date list. Use the selected HTML authoring guidance for formatting and preserve missing
+metadata honestly.
 Distinguish original design hypotheses from sourced facts; do not invent references
 or turn unused search results into citations. A source-free proposal still states
 its lack of external references in this section.

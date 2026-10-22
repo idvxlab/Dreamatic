@@ -11,7 +11,7 @@ import { contextSkeleton, draftHash, assembleContextDraft, mergePreparedContextC
 import { roleContextPath, roleContextSchema, prepareContextCommit, prepareContextChanges, roleContextChangesSchema, contextFailureIdentity } from "./context-tools.js";
 import { canonicalContextError, CONTEXT_FILES, hasUnifiedContext, prepareContextDocument, unifiedContextInstruction } from "./context-model.js";
 import { diagnoseProjectPresentation, validateDesignScopes } from "./design-scope-validation.js";
-import type { SkillActivation } from "./skill-activation.js";
+import { skillReloadChecklist, type SkillActivation } from "./skill-activation.js";
 import { ContextFailureTracker } from "./context-failures.js";
 
 function textResult(value: unknown) { return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }], details: {} }; }
@@ -111,6 +111,9 @@ export function registerContextAuthoring(pi: ExtensionAPI, dependencies: {
     if (role === "designer") {
       const brief = JSON.parse(await readFile(join(workspaceDir, "runs", boundRunId, "brief.json"), "utf8"));
       diagnosis.issues.push(...diagnoseProjectPresentation(brief, diagnosis.data));
+      for (const item of skillReloadChecklist(diagnosis.data.strategy as Record<string, unknown> | undefined, (await classifiedScopes()).map(scope => scope.id), skillActivation.loadedBindings()).filter(item => !item.loaded)) {
+        diagnosis.issues.push({ code: "skill_body_not_loaded", pointer: "/strategy/skill_selection", message: `Reload ${item.name} for scope ${item.scopeId} with use_skill before committing; its selected binding is not proof of knowledge after compaction.` });
+      }
     }
     const issues = diagnosis.issues.map(issue => {
       const section = issue.pointer.split("/")[1];

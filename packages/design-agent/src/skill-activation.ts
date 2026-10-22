@@ -8,14 +8,15 @@ export interface SkillBinding {
 export class SkillActivation {
   #bindings = new Map<string, SkillBinding>();
   #loaded = new Map<string, string>();
+  #paths = new Map<string, string>();
   #retired = new Map<string, { name: string; scope: string }>();
   checkpoint() {
-    const bindings = new Map(this.#bindings), loaded = new Map(this.#loaded), retired = new Map(this.#retired);
-    return () => { this.#bindings = bindings; this.#loaded = loaded; this.#retired = retired; };
+    const bindings = new Map(this.#bindings), loaded = new Map(this.#loaded), paths = new Map(this.#paths), retired = new Map(this.#retired);
+    return () => { this.#bindings = bindings; this.#loaded = loaded; this.#paths = paths; this.#retired = retired; };
   }
   deactivated() { return [...this.#retired.values()]; }
   forgetLoadedBodies() { this.#loaded.clear(); }
-  loadedBindings(): SkillBinding[] { return this.all().filter(binding => [...this.#loaded.values()].includes(binding.sha256)); }
+  loadedBindings(): SkillBinding[] { return this.all().filter(binding => this.#loaded.get(this.#paths.get(`${binding.scope}\0${binding.name}`) ?? "") === binding.sha256); }
   all(): SkillBinding[] { return [...this.#bindings.values()]; }
   activate(name: string, path: string, sha256: string, metadata: SkillMetadata, scope: string, requestedRole?: "primary" | "supporting", deactivate: string[] = [], reload = false, rationale?: string) {
     const key = `${scope}\0${name}`;
@@ -30,6 +31,7 @@ export class SkillActivation {
     }
     const reused = !reload && this.#loaded.get(path) === sha256;
     this.#loaded.set(path, sha256);
+    this.#paths.set(key, path);
     this.#bindings.set(key, { rationale: rationale ?? this.#bindings.get(key)?.rationale, name, role, scope, sha256, version: metadata.version, supportedOutputs: metadata.supportedOutputs, designCategories: metadata.designCategories, moduleType: metadata.moduleType });
     return { role, scope, reused, deactivated, activeSkills: this.all().filter((binding) => binding.scope === scope).map(({ name, role }) => ({ name, role })) };
   }

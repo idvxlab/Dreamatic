@@ -1,17 +1,25 @@
 ---
 name: packaging-design
-description: "Design packaging concepts through protection, opening, shelf communication, structural intent and product-family rules. Use for retail, shipping and reusable packaging."
+description: "Design packaging structure, opening experience, protection and shelf communication. Use when containment and package graphics must work together; can own industrial or communication decisions, while brand positioning and unrelated product architecture need separate knowledge. Images communicate concepts, not production dielines."
 metadata:
   audience: designer
   domain_type: packaging_design
   design_categories: [industrial, media_communication]
   module_type: discipline
+  capabilities: [packaging-structure, package-graphics, opening-experience, shelf-communication]
   supported_outputs: [image]
 ---
 
 # Packaging Design
 
 Connect containment, use, structure and shelf communication.
+
+## Selection boundary
+
+Own industrial-category structure/opening decisions, communication-category package
+graphics, or their integrated relationship when assigned. Do not infer two scopes
+from two media alone. Brand positioning and non-packaging product mechanisms can
+contribute supporting knowledge without displacing the packaging responsibility.
 
 ## Resolve the package experience
 

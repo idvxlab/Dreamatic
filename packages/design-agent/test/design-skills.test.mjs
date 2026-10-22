@@ -128,7 +128,9 @@ test('category assignments and per-scope professional Skills preserve independen
     assert.ok(industrial.skills.some((skill) => skill.name === 'industrial-design'));
     assert.ok(industrial.skills.some((skill) => skill.name === 'image-prompting'));
     assert.equal(industrial.skills.some((skill) => skill.name === 'html-interface'), true);
-    assert.equal(industrial.skills.some((skill) => skill.name === 'brand-identity'), false);
+    assert.equal(industrial.skills.some((skill) => skill.name === 'brand-identity'), true);
+    assert.ok(industrial.selectionByScope[0].supportingCandidates.includes('brand-identity'));
+    assert.ok(!industrial.selectionByScope[0].primaryCandidates.includes('brand-identity'));
     assert.deepEqual(industrial.activeSkills, []);
     await assert.rejects(invoke(tools, 'use_skill', { name: 'design-system', scopeId: 'product', role: 'primary' }), error => { const d = JSON.parse(error.message); assert.equal(d.code, 'skill_scope_mismatch'); assert.equal(d.selectionChanged, false); assert.ok(d.suggestedCalls.some(call => call.name === 'industrial-design')); return true; });
     await assert.rejects(invoke(tools, 'use_skill', { name: 'industrial-design', role: 'primary' }), /scopeId/);

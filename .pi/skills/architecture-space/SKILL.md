@@ -1,12 +1,13 @@
 ---
 name: architecture-space
-description: "Design architecture, interiors, exhibitions, and spatial concepts through program, sequence, scale, material, light, and site relationships. Use for spatial-design briefs, not engineering documentation."
+description: "Design buildings, interiors and spatial concepts through program, circulation, scale, material and light. Use when spatial organization is the main decision; visitor interpretation and signage may need additional wayfinding knowledge. Concepts do not establish engineering readiness."
 license: MIT
 metadata:
   audience: designer
   domain_type: architecture_space_design
   design_categories: [space]
   module_type: discipline
+  capabilities: [spatial-design, architecture, interior-design, circulation, material-lighting]
   supported_outputs: [image]
 ---
 

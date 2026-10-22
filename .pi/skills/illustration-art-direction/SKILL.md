@@ -1,17 +1,25 @@
 ---
 name: illustration-art-direction
-description: "Develop illustration, character and visual storytelling systems through narrative, shape language, color, viewpoint and stylistic continuity."
+description: "Design illustration, characters and narrative image series through shape language, composition and stylistic continuity. Use when imagery carries the story; can support a UX scope but does not own interface flows. HTML captions preserve exact text without making this an HTML-authoring module."
 metadata:
   audience: designer
   domain_type: illustration_art_direction
-  design_categories: [media_communication, ux]
+  design_categories: [media_communication]
   module_type: discipline
+  capabilities: [illustration, character-design, art-direction, visual-storytelling]
   supported_outputs: [image]
 ---
 
 # Illustration and Art Direction
 
 Develop narrative imagery, recurring subjects and visual storytelling systems.
+
+## Selection boundary
+
+Own communication-category decisions about narrative imagery, characters and
+visual continuity. In a UX scope, contribute illustrations as supporting knowledge;
+the interface primary retains responsibility for flows and controls. Exact captions
+or explanatory HTML are presentation support, not this module's core image medium.
 
 ## Establish the premise
 

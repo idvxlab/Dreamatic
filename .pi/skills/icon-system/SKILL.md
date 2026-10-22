@@ -1,11 +1,12 @@
 ---
 name: icon-system
-description: "Design coherent icons and pictograms with semantic distinctions, optical weight and size-specific simplification. Use for interface controls, visual explanations and graphic symbol families."
+description: "Design icon and pictogram families with coherent geometry, optical weight and semantic distinctions. Use for controls, explanations and visual symbols; precise interface icons use authored SVG in HTML, while generated studies do not guarantee editable vector delivery."
 metadata:
   audience: designer
   domain_type: icon_system
   design_categories: []
   module_type: cross_domain
+  capabilities: [icon-design, pictograms, optical-alignment, svg-authoring]
   supported_outputs: [image, html]
   version: "1.0"
 ---

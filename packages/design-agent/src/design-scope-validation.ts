@@ -89,7 +89,7 @@ export async function validateDesignScopes(runDir: string, plan: Record<string, 
   if (presentationIssues.length) throw new Error(presentationIssues[0]!.message);
   if (!scopes.length) return;
   const loaded = await readFile(join(runDir, ".performance/skills-designer.json"), "utf8").then(JSON.parse).catch(() => ({ activeSkills: [] }));
-  const bindings: SkillBinding[] = Array.isArray(loaded.activeSkills) ? loaded.activeSkills : [];
+  const bindings: SkillBinding[] = Array.isArray(loaded.loadedSkills) ? loaded.loadedSkills : Array.isArray(loaded.activeSkills) ? loaded.activeSkills : [];
   const issues = diagnoseDesignScopes(scopes, bindings, plan, manifest, loaded.availableProfessionals ?? {});
   if (issues.length) throw new Error([...new Set(issues.map(issue => issue.message))].join("; "));
 }

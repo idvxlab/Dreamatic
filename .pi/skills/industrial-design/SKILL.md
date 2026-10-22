@@ -1,17 +1,27 @@
 ---
 name: industrial-design
-description: "Develop industrial design concepts through product architecture, ergonomics, CMF, assembly and manufacturing intent. Use for hardware, equipment, furniture, appliances and mobility products."
+description: "Resolve physical product architecture, mechanisms, ergonomics, CMF, assembly and manufacturing intent. Use when structural relationships and realization choices are central; open product-value and use-concept questions need broader physical-product framing. Concept images do not establish engineering readiness."
 metadata:
   audience: designer
   domain_type: industrial_design
   design_categories: [industrial]
   module_type: discipline
+  capabilities: [product-architecture, mechanism-design, ergonomics, cmf, manufacturing-intent]
   supported_outputs: [image]
 ---
 
 # Industrial Design
 
 Resolve hardware architecture, ergonomics, CMF, assembly and service intent.
+
+## Selection boundary
+
+Choose as primary when the brief is driven by physical architecture, mechanisms,
+structural relationships, assembly, material/process or service access. Retain the
+user's product intent while resolving its physical realization. When the central
+question is still what product and use experience should exist, start with broader
+physical-product concept knowledge; add this as supporting knowledge or switch the
+primary when the professional focus changes. Concept depth is not certification.
 
 ## Start from use and architecture
 

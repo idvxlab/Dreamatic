@@ -1,11 +1,12 @@
 ---
 name: accessible-interface
-description: "Design accessible HTML interfaces and project showcases with keyboard paths, focus recovery, semantic content, readable contrast and zoom-safe layouts. Use when interaction or content access needs detailed treatment."
+description: "Design interface accessibility for HTML pages and project showcases, including keyboard access, focus, semantics, contrast and reflow. Use when access barriers need detailed treatment; supports the owning design discipline rather than replacing it."
 metadata:
   audience: designer
   domain_type: accessible_interface
   design_categories: []
   module_type: cross_domain
+  capabilities: [accessibility, keyboard-navigation, semantic-html, contrast, responsive-layout]
   supported_outputs: [html]
   version: "1.0"
 ---

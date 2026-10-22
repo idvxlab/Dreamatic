@@ -10,6 +10,7 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { loadEnvFile } from "node:process";
 import { createDreamaticExtension, dreamaticPersonaTools, dreamaticPersonaPromptBlock, validateDreamaticPersonaContracts } from "./extension.js";
 import { ORCHESTRATOR_RUNTIME_INSTRUCTION } from "./orchestrator-contract.js";
+import { SKILL_LOADING_INSTRUCTION } from "./skill-catalog.js";
 import { safeRunId } from "./paths.js";
 import { dreamaticProviderFromEnv, dreamaticThinkingLevel } from "./provider.js";
 export { dreamaticSessionFailure } from "./session-status.js";
@@ -58,10 +59,11 @@ export async function createDreamaticSession(options: CreateDreamaticSessionOpti
   const resourceLoader = new DefaultResourceLoader({
     cwd: options.repoRoot,
     agentDir: getAgentDir(),
-    ...(persona === "orchestrator" ? {skillsOverride: () => ({skills:[],diagnostics:[]})} : {}),
+    skillsOverride: () => ({ skills: [], diagnostics: [] }),
     appendSystemPromptOverride: (base) => [
       ...base.map(text => persona === "orchestrator" && text === sharedRuntimePrompt ? ORCHESTRATOR_RUNTIME_INSTRUCTION : text),
       dreamaticPersonaPromptBlock(`# Active DreamaticArt persona: ${persona}\n\n${personaPrompt}`),
+      ...(persona === "designer" ? [SKILL_LOADING_INSTRUCTION] : []),
     ],
     extensionFactories: [createDreamaticExtension({ workspaceDir: options.workspaceDir, personaPath, get projectId() { return options.getProjectId?.() ?? options.projectId; } })],
   });

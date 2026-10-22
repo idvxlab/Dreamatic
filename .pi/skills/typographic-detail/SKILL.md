@@ -1,11 +1,12 @@
 ---
 name: typographic-detail
-description: "Refine typography for multilingual layouts, long-form reading and dense data: script-aware spacing, optical alignment, fallback and responsive type. Supporting knowledge beyond basic composition."
+description: "Refine typography for multilingual text, long-form reading and dense data through script-aware spacing, optical alignment and responsive type. Use when typography details need work beyond basic composition; supports the selected visual direction in images and HTML rather than replacing publication or interface design."
 metadata:
   audience: designer
   domain_type: typographic_detail
   design_categories: []
   module_type: cross_domain
+  capabilities: [typography, typography-refinement, multilingual-typesetting, responsive-type]
   supported_outputs: [image, html]
   version: "1.0"
 ---

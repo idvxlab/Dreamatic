@@ -1,12 +1,13 @@
 ---
 name: editorial-design
-description: "Design books, magazines, reports, presentations and publication systems through content hierarchy, typography, grid and reading rhythm."
+description: "Design publication structure, page hierarchy, typography and reading rhythm for books, reports and presentations. Use when the reading sequence and publication system are central; use HTML for deterministic readable content or images for concept spreads, without claiming editable print-ready files."
 metadata:
   audience: designer
   domain_type: editorial_design
   design_categories: [media_communication]
   module_type: discipline
-  supported_outputs: [image]
+  capabilities: [editorial-layout, publication-design, reading-hierarchy, presentation-layout]
+  supported_outputs: [image, html]
 ---
 
 # Editorial and Publication Design

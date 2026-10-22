@@ -1,18 +1,28 @@
 ---
 name: product-design
-description: "Design physical product concepts through user needs, functional experience, ergonomics, form and lifecycle. Use for consumer products, hardware and furniture; digital products have their own module."
+description: "Frame physical product concepts through user needs, functional experience, use scenarios and lifecycle. Use when deciding what object and experience should exist; mechanism, assembly and manufacturing-led problems need industrial realization knowledge. Does not cover digital product strategy; outputs are concept images."
 license: MIT
 metadata:
   audience: designer
   domain_type: product_design
   design_categories: [industrial]
   module_type: discipline
+  capabilities: [physical-product-design, product-concepts, use-scenarios, product-lifecycle]
   supported_outputs: [image]
 ---
 
-# Product Design
+# Physical Product Design
 
 Connect user need, function, experience and lifecycle for physical product concepts.
+
+## Selection boundary
+
+Choose as primary when the unresolved question is which physical product concept,
+functional experience or use scenario best serves the user. Develop the value,
+functions and lifecycle together. When architecture, mechanisms, assembly or CMF
+are the main acceptance criteria, use industrial realization knowledge as primary
+and retain product framing as supporting knowledge if useful. A digital app is a
+different professional task. Do not activate two competing primaries in one scope.
 
 ## Define the need
 

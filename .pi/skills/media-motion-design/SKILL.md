@@ -1,12 +1,13 @@
 ---
 name: media-motion-design
-description: "Design audiovisual, motion-graphic and social-media concepts through narrative, framing, rhythm and cross-channel adaptation. Use for title sequences, short films, explainers and media campaigns."
+description: "Design audiovisual narratives, motion-graphic concepts and media campaigns through framing, rhythm and sequencing. Use for storyboards, keyframes or locally authored browser motion; browser microinteractions are a separate method. Image and HTML outputs do not imply video or audio generation."
 metadata:
   audience: designer
   domain_type: media_motion_design
   design_categories: [media_communication]
   module_type: discipline
-  supported_outputs: [image]
+  capabilities: [motion-design, storyboarding, keyframes, audiovisual-narrative, media-campaigns]
+  supported_outputs: [image, html]
 ---
 
 # Media and Motion Design
@@ -41,7 +42,7 @@ Use image deliverables for storyboards, keyframes and style frames, with timing,
 shot and narration decisions retained in the specification. Include intended copy
 in relevant prompts. These communicate planned motion; they are not generated
 video, audio or 3D assets. Local browser motion can be authored through HTML sources;
-use interaction-motion for its behavior and html-interface for delivery.
+discover supporting motion-behavior and HTML-authoring knowledge from the catalog.
 
 Choose distinct frames by narrative beats and questions, without a fixed count.
 Judge comprehension, pacing intent, continuity and adaptation; distinguish planned

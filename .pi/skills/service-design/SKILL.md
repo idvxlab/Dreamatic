@@ -1,17 +1,25 @@
 ---
 name: service-design
-description: "Design services across customer journeys, touchpoints, staff actions and operational handoffs. Use for retail, hospitality, public services and blended physical-digital experiences."
+description: "Design end-to-end services through customer journeys, touchpoints, staff actions and operational handoffs. Use when the service promise and delivery system are central; supports UX touchpoints without replacing interface-flow responsibility. Express blueprints and service scenarios as images or readable HTML."
 metadata:
   audience: designer
   domain_type: service_design
-  design_categories: [service, ux]
+  design_categories: [service]
   module_type: discipline
+  capabilities: [service-blueprints, customer-journeys, touchpoint-design, operational-handoffs]
   supported_outputs: [image, html]
 ---
 
 # Service Design
 
 Connect customer experience to staff, systems and operational handoffs.
+
+## Selection boundary
+
+Own service-category decisions about customer promises, journeys, backstage work
+and cross-channel handoffs. In a UX scope, contribute service context as supporting
+knowledge; the UX primary owns digital task flows and controls. A readable HTML
+service blueprint remains a service deliverable rather than a new interface scope.
 
 ## Model end-to-end delivery
 

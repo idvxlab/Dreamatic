@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "predev": "npm run build -w @dreamatic/design-agent && npm run build -w @dreamatic/server",
-    "precheck": "npm run build -w @dreamatic/design-agent",
+    "precheck": "npm run build -w @dreamatic/design-agent && node scripts/check-skills.mjs",
     "dev": "node scripts/dev.mjs",
     "build": "npm run build -w @dreamatic/design-agent && npm run build -w @dreamatic/cli && npm run build -w @dreamatic/server && npm run build -w @dreamatic/web",
     "check": "npm run check -w @dreamatic/design-agent && npm run check -w @dreamatic/cli && npm run check -w @dreamatic/server && npm run check -w @dreamatic/web",
@@ -30,7 +30,8 @@
     "desktop:test": "node --test apps/desktop/test/*.test.mjs",
     "desktop:test:ui": "node apps/desktop/test-ui.mjs",
     "release:mac": "node scripts/release.mjs",
-    "release:win": "node scripts/release-win.mjs"
+    "release:win": "node scripts/release-win.mjs",
+    "check:skills": "npm run build -w @dreamatic/design-agent && node scripts/check-skills.mjs"
   },
   "devDependencies": {
     "electron": "44.5.1",

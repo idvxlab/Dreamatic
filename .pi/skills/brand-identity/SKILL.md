@@ -1,12 +1,13 @@
 ---
 name: brand-identity
-description: "Develop recognizable brand identities through positioning, subject-specific visual interpretation, marks, typography and contextual applications. Use for new identities, rebrands and extensions."
+description: "Develop brand positioning, recognizable marks, typography and identity applications. Use for new identities, rebrands or coherent brand extensions; campaign messaging and publication layout are separate decisions. Generated concepts do not guarantee production-ready marks."
 license: MIT
 metadata:
   audience: designer
   domain_type: brand_identity_design
   design_categories: [media_communication]
   module_type: discipline
+  capabilities: [brand-strategy, visual-identity, logo-design, brand-applications]
   supported_outputs: [image]
 ---
 

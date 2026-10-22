@@ -1,17 +1,25 @@
 ---
 name: game-experience-design
-description: "Design game experiences, interactive worlds and playable-system concepts through player goals, core loops, feedback and coherent art direction."
+description: "Design player goals, core loops, rules, worlds and narrative experiences. Use for game concepts expressed as images or scoped browser prototypes; game interface knowledge can support UX work but does not replace general UX responsibility or provide a game-engine executor."
 metadata:
   audience: designer
   domain_type: game_experience_design
-  design_categories: [game, ux]
+  design_categories: [game]
   module_type: discipline
-  supported_outputs: [image]
+  capabilities: [game-design, core-loops, player-experience, world-building, game-prototyping]
+  supported_outputs: [image, html]
 ---
 
 # Game Experience Design
 
 Connect player decisions, systems, world and art direction to an intended experience.
+
+## Selection boundary
+
+Own game-category decisions about player agency, rules, loops and worlds. Use as
+supporting knowledge for game-related UI, while the UX primary owns navigation,
+interface behavior and task completion. HTML is an optional scoped game prototype;
+it does not establish a general game-engine execution capability.
 
 ## Define the player fantasy
 
@@ -38,7 +46,8 @@ Choose world views, interface studies, characters, interaction sequences and rul
 explanations by distinct design questions. Carry rules, states and visual anchors
 into the specification. Image outputs communicate concepts; they are not playable
 software, animation or 3D assets. When a local browser prototype is appropriate,
-author it through html-interface and describe only its implemented behavior.
+discover suitable HTML authoring knowledge, author the prototype through HTML
+sources and describe only its implemented behavior.
 
 Distinguish hypotheses from completed playtests. Judge meaningful decisions, feedback,
 world coherence and what future prototypes still need to verify.
