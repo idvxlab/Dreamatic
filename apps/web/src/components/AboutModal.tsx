@@ -22,7 +22,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
       <div className="about-mark"><Sparkles size={30} strokeWidth={1.6} /></div>
       <h2 id="about-title">Dreamatic · Art</h2>
       <p className="about-version">{t("Version")} {APP_VERSION}</p>
-      <p className="about-description">{t("A professional AI design-agent system for UX/UI, product, brand, visual and spatial design.")}</p>
+      <p className="about-description">{t("An AI design team that turns your brief into research-informed design concepts, generated visuals, and curated showcase pages.")}</p>
       <dl><div><dt>{t("Created by")}</dt><dd><a href="https://idvxlab.com/" target="_blank" rel="noopener noreferrer">Intelligent Design &amp; Innovation Lab</a></dd></div><div><dt>{t("License")}</dt><dd>MIT</dd></div></dl>
       <div className="about-links"><a href="https://www.dreamatic.art/" target="_blank" rel="noopener noreferrer">{t("Official website")}</a><a href={VERSION_REPOSITORY_URL} target="_blank" rel="noopener noreferrer">GitHub</a></div>
       <small className="about-copyright">© 2026 IDVX Lab and contributors</small>
