@@ -1,10 +1,18 @@
-import test from 'node:test';
+import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { versionFromBranch, syncReleaseVersion } from '../../../scripts/desktop/version.mjs';
+
+// The release runner sets this for its real build; fixtures choose their own versions.
+const releaseVersion = process.env.DREAMATIC_RELEASE_VERSION;
+beforeEach(() => { delete process.env.DREAMATIC_RELEASE_VERSION; });
+afterEach(() => {
+  if (releaseVersion === undefined) delete process.env.DREAMATIC_RELEASE_VERSION;
+  else process.env.DREAMATIC_RELEASE_VERSION = releaseVersion;
+});
 
 test('release versions come from an exact version branch', () => {
   assert.equal(versionFromBranch('v2.0.3'), '2.0.3');

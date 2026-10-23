@@ -57,9 +57,14 @@ else {
     mainWindow.once('ready-to-show', () => mainWindow.show());
     await mainWindow.loadURL(origin);
     if (smoke) {
-      const result = await mainWindow.webContents.executeJavaScript(`new Promise((resolve, reject) => { const until = Date.now() + 5000; const check = () => { if (document.body.innerText.includes('DreamaticArt')) resolve({ body: document.body.innerText, node: typeof require }); else if (Date.now() > until) reject(new Error('UI did not render')); else setTimeout(check, 100); }; check(); })`);
-      if (!result.body.includes('DreamaticArt') || result.node !== 'undefined') throw new Error('Desktop UI smoke check failed');
+      const result = await mainWindow.webContents.executeJavaScript(`new Promise((resolve, reject) => { const until = Date.now() + 5000; const check = () => { if (document.body.innerText.includes('Dreamatic · Art')) resolve({ body: document.body.innerText, node: typeof require }); else if (Date.now() > until) reject(new Error('UI did not render')); else setTimeout(check, 100); }; check(); })`);
+      if (!result.body.includes('Dreamatic · Art') || result.node !== 'undefined') throw new Error('Desktop UI smoke check failed');
       console.log('DREAMATIC_DESKTOP_SMOKE_OK'); app.quit();
     }
-  }).catch(error => { console.error(error); if (!smoke) dialog.showErrorBox('DreamaticArt could not start', error.message); process.exitCode = 1; app.quit(); });
+  }).catch(async error => {
+    console.error(error);
+    if (!smoke) dialog.showErrorBox('Dreamatic · Art could not start', error.message);
+    quitting = true;
+    try { await service?.stop(); } finally { log?.end(); app.exit(1); }
+  });
 }

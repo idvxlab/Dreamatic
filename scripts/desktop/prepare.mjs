@@ -30,11 +30,6 @@ const manifest = JSON.parse(await readFile(join(stage, 'package.json'), 'utf8'))
 manifest.workspaces = ['apps/server', 'apps/web', 'apps/cli', 'packages/project-data'];
 await writeFile(join(stage, 'package.json'), JSON.stringify(manifest, null, 2));
 await run('npm', ['ci', '--omit=dev', '--ignore-scripts', '--no-audit', '--no-fund', '--workspace=@dreamatic/server', '--workspace=@dreamatic/project-data', '--workspace=@dreamatic/cli', '--include-workspace-root=false']);
-// Pi's published package includes esbuild binaries for other platforms; retain only this target.
-const esbuildPlatforms = join(stage, 'node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild');
-for (const platform of await import('node:fs/promises').then(fs => fs.readdir(esbuildPlatforms))) {
-  if (platform !== 'darwin-arm64') await rm(join(esbuildPlatforms, platform), { recursive: true, force: true });
-}
 await mkdir(join(stage, 'bin'), { recursive: true });
 const nodeVersion = 'v24.14.0';
 const archive = `node-${nodeVersion}-darwin-arm64.tar.gz`;

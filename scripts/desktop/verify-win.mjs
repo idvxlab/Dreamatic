@@ -31,7 +31,6 @@ if ((await stat(installer)).size < 1024 * 1024) throw new Error('Windows install
 const browserDir = (await readdir(join(runtime, 'browsers'))).find(name => name.startsWith('chromium_headless_shell-'));
 if (!browserDir) throw new Error('The packaged Windows HTML review browser is missing.');
 await expectPortableExecutable(join(runtime, 'browsers', browserDir, 'chrome-headless-shell-win64', 'chrome-headless-shell.exe'));
-await expectPortableExecutable(join(runtime, 'node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild/win32-x64/esbuild.exe'));
 await access(join(runtime, 'node_modules/playwright-core/index.mjs'));
 await access(join(runtime, 'node_modules/@dreamatic/project-data/dist/index.js'));
 

@@ -11,8 +11,11 @@ const { mkdir } = await import('node:fs/promises');
 await mkdir(mount);
 async function run(bin, args, env = {}) {
   await new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { cwd: temp, env: { ...process.env, ...env }, stdio: 'inherit', timeout: 90000 });
-    child.once('error', reject); child.once('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`${bin} failed (${code ?? signal})`)));
+    const child = spawn(bin, args, { cwd: temp, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 90000 });
+    let output = '';
+    child.stdout.on('data', data => { output += data; process.stdout.write(data); });
+    child.stderr.on('data', data => process.stderr.write(data));
+    child.once('error', reject); child.once('exit', (code, signal) => code === 0 ? resolve(output) : reject(new Error(`${bin} failed (${code ?? signal})`)));
   });
 }
 let mounted = false;
@@ -32,7 +35,8 @@ try {
   await access(join(runtime, 'node_modules/@dreamatic/project-data/dist/index.js'));
   try { await access(join(runtime, '.env')); throw new Error('Developer configuration must not be packaged'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }
-  await run(join(app, 'Contents/MacOS/DreamaticArt'), [], { DREAMATIC_DESKTOP_SMOKE: '1', DREAMATIC_DESKTOP_TEST_DATA: join(temp, 'data') });
+  const smokeOutput = await run(join(app, 'Contents/MacOS/DreamaticArt'), [], { DREAMATIC_DESKTOP_SMOKE: '1', DREAMATIC_DESKTOP_TEST_DATA: join(temp, 'data') });
+  if (!smokeOutput.includes('DREAMATIC_DESKTOP_SMOKE_OK')) throw new Error('Packaged application did not confirm successful UI rendering');
   const browserDir = (await readdir(join(runtime, 'browsers'))).find(name => name.startsWith('chromium_headless_shell-'));
   const browser = join(runtime, 'browsers', browserDir, 'chrome-headless-shell-mac-arm64/chrome-headless-shell');
   const code = `import { chromium } from ${JSON.stringify(pathToFileURL(join(runtime, 'node_modules/playwright-core/index.mjs')).href)}; const browser = await chromium.launch({ executablePath: ${JSON.stringify(browser)}, headless: true }); try { const page = await browser.newPage(); await page.setContent('<button onclick="this.textContent=123">Test</button>'); await page.locator('button').click(); if (await page.locator('button').textContent() !== '123') throw Error('Browser interaction failure'); console.log('PACKAGED_HTML_BROWSER_OK'); } finally { await browser.close(); }`;

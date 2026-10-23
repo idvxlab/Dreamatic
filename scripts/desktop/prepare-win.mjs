@@ -126,16 +126,6 @@ await runNpm([
   '--workspace=@dreamatic/cli', '--include-workspace-root=false',
 ]);
 
-for (const esbuildRoot of [
-  join(stage, 'node_modules/@esbuild'),
-  join(stage, 'node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild'),
-]) {
-  for (const platform of await readdir(esbuildRoot).catch(() => [])) {
-    if (platform !== 'win32-x64') await rm(join(esbuildRoot, platform), { recursive: true, force: true });
-  }
-}
-await access(join(stage, 'node_modules/@earendil-works/pi-coding-agent/node_modules/@esbuild/win32-x64/esbuild.exe'));
-
 const nodeVersion = 'v24.14.0';
 const nodeArchive = `node-${nodeVersion}-win-x64.zip`;
 const checksums = await fetch(`https://nodejs.org/dist/${nodeVersion}/SHASUMS256.txt`, { signal: AbortSignal.timeout(30000) })
