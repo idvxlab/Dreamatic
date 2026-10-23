@@ -10,12 +10,12 @@ const mount = join(temp, 'volume');
 const { mkdir } = await import('node:fs/promises');
 await mkdir(mount);
 async function run(bin, args, env = {}) {
-  await new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     const child = spawn(bin, args, { cwd: temp, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 90000 });
     let output = '';
     child.stdout.on('data', data => { output += data; process.stdout.write(data); });
     child.stderr.on('data', data => process.stderr.write(data));
-    child.once('error', reject); child.once('exit', (code, signal) => code === 0 ? resolve(output) : reject(new Error(`${bin} failed (${code ?? signal})`)));
+    child.once('error', reject); child.once('close', (code, signal) => code === 0 ? resolve(output) : reject(new Error(`${bin} failed (${code ?? signal})`)));
   });
 }
 let mounted = false;
