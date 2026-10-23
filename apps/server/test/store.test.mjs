@@ -506,3 +506,58 @@ test('denied Designer writes retain error status without a successful-write titl
     }
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
+
+test('all roles retain tool ownership through live replay, reload and legacy Pi transcript recovery', async () => {
+ const workspace=await mkdtemp(join(tmpdir(),'dreamatic-tool-owners-'));
+ try {
+  const runDir=join(workspace,'runs/owners');await mkdir(runDir,{recursive:true});
+  const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
+  const compiled=ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"',JSON.stringify(new URL('../../../packages/project-data/dist/workflow-progress.js',import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"',JSON.stringify(new URL('../../../packages/project-data/dist/workflow-retries.js',import.meta.url).href)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  const {applyWorkflowStreamEvent}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  const roles=['orchestrator','researcher','designer','builder'];
+  const events=[];let live=[];
+  for (const [i,role] of roles.entries()) {
+   const base={agent:role,invocationId:`${role}-1`};
+   const at=second=>new Date(Date.UTC(2026,9,23,14,i,second)).toISOString();
+   const sequence=[{...base,type:'agent_started',at:at(0)},{...base,type:'tool_started',toolCallId:'shared-id',toolName:'read',input:role,at:at(1)},{...base,type:'tool_finished',toolCallId:'shared-id',toolName:'read',output:`${role} result`,at:at(2)},{...base,type:'agent_finished',at:at(3)}];
+   events.push(...sequence);
+   // Both the prompt and workflow transports may deliver each record.
+   for (const event of sequence) {live=applyWorkflowStreamEvent(live,event);live=applyWorkflowStreamEvent(live,event);}
+   live=applyWorkflowStreamEvent(live,sequence[0]); // Delayed duplicate start cannot reopen a completed stage.
+   const directory=join(runDir,'sessions',role);await mkdir(directory,{recursive:true});
+   const messages=[{role:'user',content:'Task'},{role:'assistant',content:[{type:'toolCall',id:'shared-id',name:'read',arguments:{path:'intent.md'}}],stopReason:'toolUse'},{role:'toolResult',toolCallId:'shared-id',toolName:'read',content:[{type:'text',text:`${role} result`}]},{role:'assistant',content:[{type:'text',text:'Done'}],stopReason:'stop'}];
+   await writeFile(join(directory,'session.jsonl'),messages.map((message,n)=>JSON.stringify({type:'message',timestamp:at(n),message})).join('\n')+'\n');
+  }
+  await writeFile(join(runDir,'bus.jsonl'),events.map(JSON.stringify).join('\n')+'\n');
+  const restored=await workflowInventory(workspace,'owners');
+  for (const role of roles) for (const inventory of [live,restored]) {
+   const node=inventory.find(item=>item.agent===role);
+   assert.equal(node.status,'completed');assert.equal(node.actor.toLowerCase(),role);
+   assert.equal(node.children.filter(item=>item.kind==='tool').length,1);
+   assert.equal(node.children[0].actor.toLowerCase(),role);
+   assert.equal(node.children[0].output,`${role} result`);
+  }
+  // Old pipeline logs had only stage lifecycle records, but Pi kept the tool transcript.
+  await writeFile(join(runDir,'bus.jsonl'),events.filter(e=>e.type.startsWith('agent_')).map(JSON.stringify).join('\n')+'\n');
+  const legacy=await workflowInventory(workspace,'owners');
+  for (const role of roles) {
+   const node=legacy.find(item=>item.agent===role);
+   assert.equal(node.children.filter(item=>item.kind==='tool').length,1, JSON.stringify(node));
+   assert.equal(node.children[0].actor.toLowerCase(),role);
+   assert.equal(node.children[0].status,'completed');
+  }
+ } finally {await rm(workspace,{recursive:true,force:true});}
+});
+
+test('live and restored image receipts preserve in-flight status, durations and reuse without counting queued work as failures', async()=>{
+ const {imageProgress}=await import('@dreamatic/project-data/workflow-progress');
+ const snapshot={type:'agent_progress',total:4,imageItems:{hero:{ok:true,state:'saved',path:'runs/p/artifacts/hero.png',durationMs:90000,reused:false},reused:{ok:true,state:'saved',reused:true},detail:{state:'generating',label:'Habitat interior',startedAt:'2026-10-24T00:01:00Z'},next:{state:'queued'}}};
+ const result=imageProgress(undefined,snapshot);
+ assert.equal(result.total,4);
+ assert.equal(Object.values(result.items).filter(item=>item.ok===false).length,0);
+ assert.equal(result.items.detail.state,'generating');assert.equal(result.items.hero.durationMs,90000);assert.equal(result.items.reused.reused,true);
+ const invalid=imageProgress(result,{total:4,imageItems:{hero:{ok:true,path:'runs/p/artifacts/../secret.png',durationMs:-1},detail:{state:'fabricated',startedAt:'invalid'}}});
+ assert.equal(invalid.items.hero.path,undefined);assert.equal(invalid.items.hero.durationMs,undefined);assert.equal(invalid.items.detail.state,undefined);
+ const legacy=imageProgress(undefined,{total:2,imageId:'old',result:{ok:true,path:'runs/p/artifacts/old.png'}});
+ assert.equal(legacy.items.old.ok,true);
+});

@@ -3,6 +3,7 @@ import type { WorkflowEvent } from "./types";
 import { settleWorkflowRetries } from "../../../packages/project-data/src/workflow-retries";
 
 const agentTitles: Record<string, string> = {
+  orchestrator: "Orchestrator",
   researcher: "Researcher",
   designer: "Designer",
   reviewer: "Reviewer",
@@ -17,6 +18,8 @@ const toolTitles: Record<string, string> = {
   research_asset_discover: "Discovered reference images",
   research_asset_fetch: "Saved reference image",
   research_asset_validate: "Validated reference library",
+  inspect_showcase_images: "Inspected design works",
+  plan_showcase: "Art directed exhibition",
   image_generate: "Generated design image",
   image_generate_batch: "Generated design images",
   image_edit: "Edited design image",
@@ -57,7 +60,7 @@ function updateAgent(workflow: WorkflowEvent[], invocationId: string, update: (a
     id: invocationId,
     kind: "agent",
     status: "running",
-    actor: "Orchestrator",
+    actor: agentTitles[agentName] ?? agentName,
     agent: agentName,
     label: agentTitles[agentName] ?? agentName.replaceAll("-", " "),
     detail: text(seed?.task),
@@ -80,7 +83,7 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
   const invocationId = typeof event.invocationId === "string" ? event.invocationId : undefined;
   const at = typeof event.at === "string" ? event.at : new Date().toISOString();
   if (type === "project_completed" && typeof event.id === "string" && typeof event.detail === "string") {
-    const node: WorkflowEvent = { id: event.id, kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, stage: "completion", artifactRefs: artifactRefs(event.artifactRefs), at };
+    const node: WorkflowEvent = { id: event.id, kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, ...(event.completion ? { completion: event.completion as import("@dreamatic/project-data").CompletionSummary } : {}), stage: "completion", artifactRefs: artifactRefs(event.artifactRefs), at };
     return sorted([...workflow.filter(candidate => candidate.id !== node.id), node]);
   }
   if (type === "design_categories_identified" && typeof event.detail === "string") {
@@ -99,9 +102,10 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
     return workflow.map((candidate) => candidate.id === id ? { ...candidate, status: event.isError === true ? "error" : "completed", output: text(event.output), endedAt: at } : candidate);
   }
   if (invocationId && type === "agent_started") {
-    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, status: "running", detail: text(event.task) ?? agent.detail, at }), event);
+    return updateAgent(workflow, invocationId, (agent) => ({ ...agent, detail: text(event.task) ?? agent.detail, at }), event);
   }
   if (invocationId && type === "agent_progress") {
+    if (workflow.some(node => node.id === invocationId && node.status !== "running")) return workflow;
     return updateAgent(workflow, invocationId, (agent) => ({ ...agent, updatedAt: at, output: text(event.output) ?? agent.output,
       children: (agent.children ?? []).map((child) => child.id === event.toolCallId && child.status === "running" ? { ...child, updatedAt: at, imageProgress: imageProgress(child.imageProgress, event), output: text(event.output) ?? child.output } : child),
     }), event);
@@ -144,6 +148,9 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
   }
   if (invocationId && type === "agent_finished") {
     return updateAgent(workflow, invocationId, (agent) => ({ ...agent, status: "completed", output: text(event.output), endedAt: at }), event);
+  }
+  if (invocationId && type === "agent_waiting") {
+    return updateAgent(workflow, invocationId, agent => ({ ...agent, status: "waiting", output: text(event.output) ?? "Waiting for your answers", endedAt: at }), event);
   }
   if (invocationId && type === "agent_interrupted") {
     return updateAgent(workflow, invocationId, (agent) => {

@@ -8,7 +8,7 @@ import { createInterface } from "node:readline";
 import { settleWorkflowRetries } from "@dreamatic/project-data/workflow-retries";
 
 export type WorkflowKind = "message" | "tool" | "agent" | "references" | "milestone" | "retry" | "error";
-export type WorkflowStatus = "running" | "completed" | "interrupted" | "error" | "info";
+export type WorkflowStatus = "running" | "completed" | "interrupted" | "waiting" | "error" | "info";
 
 export interface WorkflowAssetView {
   path: string;
@@ -34,6 +34,7 @@ export interface WorkflowEventView {
   actionCount?: number;
   agent?: string;
   updatedAt?: string;
+  completion?: import("@dreamatic/project-data").CompletionSummary;
   imageProgress?: import("@dreamatic/project-data/workflow-progress").ImageProgress;
 }
 
@@ -51,6 +52,7 @@ const LIFECYCLE_TYPES = new Set([
   "agent_progress",
   "agent_retry",
   "agent_finished",
+  "agent_waiting",
   "agent_interrupted",
   "tool_started",
   "tool_finished",
@@ -60,6 +62,7 @@ const LIFECYCLE_TYPES = new Set([
 ]);
 
 const AGENT_TITLES: Record<string, string> = {
+  orchestrator: "Orchestrator",
   researcher: "Researcher",
   designer: "Designer",
   reviewer: "Reviewer",
@@ -117,18 +120,37 @@ function normalizeRunPath(value: string, runId: string): string | undefined {
   return undefined;
 }
 
-function collectPaths(value: unknown, runId: string, result = new Set<string>()): Set<string> {
+/** Linear directory search with bounded path candidates; never scan image data
+ * or run an unanchored greedy-prefix regexp over a serialized tool result. */
+export function collectPaths(value: unknown, runId: string, result = new Set<string>(), depth = 0): Set<string> {
+  if (depth > 32) return result;
   if (typeof value === "string") {
-    const direct = normalizeRunPath(value, runId);
-    if (direct && /\.(png|jpe?g|webp|gif|html|md|json)$/iu.test(direct)) result.add(direct);
-    for (const match of value.matchAll(/(?:[a-zA-Z]:)?[^\s"']*(?:runs[\\/][a-zA-Z0-9._-]+[\\/])?(?:research|plan|artifacts|review|final)[\\/][^\s"']+?\.(?:png|jpe?g|webp|gif|html|md|json)/giu)) {
-      const path = normalizeRunPath(match[0], runId);
+    const start = value.trimStart();
+    if (start.startsWith('{') || start.startsWith('[')) {
+      try {
+        const parsed: unknown = JSON.parse(value);
+        if (parsed && typeof parsed === 'object') return collectPaths(parsed, runId, result, depth + 1);
+      } catch { /* Continue with plain text; no JSON-stringified payload scan. */ }
+    }
+    // The prefix is literal and has no overlapping wildcard. Each suffix is
+    // anchored and capped at 2048 characters, independent of total log size.
+    let consumed = 0;
+    for (const match of value.matchAll(/(?:research|plan|artifacts|review|final)[\\/]/giu)) {
+      if (match.index < consumed) continue;
+      const candidate = value.slice(match.index, match.index + 2048).match(/^[^\s"'<>]*?\.(?:png|jpe?g|webp|gif|html|md|json)(?=$|[^a-zA-Z0-9_.-])/iu)?.[0];
+      if (!candidate) continue;
+      consumed = match.index + candidate.length;
+      const path = normalizeRunPath(candidate, runId);
       if (path) result.add(path);
     }
   } else if (Array.isArray(value)) {
-    for (const item of value) collectPaths(item, runId, result);
+    for (const item of value) collectPaths(item, runId, result, depth + 1);
   } else if (value && typeof value === "object") {
-    for (const item of Object.values(value as Record<string, unknown>)) collectPaths(item, runId, result);
+    const record = value as Record<string, unknown>;
+    if (record.type === 'image') return result;
+    for (const [key, item] of Object.entries(record)) {
+      if (!["data", "b64_json", "imageData", "base64"].includes(key)) collectPaths(item, runId, result, depth + 1);
+    }
   }
   return result;
 }
@@ -144,6 +166,8 @@ function toolLabel(tool: string): string {
     research_asset_discover: "Discovered reference images",
     research_asset_fetch: "Saved reference image",
     research_asset_validate: "Validated reference library",
+    inspect_showcase_images: "Inspected design works",
+    plan_showcase: "Art directed exhibition",
     image_generate: "Generated design image",
     image_generate_batch: "Generated design images",
     image_edit: "Edited design image",
@@ -202,10 +226,10 @@ async function childInvocations(path: string, agent: string, runId: string): Pro
       if (current?.status === "running") finish("interrupted", at);
       invocationIndex += 1;
       current = {
-        id: `${sessionId}-invocation-${invocationIndex}`,
+        id: `${agent}-${sessionId}-invocation-${invocationIndex}`,
         kind: "agent",
         status: "running",
-        actor: "Orchestrator",
+        actor: AGENT_TITLES[agent] ?? agent,
         agent,
         label: AGENT_TITLES[agent] ?? agent.replaceAll("-", " "),
         detail: contentText(message.content, 1_200),
@@ -360,7 +384,7 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
         id: invocationId,
         kind: "agent",
         status: "running",
-        actor: "Orchestrator",
+        actor: AGENT_TITLES[agent] ?? agent,
         agent,
         label: AGENT_TITLES[agent] ?? agent.replaceAll("-", " "),
         ...(typeof event.task === "string" ? { detail: compact(event.task, 1_200) } : {}),
@@ -441,6 +465,12 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
       if (at) invocation.endedAt = at;
       continue;
     }
+    if (type === "agent_waiting") {
+      invocation.status = "waiting";
+      invocation.output = typeof event.output === "string" ? event.output : "Waiting for your answers";
+      if (at) invocation.endedAt = at;
+      continue;
+    }
     if (type === "agent_interrupted") {
       invocation.status = event.status === "interrupted" ? "interrupted" : "error";
       invocation.children.push({ id: `${invocationId}-error-${index}`, kind: "error", status: "error", actor: invocation.label, label: invocation.status === "interrupted" ? "Agent interrupted" : "Agent failed", ...(typeof event.error === "string" ? { detail: compact(event.error) } : {}), ...(at ? { at } : {}) });
@@ -502,7 +532,7 @@ function busEvents(records: Record<string, unknown>[], runId: string): WorkflowE
     try {
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       if (LIFECYCLE_TYPES.has(type) || type === "operation_finished") return [];
-      if (type === "project_completed" && typeof event.detail === "string") return [{ id: String(event.id), kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, stage: "completion", artifactRefs: [...collectPaths(event.artifactRefs, runId)], at: String(event.at) }];
+      if (type === "project_completed" && typeof event.detail === "string") return [{ id: String(event.id), kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, ...(event.completion ? { completion: event.completion as unknown as import("@dreamatic/project-data").CompletionSummary } : {}), stage: "completion", artifactRefs: [...collectPaths(event.artifactRefs, runId)], at: String(event.at) }];
       if (type === "design_categories_identified" && typeof event.detail === "string") return [{ id: typeof event.id === "string" ? event.id : `classification-${index}`, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, ...(typeof event.at === "string" ? { at: event.at } : {}) }];
       const failed = type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";
@@ -585,7 +615,7 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
   const hasLifecycleHistory = liveInvocations.length > 0;
   const invocations: SessionInvocation[] = [];
   const sessionsRoot = join(runDir, "sessions");
-  if (!hasLifecycleHistory) {
+  if (!hasLifecycleHistory || liveInvocations.some(invocation => !invocation.children.some(child => child.kind === "tool"))) {
     for (const agentEntry of await readdir(sessionsRoot, { withFileTypes: true }).catch(() => [])) {
       if (!agentEntry.isDirectory()) continue;
       const directory = join(sessionsRoot, agentEntry.name);
@@ -634,6 +664,18 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
   }
 
   for (const live of liveInvocations) {
+    // Older runs wrote lifecycle records but omitted specialist tool events.
+    // Recover those tools from the role's Pi transcript without mutating history.
+    const start = eventTime(live);
+    const end = Date.parse(live.endedAt ?? "");
+    const next = liveInvocations.filter(candidate => candidate.agent === live.agent && eventTime(candidate) > start).sort((a, b) => eventTime(a) - eventTime(b))[0];
+    const windowEnd = Math.min(Number.isFinite(end) ? end + 2_000 : Number.MAX_SAFE_INTEGER, next ? eventTime(next) : Number.MAX_SAFE_INTEGER);
+    const recovered = invocations.filter(candidate => unused.has(candidate.id) && candidate.agent === live.agent && eventTime(candidate) >= start - 2_000 && eventTime(candidate) < windowEnd);
+    const children = new Map(recovered.flatMap(candidate => candidate.children).map(child => [child.id, child]));
+    for (const child of live.children) children.set(child.id, child);
+    live.children = sortEvents([...children.values()]);
+    live.actionCount = live.children.filter(child => child.kind === "tool").length;
+    for (const candidate of recovered) unused.delete(candidate.id);
     const persisted = primary.find((event) => event.kind === "agent" && event.id === live.id);
     if (persisted) {
       persisted.status = live.status;
@@ -646,8 +688,6 @@ export async function workflowInventory(workspaceDir: string, runId: string): Pr
     } else {
       primary.push(live);
     }
-    const start = eventTime(live);
-    const end = Date.parse(live.endedAt ?? "");
     for (const candidate of invocations) {
       if (unused.has(candidate.id) && candidate.agent === live.agent && eventTime(candidate) >= start - 2_000 && (!Number.isFinite(end) || eventTime(candidate) <= end + 2_000)) unused.delete(candidate.id);
     }

@@ -1,86 +1,93 @@
 ---
 name: concept-showcase-storytelling
-description: "Organize a design proposal into an HTML showcase with a clear thesis, evidence-led sequence and inspectable detail views. Use while authoring the proposal before review; supports presentation storytelling, not approval or product-interface design."
+description: "Curate image-based design work into a project-specific visual exhibition: concept thesis, complete work arrangement, narrative, image hierarchy and integrated design explanation. Use when art-directing a portfolio or design showcase."
 metadata:
-  audience: designer
+  audience: builder
   domain_type: concept_showcase_storytelling
-  design_categories: []
   module_type: cross_domain
-  capabilities: [design-storytelling, presentation-narrative, concept-showcase, evidence-sequencing]
+  capabilities: [art-direction, design-storytelling, image-curation, editorial-composition]
   supported_outputs: [html]
-  version: "1.0"
+  version: "2.1"
 ---
 
-# Concept Showcase Storytelling
+# Curate the work, articulate the idea
 
-For image-based design proposals, organize the primary images and their supporting
-explanations in the existing HTML entry. Shape the presentation around what the
-viewer needs to understand. This module does not require another page or scope;
-for UI/UX, the designed HTML interface itself remains the primary outcome.
+The deliverable is an exhibition of actual visual design work. Its main subject is
+neither the source plan nor the HTML itself. Understand what makes this project
+worth seeing; make that idea visible first and explain it with the right evidence.
 
-## Selection boundary
+## Read the material before choosing a structure
 
-Load while organizing existing proposal material, including before its first
-review. The proposal need not already be approved. Choose this for the argument
-and viewing sequence, not source implementation or approval. The owning discipline
-keeps its primary role; an existing product page can serve as the project entry.
+Identify the concept thesis, intended audience, distinctive decisions and necessary
+limits from the design specification, per-image introduction, prompt, dimensions,
+related descriptions and references. Use these textual sources to map every work
+to its intended communication purpose. Designer has already chosen the works:
+exhibit all of them, with deliberate differences in scale, grouping and emphasis.
+Choose a hero for its conceptual and narrative role, not guessed image quality.
 
-## Build an argument from the work
+Do not read generated images or require a vision model. Do not claim to have
+observed composition, fidelity, legibility or particular details. Describe design
+intent honestly. Without visual inspection, preserve full source proportions and
+avoid focal-point-dependent crops or overlays over presumed negative space. Do
+not fabricate use testing, process history, engineering validation or performance.
 
-Use concise captions to explain decisions, relationships and limits. Preserve
-explicitly requested reports and media.
-Identify the concept thesis and the strongest work that demonstrates it. Choose
-a sequence that makes the design understandable: an experience unfolding, a
-form revealed through details, a system across applications, or an evidenced
-problem and response. Select the structure by the material rather than importing
-a sales-deck formula. Establish the subject and its distinctive proposition in
-the opening.
+Complete a separate written exhibition direction before implementation: thesis,
+hero, every work's role/group/purpose in narrative order, necessary explanation,
+palette/type/spacing and narrow-screen sequence. The direction guides composition;
+it is not the final exhibition text. Domain tools may persist and check this record.
 
-Give each subsequent view a reason: explain a relationship, reveal construction,
-show use, compare a meaningful alternative or expose a distinctive detail.
-Pair captions with the evidence they explain. Distinguish visual proposals,
-engineering assumptions and verified outcomes. Do not manufacture performance
-numbers, testimonials or historical process to make the story seem complete.
+## Find the narrative native to this project
 
-## Compose for attention and inspection
+Start with a compact thesis and sequence works by their relationships. A spatial
+project may travel from site to occupation and construction; an identity may
+reveal its visual grammar through applications; an object may unfold from form
+to use and material. These are alternatives for reasoning, not reusable templates.
+A strong single-image proposal may need a carefully composed opening and a few
+annotations rather than forced chapters. More complex work may need grouped
+sequences and a quiet technical explanation.
 
-Default to a clear static composition; interaction or motion needs a concrete viewing
-purpose or confirmed user intent. Use scale, density and image/text relationships
-to set a reading rhythm.
-Preserve enough full views to understand the subject before emphasizing crops.
-Make fine detail inspectable when it matters; avoid a layout that reduces every
-work to an equally small thumbnail. Keep user-requested works reachable without
-making decorative navigation obscure them. On narrow screens, preserve the
-argument and access to details rather than shrinking an oversized desktop scene.
+For each chapter ask: what does the viewer learn here that the previous view could
+not show? Put the design rationale, adopted reference or implementation constraint
+beside its evidence. Preserve explanations that matter to the brief. Edit duplicated
+claims, not the substance needed to understand the design. Prefer specific titles,
+short passages and captions over a plan's generic headings or an uninterrupted essay.
 
-## Finish with a useful outlook
+## Art direct the composition
 
-Default to a static, content-first showcase: native chapter anchors, visible images
-and captions, one column on narrow screens and at most two on wide screens.
-Use typography, spacing and image scale to create hierarchy before adding behavior.
-Keep required works visible without scroll-triggered reveal or hidden panels.
-Add animation or custom controls only for a concrete inspection/comparison task or
-confirmed intent. Preserve the complete design argument and detailed views; this
-default simplifies implementation, not the substance of the proposal.
+Choose background, type, color, alignment, whitespace and image treatment from the
+documented project style, prompts and image purposes. Do not make all projects look like a dark technology
+landing page or a neutral equal-card portfolio. Useful alternatives include full
+views, asymmetrical editorial spreads, specimen layouts, large isolated works,
+related series at deliberate scales and contextual/detail pairings. Use only the
+forms that serve the material. Avoid imposing fixed section counts, column counts,
+aspect ratios, identical image sizes or mandatory image/text alternation.
 
-Explain open design questions and plausible next development steps using the
-actual proposal. Speculative direction remains speculative. Choose section depth
-from the amount of meaningful work; no fixed section count, forced manifesto or
-mandatory interactive spectacle is needed. Author the resulting page through the
-presentation requirements and verify the implemented design.
+Let work dominate the opening composition. Size title and contextual text to
+support it rather than consuming the first viewport. Establish clear relationships
+between primary and secondary work. Use scale, spacing and grouping to control
+attention and pace. Avoid decorative cards, labels, empty dashboard metrics,
+prompts and fake brand/process stories. Fine detail needs enough size to be read.
+Preserve a full, undistorted view of every work; use layout rather than speculative crops.
 
-## Cite the design's sources
+On narrow screens preserve the sequence and complete hero image, allow text to
+wrap naturally, make detailed full images reachable and keep work near the opening.
+Do not shrink a desktop artboard or rely on reveal animations to make content visible.
+Use a readable body measure and sufficient contrast on both light and dark fields.
 
-Include a visible final "参考文献 / References" section for non-UI/UX showcases.
-Use the Researcher's actual source metadata and list only sources adopted in the
-proposal, including visual precedents. Default to IEEE numeric citation style or
-the user's requested academic style. For numeric style, show [n] before every
-entry, number by first citation and reuse that number in linked claims/captions.
-Do not mix numeric citations with an unnumbered author-date list. Use the selected HTML authoring guidance for formatting and preserve missing
-metadata honestly.
-Distinguish original design hypotheses from sourced facts; do not invent references
-or turn unused search results into citations. A source-free proposal still states
-its lack of external references in this section.
+## References and implementation
+
+Keep IEEE citations beside adopted claims and images. List only cited, traceable
+sources in a secondary references area; original work needs no invented sources.
+Distinguish concept proposals and assumptions from documented facts. Do not display
+internal generation prompts or the curation record as exhibition text.
+
+Use semantic static HTML, inline CSS and system or existing local fonts. Native
+links and anchors support inspection without a script-dependent interface. Avoid
+external imports, animation libraries and hidden gallery panels. When supplied by the host, use stable work references rather than transcribing
+technical filenames; otherwise preserve the exact source supplied by the host. Preserve the association between a work and its source. Check image paths,
+mobile overflow, opening hierarchy and caption readability in the real preview.
+Aesthetic quality cannot be reduced to a CSS checklist; recheck whether the first
+impression and reading sequence actually communicate this project's idea.
 
 ## Method references
 

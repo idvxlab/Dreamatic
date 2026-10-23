@@ -3,8 +3,10 @@ import en from "./translations.en.json";
 import zh from "./translations.zh.json";
 export type Language = "en" | "zh";
 export function translate(text: string, language: Language): string {
-  if (language === "en") return (en as Record<string, string>)[text] ?? text;
-  return (zh as Record<string, string>)[text] ?? text;
+  const translated = ((language === "en" ? en : zh) as Record<string, string>)[text] ?? text;
+  // Covers legacy system labels and server-provided product copy without changing
+  // persisted actor ids, project content, URLs or configuration identifiers.
+  return translated.replace(/\bDreamaticArt\b|\bDreamatic\b(?!\s*·\s*Art)/g, "Dreamatic · Art");
 }
 function initialLanguage(): Language {
   try { const saved = localStorage.getItem("dreamatic-ui-language"); if (saved === "en" || saved === "zh") return saved; } catch { /* Storage can be unavailable. */ }

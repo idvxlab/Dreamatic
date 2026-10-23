@@ -108,7 +108,7 @@ for (const path of ['.pi', 'apps', 'packages', 'node_modules', 'bin', 'browsers'
 
 // Only approved runtime resources are copied. Developer secrets, sessions,
 // generated runs and caches never enter the installer.
-for (const path of ['.pi', 'apps/server/dist', 'apps/web/dist', 'packages/project-data/dist', 'apps/cli/dist']) {
+for (const path of ['.pi', 'apps/server/prompts', 'apps/server/dist', 'apps/web/dist', 'packages/project-data/dist', 'apps/cli/dist']) {
   await cp(join(root, path), join(stage, path), { recursive: true });
 }
 for (const path of ['package.json', 'package-lock.json', '.env.example', 'apps/server/package.json', 'apps/web/package.json', 'apps/cli/package.json', 'packages/project-data/package.json']) {

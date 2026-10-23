@@ -46,7 +46,7 @@ export interface RunView {
   assetCount: number;
   documents: string[];
   notes: Array<{
-    id: "research" | "plan" | "review";
+    id: "intent" | "research" | "plan" | "review";
     title: string;
     text: string;
     path: string;
@@ -98,7 +98,7 @@ export interface TimelineItem {
 }
 
 export type WorkflowKind = "message" | "tool" | "agent" | "references" | "milestone" | "retry" | "error";
-export type WorkflowStatus = "running" | "completed" | "interrupted" | "error" | "info";
+export type WorkflowStatus = "running" | "completed" | "interrupted" | "waiting" | "error" | "info";
 
 export interface WorkflowEvent {
   id: string;
@@ -117,6 +117,7 @@ export interface WorkflowEvent {
   assets?: Array<{ path: string; label: string }>;
   children?: WorkflowEvent[];
   updatedAt?: string;
+  completion?: import("@dreamatic/project-data").CompletionSummary;
   imageProgress?: import("@dreamatic/project-data/workflow-progress").ImageProgress;
   actionCount?: number;
   agent?: string;

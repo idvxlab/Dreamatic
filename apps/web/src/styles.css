@@ -572,3 +572,43 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 
 /* Allow long clarification forms to shrink into the panel and scroll, including actions. */
 .agent-panel > .composer-clarification { min-height: 0; flex-shrink: 1; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; scroll-padding-block: 14px; }
+
+.workflow-agent-progress { margin: 9px 0; padding: 9px; background: #f1f4ec; border-left: 2px solid #9ab276; }
+.workflow-agent-progress h4 { display: flex; align-items: center; gap: 5px; }
+.workflow-progress-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.workflow-agent-output > summary { cursor: pointer; color: #686a63; font-size: 9px; }
+.workflow-agent-output section { padding-top: 6px; }
+
+.image-waiting-status { margin-top: 9px; padding-top: 8px; border-top: 1px solid #d8dfcc; }
+.image-waiting-note { margin: 0 0 8px; font-size: 11px; font-weight: 600; line-height: 1.6; color: #92400e; }
+.image-progress-label, .image-timing { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; font-size: 9px; color: var(--muted); }
+.image-progress-label strong { color: #586c3d; font-weight: 500; }
+.image-waiting-status progress { display: block; appearance: none; width: 100%; height: 4px; border: 0; border-radius: 3px; margin: 7px 0 9px; background: #dce2d4; accent-color: #829b65; }
+.image-waiting-status progress::-webkit-progress-bar { background: #dce2d4; border-radius: 3px; }
+.image-waiting-status progress::-webkit-progress-value { background: #829b65; border-radius: 3px; transition: width .2s; }
+.image-active-list { list-style: none; margin: 0 0 8px; padding: 0; max-height: 60px; overflow-y: auto; }
+.image-active-list li { display: flex; gap: 6px; align-items: center; font-size: 10px; color: #586c3d; margin: 4px 0; }
+.image-active-list li span { min-width: 0; overflow-wrap: anywhere; flex: 1; }
+.image-active-list li small { color: var(--muted); white-space: nowrap; }
+.image-timing strong { font-weight: 500; }
+.image-average-note { display: block; margin-top: 5px; font-size: 9px; line-height: 1.5; color: var(--muted); }
+
+/* Completion uses the existing conversation bubble, with a compact measurement table. */
+.completion-summary { min-width: 0; font-size: 9.5px; line-height: 1.55; }
+.completion-summary > strong { display: block; margin-bottom: 6px; font-size: 11px; color: #373e35; }
+.completion-summary .completion-products { margin-bottom: 5px; }
+.completion-summary a { color: #496046; text-decoration: underline; text-underline-offset: 2px; }
+.completion-products-list { margin: 4px 0; }
+.completion-products-list summary { cursor: pointer; color: #52664d; }
+.completion-products-list ul { margin: 4px 0; padding-left: 16px; }
+.completion-products-list li { margin: 3px 0; overflow-wrap: anywhere; }
+.completion-summary .completion-documents { margin-bottom: 7px; }
+.completion-summary table { width: 100%; margin: 8px 0 6px; border-collapse: collapse; font-size: 9px; font-variant-numeric: tabular-nums; }
+.completion-summary th, .completion-summary td { padding: 5px 3px; text-align: right; vertical-align: top; border-bottom: 1px solid #e5e5de; }
+.completion-summary th:first-child, .completion-summary td:first-child { text-align: left; }
+.completion-summary tfoot { font-weight: 600; }
+.workflow-message-bubble .completion-note { margin: 3px 0; font-size: 8px; line-height: 1.45; }
+.completion-summary + .workflow-file-links { margin-top: 8px; }
+
+.brand-row .brand-name { font-weight: 500; white-space: nowrap; }
+.brand-row .brand-name b { color: var(--lime); font-weight: 700; }

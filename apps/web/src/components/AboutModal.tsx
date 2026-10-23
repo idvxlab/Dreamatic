@@ -20,7 +20,7 @@ export function AboutModal({ onClose }: { onClose: () => void }) {
     }}>
       <button className="about-close" aria-label={t("Close about")} onClick={onClose}><X size={17} /></button>
       <div className="about-mark"><Sparkles size={30} strokeWidth={1.6} /></div>
-      <h2 id="about-title">DreamaticArt</h2>
+      <h2 id="about-title">Dreamatic · Art</h2>
       <p className="about-version">{t("Version")} {APP_VERSION}</p>
       <p className="about-description">{t("A professional AI design-agent system for UX/UI, product, brand, visual and spatial design.")}</p>
       <dl><div><dt>{t("Created by")}</dt><dd><a href="https://idvxlab.com/" target="_blank" rel="noopener noreferrer">Intelligent Design &amp; Innovation Lab</a></dd></div><div><dt>{t("License")}</dt><dd>MIT</dd></div></dl>

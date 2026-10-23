@@ -66,6 +66,24 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
   await page.waitForFunction(()=>window.testApi.prompts.has('session-A'));
   await page.evaluate(()=>window.testApi.emit('session-A','A visible text'));
   await page.getByText('A visible text',{exact:true}).waitFor();
+  await page.evaluate(() => {
+    const callback=window.testApi.prompts.get('session-A').callback;
+    for (const agent of ['orchestrator','researcher','designer','builder']) {
+      const invocationId=`${agent}-ui`, toolCallId=`read-${agent}`, at=new Date().toISOString();
+      callback({type:'agent_event',agent,invocationId,event:{type:'tool_execution_start',toolCallId,toolName:'read'}});
+      const records=[{type:'agent_started',agent,invocationId,at},{type:'tool_started',agent,invocationId,toolCallId,toolName:'read',at},{type:'tool_finished',agent,invocationId,toolCallId,toolName:'read',output:'Read complete',at},{type:'agent_finished',agent,invocationId,at}];
+      for(const event of records) {callback({type:'workflow_event',event});callback({type:'workflow_event',event});}
+      callback({type:'agent_event',agent,invocationId,event:{type:'tool_execution_end',toolCallId,toolName:'read',isError:false}});
+    }
+  });
+  await page.waitForFunction(()=>document.querySelectorAll('.workflow-agent-node .kind-tool').length===4);
+  assert.equal(await page.locator('.workflow-stream:not(.nested-stream) > .kind-tool').count(),0);
+  for (const role of ['Orchestrator','Researcher','Designer','Builder']) {
+    const parent=page.locator('.workflow-agent-node').filter({has:page.locator('summary strong',{hasText:role})});
+    assert.equal(await parent.locator('.kind-tool').count(),1);
+    assert.match(await parent.locator('.kind-tool .workflow-label small').textContent(),new RegExp(role));
+  }
+
   await select('B');await page.locator('.composer textarea').fill('Run B');await page.locator('.composer .send').click();
   await page.waitForFunction(()=>window.testApi.prompts.has('session-B'));
   await page.evaluate(()=>{window.testApi.emit('session-A','A stale text');window.testApi.emit('session-B','B visible text');});

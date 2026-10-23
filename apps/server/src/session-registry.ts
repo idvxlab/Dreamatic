@@ -1,3 +1,5 @@
+import { runDesign, atomic } from './design-pipeline.js';
+import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { clarificationFromToolResult } from "@dreamatic/project-data";
 import { randomUUID } from "node:crypto";
@@ -54,18 +56,48 @@ export function clarificationFromMessages(messages: readonly unknown[]): Clarifi
   return pending;
 }
 
-// Application session records and read-only Pi history; no agent sessions are created.
+// Application sessions retain historical Pi transcripts and coordinate current design runs.
 export class SessionRegistry {
   readonly #sessions = new Map<string, SessionView>();
   readonly #repoRoot: string;
   readonly #workspaceDir: string;
-  get busy(): boolean { return false; }
+  readonly #running = new Map<string, { controller: AbortController; session?: AgentSession }>();
+  get busy(): boolean { return this.#running.size > 0; }
+  async execute(id: string, projectId: string, text: string, emit: (event: unknown) => void, images: Array<{ data: string; mimeType: string }> = []): Promise<void> {
+    const view = this.#sessions.get(id);
+    if (!view || view.projectId !== projectId) throw new Error('Session does not belong to this project');
+    if (this.#running.has(id) || [...this.#running.keys()].some(key => this.#sessions.get(key)?.projectId === projectId)) throw new Error('Project is already running');
+    const active: { controller: AbortController; session?: AgentSession } = { controller: new AbortController() };
+    this.#running.set(id, active); view.running = true; delete view.pendingClarification;
+    view.messages.push({ role: 'user', content: text, timestamp: Date.now() });
+    try {
+      await rm(join(this.#workspaceDir, 'runs', projectId, 'pending-clarification.json'), { force: true });
+      await runDesign({ repoRoot: this.#repoRoot, workspaceDir: this.#workspaceDir, runId: projectId, text, images, signal: active.controller.signal, emit,
+        onSession: session => { if (session) active.session = session; else delete active.session; },
+        onQuestion: request => { view.pendingClarification = request; }
+      });
+    } finally {
+      this.#running.delete(id); view.running = false;
+      await atomic(join(this.#workspaceDir, 'sessions/registry.json'), [...this.#sessions.values()]);
+      emit({ type: 'snapshot', session: this.view(id) });
+    }
+  }
   constructor(repoRoot: string, workspaceDir: string) { this.#repoRoot = repoRoot; this.#workspaceDir = workspaceDir; }
   async initialize(): Promise<void> {
     const directory = join(this.#workspaceDir, "sessions");
     await mkdir(directory, { recursive: true });
     const saved: SessionView[] = await readFile(join(directory, "registry.json"), "utf8").then(JSON.parse).catch(error => { if (error.code === "ENOENT") return []; throw error; });
-    for (const session of saved) this.#sessions.set(session.id, { ...session, running: false });
+    for (const session of saved) {
+      this.#sessions.set(session.id, { ...session, running: false });
+      if (session.projectId) {
+        const path = join(this.#workspaceDir, 'runs', session.projectId, 'run-state.json');
+        const state = await readFile(path, 'utf8').then(JSON.parse).catch(() => undefined);
+        const pending = await readFile(join(this.#workspaceDir, 'runs', session.projectId, 'pending-clarification.json'), 'utf8').then(JSON.parse).catch(() => undefined);
+        if (pending) { this.#sessions.get(session.id)!.pendingClarification = pending; }
+        if (state?.status === 'active' && pending) { state.status = 'waiting_for_user'; await atomic(path, state); }
+        else if (state?.status === 'active') { state.status = 'interrupted'; await atomic(path, state); }
+      }
+    }
     for (const sessionDir of [directory, join(directory, "cli")]) {
       for (const info of await SessionManager.list(this.#repoRoot, sessionDir)) {
         if (this.#sessions.has(info.id)) continue;
@@ -93,7 +125,7 @@ export class SessionRegistry {
     if (!session) throw new Error(`Unknown session: ${id}`);
     return { ...session, messages: includeMessages ? session.messages : [] };
   }
-  async abort(id: string): Promise<{ id: string; interrupted: boolean }> { this.view(id); return { id, interrupted: false }; }
+  async abort(id: string): Promise<{ id: string; interrupted: boolean }> { this.view(id); const active = this.#running.get(id); active?.controller.abort(); await active?.session?.abort(); return { id, interrupted: Boolean(active) }; }
   async reloadConfiguration(): Promise<void> { /* Configuration is consumed by application services directly. */ }
-  async dispose(): Promise<void> { this.#sessions.clear(); }
+  async dispose(): Promise<void> { for (const id of this.#running.keys()) await this.abort(id); this.#sessions.clear(); }
 }

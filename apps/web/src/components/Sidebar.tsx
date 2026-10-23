@@ -63,7 +63,8 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
   }, [query, runs]);
   const runLabel = (run: RunView) => {
     if (run.status === "draft") return t("Draft");
-    if (run.status === "complete") return t("Complete");
+    if (run.status === "waiting_for_user") return t("Waiting for your answers");
+    if (["complete", "completed"].includes(run.status)) return t("Complete");
     const activeStage = Object.entries(run.stages).find(([, status]) => status === "in_progress")?.[0];
     const stage = activeStage ? activeStage[0]!.toUpperCase() + activeStage.slice(1) : undefined;
     if (run.status === "interrupted") return `${t("Interrupted")}${stage ? ` · ${t(stage)}` : ""}`;
@@ -87,18 +88,18 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
   return (
     <aside className="sidebar" id="project-panel">
       <div className="brand-area" ref={brandArea}>
-        <button ref={brandButton} className="brand-row" aria-label={t("DreamaticArt menu")} aria-haspopup="menu" aria-expanded={brandMenuOpen} aria-controls={brandMenuOpen ? "brand-menu" : undefined} onClick={() => setBrandMenuOpen(open => !open)}>
+        <button ref={brandButton} className="brand-row" aria-label={t("Dreamatic · Art menu")} aria-haspopup="menu" aria-expanded={brandMenuOpen} aria-controls={brandMenuOpen ? "brand-menu" : undefined} onClick={() => setBrandMenuOpen(open => !open)}>
           <div className="brand-mark"><Sparkles size={17} strokeWidth={1.8} /></div>
-          <div><strong>DreamaticArt</strong><span>{t("Design intelligence")}</span></div>
+          <div><strong className="brand-name">Dreamatic · <b>Art</b></strong><span>{t("Design intelligence")}</span></div>
           <ChevronDown className="muted-icon" size={15} />
         </button>
-        {brandMenuOpen && <div className="brand-menu" id="brand-menu" role="menu" aria-label={t("DreamaticArt menu")} onKeyDown={event => {
+        {brandMenuOpen && <div className="brand-menu" id="brand-menu" role="menu" aria-label={t("Dreamatic · Art menu")} onKeyDown={event => {
           const items = [...event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
           if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) { event.preventDefault(); const index = items.indexOf(document.activeElement as HTMLElement); const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length; items[next]?.focus(); }
         }}>
           <a role="menuitem" href={VERSION_REPOSITORY_URL} target="_blank" rel="noopener noreferrer" onClick={() => setBrandMenuOpen(false)}><Github size={16} /> GitHub</a>
           <button role="menuitem" onClick={() => { setBrandMenuOpen(false); onSettings(); }}><Settings2 size={16} /> {t("Settings")}</button>
-          <button role="menuitem" onClick={() => { setBrandMenuOpen(false); setAboutOpen(true); }}><Info size={16} /> {t("About DreamaticArt")}</button>
+          <button role="menuitem" onClick={() => { setBrandMenuOpen(false); setAboutOpen(true); }}><Info size={16} /> {t("About Dreamatic · Art")}</button>
         </div>}
       </div>
       <button className="new-project" onClick={onCreate} disabled={creating}><Plus size={16} /> {creating ? t("Creating…") : t("New project")}</button>

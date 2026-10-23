@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 
-test('configuration and project records survive runtime removal, saves and workspace changes', { timeout: 30000 }, async () => {
+test('configuration and project records survive execution failures, saves and workspace changes', { timeout: 30000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'dreamatic-config-apply-'));
   let child;
   try {
@@ -25,9 +25,9 @@ test('configuration and project records survive runtime removal, saves and works
     const briefPath = join(root, 'workspace/runs', session.projectId, 'brief.json');
     const before = await readFile(briefPath, 'utf8');
     const prompt = await request(`/api/sessions/${session.id}/messages`, 'POST', { text: 'Design a page', projectId: session.projectId });
-    assert.equal(prompt.status, 503); assert.equal((await prompt.json()).code, 'AGENT_RUNTIME_UNAVAILABLE');
-    assert.equal(await readFile(briefPath, 'utf8'), before);
-    assert.deepEqual((await (await request(`/api/sessions/${session.id}`)).json()).messages, []);
+    assert.equal(prompt.status, 200); assert.match(await prompt.text(), /Configure reasoning provider/);
+    assert.equal(JSON.parse(await readFile(briefPath, 'utf8')).brief, 'Design a page');
+    assert.equal((await (await request(`/api/sessions/${session.id}`)).json()).messages.length, 1);
     await request('/api/config', 'PUT', { secrets: { DREAMATIC_API_KEY: '' } });
     assert.match(await readFile(join(root, '.env'), 'utf8'), /DREAMATIC_API_KEY=new-key/);
     const activeDisk = await readFile(join(root, '.env'), 'utf8');

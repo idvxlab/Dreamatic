@@ -6,6 +6,17 @@ async function parse<T>(response: Response): Promise<T> {
   return value as T;
 }
 
+/** Covers both headers and body; never automatically retries project creation. */
+async function withResponseTimeout<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
+  try { return await request(controller.signal); }
+  catch (error) {
+    if (controller.signal.aborted) throw new Error("The server took too long to respond. Reconnect to refresh the project list before trying again.");
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+
 const getCache = new Map<string, { etag: string; value: unknown }>();
 const getInFlight = new Map<string, Promise<unknown>>();
 async function conditionalGet<T>(url: string): Promise<T> {
@@ -16,9 +27,11 @@ async function conditionalGet<T>(url: string): Promise<T> {
 }
 async function fetchConditional<T>(url: string): Promise<T> {
   const cached = getCache.get(url);
-  const response = await fetch(url, cached ? { headers: { "If-None-Match": cached.etag } } : {});
-  if (response.status === 304 && cached) return cached.value as T;
-  const value = await parse<T>(response);
+  const result = await withResponseTimeout(async signal => {
+    const response = await fetch(url, { signal, ...(cached ? { headers: { "If-None-Match": cached.etag } } : {}) });
+    return { response, value: response.status === 304 && cached ? cached.value as T : await parse<T>(response) };
+  });
+  const { response, value } = result;
   const etag = response.headers.get("etag");
   if (etag) {
     getCache.delete(url); getCache.set(url, { etag, value });
@@ -32,7 +45,7 @@ export async function listSessions(): Promise<SessionView[]> {
 }
 
 export async function createSession(projectId?: string, title?: string): Promise<SessionView> {
-  return parse(await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, title }) }));
+  return withResponseTimeout(async signal => parse(await fetch("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId, title }), signal })));
 }
 
 export async function abortSession(sessionId: string): Promise<{ id: string; interrupted: boolean }> {
@@ -116,7 +129,7 @@ export interface HealthView {
 }
 
 export async function getHealth(): Promise<HealthView> {
-  return parse(await fetch("/api/health"));
+  return withResponseTimeout(async signal => parse(await fetch("/api/health", { signal })));
 }
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
@@ -159,7 +172,9 @@ export async function saveRuntimeConfig(config: RuntimeConfig & { textApiKey?: s
 }
 
 export interface PromptEvent {
-  type: "agent_event" | "snapshot" | "error";
+  type: "agent_event" | "workflow_event" | "snapshot" | "error";
+  agent?: string;
+  invocationId?: string;
   event?: Record<string, unknown>;
   session?: SessionView;
   message?: string;
@@ -200,7 +215,7 @@ export async function downloadProject(runId: string): Promise<void> {
     throw new Error(value.error ?? "Project export failed");
   }
   if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/zip") {
-    throw new Error("Export did not return a ZIP file. Restart the DreamaticArt server to load the export API, then try again.");
+    throw new Error("Export did not return a ZIP file. Restart the Dreamatic · Art server to load the export API, then try again.");
   }
   const blob = await response.blob();
   const expectedLength = response.headers.get("content-length");

@@ -76,3 +76,21 @@ test("a later clarification cannot replace unanswered questions", () => {
   assert.equal(clarificationFromMessages(messages).id, "question-call-1");
   assert.equal(clarificationFromMessages([...messages, { role: "user", content: "我的回答" }, retry, { ...successfulResult, toolCallId: "retry" }]).id, "retry");
 });
+
+test('pending structured questions survive process restart as waiting, not interrupted', async t => {
+ const {mkdtemp,mkdir,writeFile,readFile,rm}=await import('node:fs/promises');
+ const {join}=await import('node:path');const {tmpdir}=await import('node:os');
+ const {SessionRegistry}=await import('../dist/session-registry.js');
+ const root=await mkdtemp(join(tmpdir(),'dreamatic-waiting-'));
+ t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(join(root,'sessions'),{recursive:true});await mkdir(join(root,'runs/project'),{recursive:true});
+ const pending=clarificationFromMessages([requestMessage,successfulResult]);
+ await writeFile(join(root,'sessions/registry.json'),JSON.stringify([{id:'session',projectId:'project',title:'Project',createdAt:new Date().toISOString(),running:true,messages:[]} ]));
+ await writeFile(join(root,'runs/project/run-state.json'),JSON.stringify({status:'active',stages:{}}));
+ await writeFile(join(root,'runs/project/pending-clarification.json'),JSON.stringify(pending));
+ const registry=new SessionRegistry(root,root);await registry.initialize();
+ assert.equal(registry.view('session').running,false);
+ assert.deepEqual(registry.view('session').pendingClarification,pending);
+ assert.equal(JSON.parse(await readFile(join(root,'runs/project/run-state.json'),'utf8')).status,'waiting_for_user');
+ await registry.dispose();
+});

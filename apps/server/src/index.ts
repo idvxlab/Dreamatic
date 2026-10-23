@@ -1,3 +1,4 @@
+import { publicWorkflowData } from './workflow-data.js';
 import { openProjectAssets, localFolderRequest } from "./open-assets.js";
 import { createHash, randomUUID } from "node:crypto";
 import { createReadStream, watch } from "node:fs";
@@ -84,7 +85,7 @@ async function streamWorkflow(request: IncomingMessage, response: ServerResponse
   });
   const writer = streamWriter(response);
   const send = (value: unknown) => {
-    if (!closed) writer.send(`data: ${JSON.stringify(value)}\n\n`);
+    if (!closed) writer.send(`data: ${JSON.stringify(publicWorkflowData(value))}\n\n`);
   };
   send({ type: "snapshot", workflow: await workflowInventory(workspaceDir, runId) });
 
@@ -294,7 +295,20 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         json(response, 409, { error: "Create or select a project before sending a message" });
         return;
       }
-      json(response, 503, { error: "Design execution is unavailable while Dreamatic is being redesigned.", code: "AGENT_RUNTIME_UNAVAILABLE" });
+      const images: Array<{data: string; mimeType: string}> = [];
+      if (Array.isArray(input.images)) for (const raw of input.images) {
+        const image = record(raw);
+        if (typeof image.data !== "string" || typeof image.mimeType !== "string" || !/^image\/(png|jpeg|webp|gif)$/.test(image.mimeType)) throw new Error("Please supply an image attachment (PNG, JPEG, WebP or GIF)");
+        images.push({data: image.data, mimeType: image.mimeType});
+      }
+      const sessionId = decodeURIComponent(promptMatch[1]);
+      const session = registry.view(sessionId);
+      if (session.projectId !== projectId || session.running) { json(response, 409, { error: "Session mismatch or already running" }); return; }
+      response.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
+      const writer = streamWriter(response);
+      try { await registry.execute(sessionId, projectId, input.text, event => writer.send(JSON.stringify(event) + "\n"), images); }
+      catch (error) { writer.send(JSON.stringify({ type: "error", message: String(error) }) + "\n"); }
+      finally { writer.end(); }
       return;
     }
     const abortMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/abort$/);

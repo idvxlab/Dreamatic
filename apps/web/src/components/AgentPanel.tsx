@@ -1,7 +1,8 @@
+import { CompletionSummary } from "./CompletionSummary";
 import { RunStatus } from "./RunStatus";
 import { useI18n } from "../i18n";
 import { ArrowUp, Bot, Check, ChevronDown, Circle, ExternalLink, ImagePlus, LoaderCircle, Paperclip, Square, WandSparkles, Wrench, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { assetUrl } from "../asset-url";
 import type { ClarificationRequest, TimelineItem, WorkflowEvent } from "../types";
 
@@ -13,6 +14,7 @@ export interface PendingImage {
 
 interface AgentPanelProps {
   disabled?: boolean;
+  canResume?: boolean;
   connected?: boolean;
   timeline: TimelineItem[];
   workflow?: WorkflowEvent[];
@@ -63,14 +65,21 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   const { t } = useI18n();
   const at = timeLabel(event.at);
   const [agentOpen, setAgentOpen] = useState(event.status === "running");
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (event.kind !== "agent" || event.status !== "running") return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [event.kind, event.status]);
+  const elapsed = Math.max(0, Math.floor((now - Date.parse(event.at ?? "")) / 1000));
   if (event.kind === "message") {
     const entry = event.stage === "completion" ? event.artifactRefs?.[0] : undefined;
     const runId = entry?.match(/^runs\/([^/]+)\//u)?.[1];
     const user = event.actor === "User / CLI" || event.actor === "User";
     return <div className={`workflow-message-row ${user ? "user" : "assistant"}`}>
       <div className="workflow-message-bubble">
-        <small>{user ? t("You") : event.actor}{at ? ` · ${at}` : ""}</small>
-        {event.detail && <p>{event.detail}</p>}
+        <small>{user ? t("You") : t(event.actor)}{at ? ` · ${at}` : ""}</small>
+        {event.completion ? <CompletionSummary summary={event.completion} /> : event.detail && <p>{event.detail}</p>}
         {entry && runId ? <div className="workflow-file-links">
           <a href={assetUrl(entry)} target="_blank" rel="noreferrer">{t("View project")}<ExternalLink size={10} /></a>
           <a href={`/api/runs/${encodeURIComponent(runId)}/export`}>{t("Download project")}</a>
@@ -84,11 +93,15 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
       if (toggleEvent.target !== toggleEvent.currentTarget) return;
       setAgentOpen(toggleEvent.currentTarget.open);
     }}>
-      <summary><span><strong>{t(event.label)}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} {t("actions ·")} {t(event.status)}{at ? ` · ${at}` : ""}</small>{event.status === "running" && event.output && <small>{event.output}</small>}</span><ChevronDown size={14} /></summary>
+      <summary><span><strong>{t(event.label)}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} {t("actions ·")} {t(event.status)}{at ? ` · ${at}` : ""}</small>{event.status === "running" && <small className="workflow-progress-preview">{event.output ? event.output.split("\n").filter(Boolean).at(-1)?.slice(-140) : t("Working…")}{Number.isFinite(elapsed) ? ` · ${elapsed}s` : ""}</small>}</span><ChevronDown size={14} /></summary>
       <div className="workflow-agent-body">
         {event.detail && <section className="workflow-assignment"><h4>{t("Assigned by Orchestrator")}</h4><p>{event.detail}</p></section>}
+        {(event.status === "running" || event.status === "waiting") && <section className="workflow-agent-progress" role="region" aria-label={`${event.label} progress`}>
+          <h4>{event.status === "running" && <LoaderCircle className="spin" size={11} />} {t(event.status === "waiting" ? "Waiting for your answers" : "Current progress")}</h4>
+          <p>{t(event.output || "Working…")}</p>
+        </section>}
         {event.children?.length ? <div className="workflow-stream nested-stream">{event.children.map((child) => <WorkflowNode event={child} nested key={child.id} />)}</div> : null}
-        {event.output && <section className="workflow-agent-output"><h4>{t("Agent output")}</h4><p>{event.output}</p></section>}
+        {event.output && !["running", "waiting"].includes(event.status) && <details className="workflow-agent-output"><summary>{t("Agent output")}</summary><section><h4>{t("Agent output")}</h4><p>{event.output}</p></section></details>}
       </div>
     </details>
   </div>;
@@ -101,7 +114,7 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
   </div>;
 
   const expandable = Boolean(event.detail || event.input || event.output || event.artifactRefs?.length);
-  const heading = <span className="workflow-label"><strong>{t(event.label)}</strong><small>{event.actor}{event.stage ? ` · ${event.stage}` : ""}{at ? ` · ${at}` : ""}</small></span>;
+  const heading = <span className="workflow-label"><strong>{t(event.label)}</strong><small>{t(event.actor)}{event.stage ? ` · ${event.stage}` : ""}{at ? ` · ${at}` : ""}</small></span>;
   return <div className={`workflow-node kind-${event.kind} ${event.status} ${nested ? "nested" : ""}`}>
     <span className="workflow-dot">{event.kind === "tool" ? <Wrench size={11} /> : event.status === "running" ? <LoaderCircle className="spin" size={13} /> : event.status === "error" || event.status === "interrupted" ? <X size={12} /> : <Check size={12} />}</span>
     {expandable ? <details className="workflow-event-card"><summary>{heading}<ChevronDown size={12} /></summary><WorkflowDetails event={event} /></details> : <div className="workflow-event-label">{heading}</div>}
@@ -127,17 +140,21 @@ function ClarificationCard({ request, disabled, onSubmit, onDismiss }: { request
       {question.options?.length ? <div className="clarification-options">{question.options.map((option) => <button type="button" className={(selected[question.id] ?? []).includes(option.label) ? "selected" : ""} onClick={() => toggle(question.id, option.label, question.multiple)} key={option.label}><strong>{option.label}</strong><small>{option.description}</small></button>)}</div> : null}
       {question.custom && <input value={custom[question.id] ?? ""} onChange={(event) => setCustom((current) => ({ ...current, [question.id]: event.target.value }))} placeholder={question.placeholder ?? (question.options?.length ? t("Or enter another answer…") : t("Type your answer…"))} />}
     </fieldset>)}</div>
-    <button className="clarification-submit" type="button" disabled={disabled || !ready} onClick={() => onSubmit(Object.fromEntries(request.questions.map((question) => [question.id, answerFor(question.id)])))}>{disabled ? t("Waiting for agent…") : t("Continue workflow")}<ArrowUp size={13} /></button>
+    <button className="clarification-submit" type="button" disabled={disabled || !ready} onClick={() => onSubmit(Object.fromEntries(request.questions.map((question) => [question.id, answerFor(question.id)])))}>{disabled ? t("Waiting for agent…") : t("Submit answers")}<ArrowUp size={13} /></button>
   </section>;
 }
 
-export function AgentPanel({ disabled = false, connected = false, timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
+export function AgentPanel({ canResume = false, disabled = false, connected = false, timeline, workflow = [], streamingText, running, stopping, pendingAgentStatus, clarification, onSend, onStop, onAnswerClarification, onDismissClarification }: AgentPanelProps) {
   const { t } = useI18n();
   const [text, setText] = useState("");
   const [images, setImages] = useState<PendingImage[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const followOutputRef = useRef(true);
+  const readingTopRef = useRef(0);
+  useLayoutEffect(() => {
+    if (!followOutputRef.current && scrollRef.current) scrollRef.current.scrollTop = readingTopRef.current;
+  }, [workflow, streamingText, timeline]);
 
   useEffect(() => {
     if (!followOutputRef.current) return;
@@ -150,7 +167,7 @@ export function AgentPanel({ disabled = false, connected = false, timeline, work
 
   useEffect(() => {
     if (!running) return;
-    followOutputRef.current = true;
+    if (!followOutputRef.current) return;
     const frame = window.requestAnimationFrame(() => {
       const element = scrollRef.current;
       if (element) element.scrollTo({ top: element.scrollHeight, behavior: "auto" });
@@ -191,6 +208,7 @@ export function AgentPanel({ disabled = false, connected = false, timeline, work
       <RunStatus workflow={workflow} running={running} pending={pendingAgentStatus} />
       <div className="agent-scroll" ref={scrollRef} onScroll={(event) => {
         const element = event.currentTarget;
+        readingTopRef.current = element.scrollTop;
         followOutputRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
       }}>
         {timeline.length === 0 && workflow.length === 0 && !streamingText ? (
@@ -210,6 +228,7 @@ export function AgentPanel({ disabled = false, connected = false, timeline, work
                 {expandable ? <details className="timeline-details"><summary>{heading}<ChevronDown size={12} /></summary><div className="timeline-expanded">{item.detail && <p>{item.detail}</p>}<ArtifactLinks paths={item.artifactRefs} /></div></details> : <div className="timeline-heading">{heading}</div>}
               </div>;
             })}{pendingAgentStatus && <div className="workflow-node workflow-thinking-node running"><span className="workflow-dot"><LoaderCircle className="spin" size={13} /></span><div className="workflow-thinking-card"><strong>{t(pendingAgentStatus)}</strong><small>{t("Orchestrator · working")}</small><i><span /><span /><span /></i></div></div>}</div>}
+            {!running && !disabled && canResume && !clarification && <button className="clarification-submit" onClick={() => onSend("继续完成", [])}>{t("Continue workflow")}</button>}
             {streamingText && <div className="assistant-copy">{streamingText}</div>}
           </div>
         )}

@@ -1,11 +1,9 @@
 # Dreamatic
 
-Dreamatic is being prepared for a system redesign. The previous agent runtime,
-role instructions, tools and workflow contracts have been removed. A replacement
-agent architecture is outside this change.
-
-This repository is **Dreamatic**. DreamaticMake and DreamaticWeb are separate
-projects. Nothing in this preparation changes those repositories.
+Dreamatic turns design briefs into image-based design work through Pi 1.4.0 and
+four stages: Orchestrator → Researcher → Designer → Builder. Design context is
+handed over in Markdown; the existing UI, Settings and historical project readers
+remain available.
 
 ## Retained application
 
@@ -18,11 +16,12 @@ projects. Nothing in this preparation changes those repositories.
   isolated previews, export and publication transport.
 - Reusable design knowledge in `.pi/skills` and its source attribution.
 
-Design execution is temporarily unavailable. Sending a task returns HTTP 503 with
-`code: "AGENT_RUNTIME_UNAVAILABLE"` before changing project files. The CLI reports
-that execution is unavailable and exits with status 1; `--help` exits normally.
-Historical model and role configuration fields remain available for compatibility;
-saving them does not activate an agent.
+The server streams design execution through the existing messages endpoint.
+Each role uses its own configured model. Interrupted tasks can resume through
+Continue workflow, reusing valid stages and generated images. The CLI execution
+entrypoint remains unavailable; use the web or desktop application.
+
+See [pipeline configuration and limitations](apps/server/DESIGN-PIPELINE.md).
 
 ## Development
 
@@ -48,8 +47,8 @@ served at port 4310; the development frontend uses port 5173.
 | `.pi/skills` | Reusable design knowledge |
 | `workspace` | Runtime data; do not commit generated output |
 
-Pi remains an upstream dependency for reading historical session files. The server
-never creates Pi AgentSession instances or loads extensions/role instructions.
+Pi provides AgentSession, model runtime, tools and Skill discovery. Dreamatic owns
+design policy, image generation, checkpoints and artifact delivery.
 
 See [reconstruction preparation](docs/REFACTOR-PREPARATION.md) for the retained
 boundaries, removal scope, latest cleanup audit and configuration integration requirements.

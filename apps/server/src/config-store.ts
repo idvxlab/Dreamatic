@@ -6,8 +6,14 @@ import { parseEnv } from "node:util";
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export const CONFIG_FIELDS: ConfigField[] = [
-  { key: "DREAMATIC_MODEL_GENERATION_TIMEOUT_MS", label: "Model generation timeout (ms)", module: "system", example: "300000", description: "Allowance after the first nonempty model output.", type: "number", defaultValue: "300000", min: 30000, max: 86400000 },
-  { key: "DREAMATIC_MODEL_TOTAL_TIMEOUT_MS", label: "Model total response timeout (ms)", module: "system", example: "600000", description: "Optional absolute cap, at least the first-output allowance. Blank uses first-output plus generation allowance.", type: "number", defaultValue: "", min: 30000, max: 86400000 },
+  { key: "DREAMATIC_CONTEXT_WINDOW", label: "Custom model context window", module: "reasoning", example: "32768", description: "Required for models absent from the Pi catalog unless supplied in model capabilities.", type: "number", defaultValue: "", min: 1 },
+  { key: "DREAMATIC_MAX_TOKENS", label: "Custom model output limit", module: "reasoning", example: "8192", description: "Required for models absent from the Pi catalog unless supplied in model capabilities.", type: "number", defaultValue: "", min: 1 },
+
+  { key: "DREAMATIC_IMAGE_CAPABILITIES", label: "Verified image capabilities (JSON)", module: "image", example: '{"sizes":["1024x1024"]}', description: "Verified endpoint limits: sizes array. Used when model metadata does not expose supported_sizes. Scoped to the configured provider and model.", type: "text", defaultValue: "" },
+  { key: "DREAMATIC_IMAGE_CAPABILITY_TTL_MS", label: "Image capability cache lifetime (ms)", module: "image", example: "604800000", description: "Lifetime of verified metadata cached outside projects.", type: "number", defaultValue: "604800000", min: 1000 },
+
+  { key: "DREAMATIC_MODEL_GENERATION_TIMEOUT_MS", label: "Model generation timeout (ms)", module: "system", example: "300000", description: "Per model response allowance after the first nonempty output. Tool execution time is excluded.", type: "number", defaultValue: "300000", min: 30000, max: 86400000 },
+  { key: "DREAMATIC_MODEL_TOTAL_TIMEOUT_MS", label: "Model total response timeout (ms)", module: "system", example: "600000", description: "Optional absolute cap per model response, including first-output wait and generation, excluding tool execution. Blank uses the separate first-output and generation allowances.", type: "number", defaultValue: "", min: 30000, max: 86400000 },
   { key: "DREAMATIC_MODEL_CAPABILITIES", label: "Endpoint model capabilities (JSON)", module: "reasoning", example: '{"exact-model-id":{"reasoning":true,"thinkingFormat":"openai","supportsReasoningEffort":true,"thinkingLevelMap":{"off":null,"low":"low"}}}', description: "Verified capabilities for exact model ids on this profile's endpoint; do not reuse across proxies without verification. Supports Pi thinkingFormat, thinkingLevelMap (null marks unsupported), supportsReasoningEffort, thinkingTokenBudgetField, maxTokensField, maxTokens/contextWindow, and chatTemplateKwargs/Args. Unknown capabilities do not mean thinking is off. supportsStrictMode:true only after endpoint verification.", type: "text", defaultValue: "" },
   { key: "DREAMATIC_SITE_URL", label: "DreamaticSite URL", module: "system", example: "https://www.dreamatic.art/", description: "Official website for Publish. Use HTTPS; localhost HTTP is allowed for development. No login is required.", type: "url", defaultValue: "https://www.dreamatic.art/" },
   {
@@ -46,10 +52,10 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "key": "DREAMATIC_PROVIDER_NAME",
     "label": "Provider name",
     "module": "reasoning",
-    "example": "DreamaticArt profile",
+    "example": "Dreamatic · Art profile",
     "description": "",
     "type": "text",
-    "defaultValue": "DreamaticArt profile"
+    "defaultValue": "Dreamatic · Art profile"
   },
   {
     "key": "DREAMATIC_PROVIDER_TYPE",
@@ -264,13 +270,8 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "module": "image",
     "example": "1536x1024",
     "description": "Each image planned by Designer must fit within this size ceiling.",
-    "type": "select",
-    "defaultValue": "1536x1024",
-    "options": [
-      "1024x1024",
-      "1536x1024",
-      "1024x1536"
-    ]
+    "type": "text",
+    "defaultValue": "1024x1024"
   },
   {
     "key": "DREAMATIC_IMAGE_GENERATION_ENDPOINT",
@@ -598,6 +599,12 @@ function validate(field: ConfigField, value: unknown): string {
   const trimmed = value.trim();
   if (field.options && !field.options.includes(trimmed)) throw new Error(`${field.label}: Unsupported option`);
   if (field.type === "url" && trimmed) { let url; try { url = new URL(trimmed); } catch { throw new Error(`${field.label}: Enter a complete HTTP(S) URL`); } if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(`${field.label}: Enter an HTTP(S) URL without embedded credentials`); }
+  const validSize = (size: unknown) => typeof size === "string" && /^([1-9]\d*)x([1-9]\d*)$/.test(size) && size.split("x").every(part => Number.isSafeInteger(Number(part)));
+  if (field.key === "DREAMATIC_IMAGE_DEFAULT_SIZE" && !validSize(trimmed)) throw new Error("Image ceiling must use WIDTHxHEIGHT with positive integer dimensions");
+  if (field.key === "DREAMATIC_IMAGE_CAPABILITIES" && trimmed) {
+    const data = JSON.parse(trimmed);
+    if (!Array.isArray(data?.sizes) || !data.sizes.length || !data.sizes.every(validSize)) throw new Error("Image capabilities require a nonempty sizes array of WIDTHxHEIGHT values");
+  }
   if (field.key === "DREAMATIC_MODEL_CAPABILITIES" && trimmed) {
     const capabilities: unknown = JSON.parse(trimmed);
     if (!capabilities || typeof capabilities !== "object" || Array.isArray(capabilities)) throw new Error("Model capabilities must be a JSON object");

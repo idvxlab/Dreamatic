@@ -14,9 +14,10 @@
   },
   "dependencies": {
     "@dreamatic/project-data": "0.1.0",
-    "@earendil-works/pi-coding-agent": "0.85.1",
-    "yazl": "^3.3.1",
-    "playwright-core": "1.60.0"
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "playwright-core": "1.60.0",
+    "typebox": "1.3.27",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@types/node": "22.18.6",

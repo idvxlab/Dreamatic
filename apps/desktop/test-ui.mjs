@@ -26,7 +26,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 940 });
   await page.waitForLoadState();
   await page.bringToFront();
-  const brandMenu = page.getByRole('button', { name: 'DreamaticArt menu', exact: true });
+  const brandMenu = page.getByRole('button', { name: 'Dreamatic · Art menu', exact: true });
   if (!await brandMenu.isVisible()) await page.getByRole('button', { name: 'EN', exact: true }).click();
   await brandMenu.click();
   await page.getByRole('menuitem', { name: 'Settings' }).click();
@@ -38,7 +38,7 @@ try {
   await page.getByRole('button', { name: 'Save configuration', exact: true }).click();
   await page.getByText('Settings saved and applied', { exact: true }).waitFor();
   assert.equal((await page.evaluate(() => fetch('/api/health').then(response => response.json()))).imageModel, 'desktop-image-model');
-  await page.getByRole('button', { name: 'DreamaticArt menu', exact: true }).click();
+  await page.getByRole('button', { name: 'Dreamatic · Art menu', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();
   await page.getByRole('tab', { name: 'System parameters', exact: true }).click();
   await page.getByRole('textbox', { name: 'Workspace directory', exact: true }).fill('./new-workspace');

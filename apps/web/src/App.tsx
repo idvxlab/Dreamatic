@@ -182,6 +182,10 @@ export function App() {
       if (message.type === "snapshot") setWorkflow(message.workflow);
       else {
         setPendingAgentStatus(undefined);
+        if (message.event.type === "run_status" && typeof message.event.status === "string") {
+          const status = message.event.status;
+          setRuns(current => current.map(run => run.id === activeRunId ? { ...run, status } : run));
+        }
         setWorkflow((current) => applyWorkflowStreamEvent(current, message.event));
       }
     });
@@ -315,13 +319,23 @@ export function App() {
       return;
     }
     if (!item.event) return;
+    if (item.type === "workflow_event") {
+      if (item.event.type === "run_status" && typeof item.event.status === "string") {
+        const status = item.event.status;
+        setRuns(current => current.map(run => run.id === activeRunId ? { ...run, status } : run));
+      }
+      setPendingAgentStatus(undefined);
+      setWorkflow(current => applyWorkflowStreamEvent(current, item.event!));
+      return;
+    }
+    const scoped = Boolean(item.agent && item.invocationId);
     const event = item.event;
     const type = eventName(event);
     if (type === "message_update") {
       const update = event.assistantMessageEvent;
       if (update && typeof update === "object" && "type" in update && update.type === "text_delta" && "delta" in update && typeof update.delta === "string") {
         setPendingAgentStatus(undefined);
-        appendStreamingText(update.delta);
+        if (!scoped) appendStreamingText(update.delta);
       }
       return;
     }
@@ -331,7 +345,7 @@ export function App() {
       const label = typeof event.toolName === "string" ? event.toolName : t("Using tool");
       const id = String(event.toolCallId ?? crypto.randomUUID());
       setTimeline((current) => [...current, { id, kind: "tool", label, active: true }]);
-      setWorkflow((current) => current.some((entry) => entry.id === id) ? current : [...current, {
+      if (!scoped) setWorkflow((current) => current.some((entry) => entry.id === id) ? current : [...current, {
         id,
         kind: "tool",
         status: "running",
@@ -347,7 +361,7 @@ export function App() {
         if (request) setLiveClarification((current) => current?.sessionId === activeId ? current : { sessionId: activeId, request });
       }
       setTimeline((current) => current.map((entry) => entry.id === id ? { ...entry, active: false, kind: "result" } : entry));
-      setWorkflow((current) => current.map((entry) => entry.id === id ? {
+      if (!scoped) setWorkflow((current) => current.map((entry) => entry.id === id ? {
         ...entry,
         status: event.isError === true ? "error" : "completed",
         endedAt: new Date().toISOString(),
@@ -454,10 +468,10 @@ export function App() {
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
 
       </section>
-      {panelOpen && <AgentPanel connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
+      {panelOpen && <AgentPanel canResume={activeRun?.status === "interrupted"} connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
       {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label={t("Close agent panel")} onClick={() => setPanelOpen(false)} />}
-      {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{connectionError}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}
+      {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{t(connectionError)}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}
       {notice && <div className="toast">{t(notice)}</div>}
       {settingsOpen && runtimeConfig && <SettingsModal initial={runtimeConfig} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />}
     </div>

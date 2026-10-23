@@ -17,7 +17,7 @@ await rm(join(stage, "packages/design-agent"), { recursive: true, force: true })
 for (const name of ["rg", "fd"]) await rm(join(stage, "bin", name), { force: true });
 await run(process.execPath, [join(root, 'scripts/desktop/electron-runtime.mjs')]);
 // Only approved source resources: never package developer secrets, runs, sessions or caches.
-for (const path of ['.pi', 'apps/server/dist', 'apps/web/dist', 'packages/project-data/dist', 'apps/cli/dist']) {
+for (const path of ['.pi', 'apps/server/prompts', 'apps/server/dist', 'apps/web/dist', 'packages/project-data/dist', 'apps/cli/dist']) {
   await rm(join(stage, path), { recursive: true, force: true });
   await cp(join(root, path), join(stage, path), { recursive: true });
 }

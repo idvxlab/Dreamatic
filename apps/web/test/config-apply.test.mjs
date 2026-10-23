@@ -37,7 +37,7 @@ test('web Save configuration applies models to the current project, navigates to
     await page.waitForFunction(() => !document.querySelector('.composer textarea').disabled);
     const initialSessions = await page.evaluate(() => fetch('/api/sessions').then(response => response.json()));
     const health = await page.evaluate(() => fetch('/api/health').then(response => response.json()));
-    const openSettings = async () => { await page.getByRole('button', { name: 'DreamaticArt menu', exact: true }).click();await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();await page.getByRole('dialog', { name: 'Settings', exact: true }).waitFor(); };
+    const openSettings = async () => { await page.getByRole('button', { name: 'Dreamatic · Art menu', exact: true }).click();await page.getByRole('menuitem', { name: 'Settings', exact: true }).click();await page.getByRole('dialog', { name: 'Settings', exact: true }).waitFor(); };
     const save = () => page.getByRole('button', { name: 'Save configuration', exact: true }).click();
     await openSettings();await page.getByRole('tab', { name: 'Reasoning models', exact: true }).click();
     await page.getByRole('textbox', { name: 'Default reasoning model', exact: true }).fill('web-reasoning-model');
@@ -47,8 +47,8 @@ test('web Save configuration applies models to the current project, navigates to
     const appliedHealth = await page.evaluate(() => fetch('/api/health').then(response => response.json()));
     assert.equal(appliedHealth.model, 'web-reasoning-model');assert.equal(appliedHealth.imageModel, 'web-image-model');assert.equal(appliedHealth.processId, health.processId);
     assert.equal((await page.evaluate(() => fetch('/api/sessions').then(response => response.json())))[0].id, initialSessions[0].id);
-    const unavailable = await page.evaluate(async session => { const response = await fetch(`/api/sessions/${session.id}/messages`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Reply briefly.',projectId:session.projectId})}); return { status: response.status, body: await response.json() }; }, initialSessions[0]);
-    assert.equal(unavailable.status, 503); assert.equal(unavailable.body.code, 'AGENT_RUNTIME_UNAVAILABLE');
+    const unavailable = await page.evaluate(async session => { const response = await fetch(`/api/sessions/${session.id}/messages`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Reply briefly.',projectId:session.projectId})}); return { status: response.status, body: await response.text() }; }, initialSessions[0]);
+    assert.equal(unavailable.status, 200); assert.match(unavailable.body, /Configure custom model context window/);
     assert.deepEqual(modelCalls, []);
     await openSettings();await page.getByRole('tab', { name: 'System parameters', exact: true }).click();await page.locator('.config-advanced summary').click();
     await page.getByRole('spinbutton', { name: 'Server port', exact: true }).fill(String(nextPort));

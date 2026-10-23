@@ -138,7 +138,7 @@ window.setRun(window.initialRun);`;
     const onDownload = () => invalidDownloads++;
     page.on('download', onDownload);
     invalidExport = 'html'; await page.getByRole('button', {name:'Export',exact:true}).click();
-    await page.getByRole('alert').filter({hasText:'Restart the DreamaticArt server'}).waitFor();
+    await page.getByRole('alert').filter({hasText:'Restart the Dreamatic · Art server'}).waitFor();
     invalidExport = 'truncated'; await page.getByRole('button', {name:'Export',exact:true}).click();
     await page.getByRole('alert').filter({hasText:'invalid or incomplete'}).waitFor();
     assert.equal(invalidDownloads,0); page.off('download',onDownload);

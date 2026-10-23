@@ -150,7 +150,7 @@ export interface AgentSessionView {
 }
 
 export interface RunNoteView {
-  id: "research" | "plan" | "review";
+  id: "intent" | "research" | "plan" | "review";
   title: string;
   text: string;
   path: string;
@@ -176,7 +176,7 @@ export interface RunView {
   sessionId?: string;
 }
 
-const NOTE_FILES: Array<{ id: RunNoteView["id"]; title: string; path: string }> = [
+const NOTE_FILES: Array<{ id: Exclude<RunNoteView["id"], "intent">; title: string; path: string }> = [
   { id: "research", title: "Research findings", path: RUN_FILES.researchFindings },
   { id: "plan", title: "Design rationale", path: "plan/task_breakdown.md" },
   { id: "review", title: "Design challenges", path: "review/design-review.md" },
@@ -197,6 +197,11 @@ function compactMarkdown(source: string): string {
 
 async function runNotes(runDir: string): Promise<RunNoteView[]> {
   const notes: RunNoteView[] = [];
+  for (const [id, title, path] of [["intent", "Design intent", "intent.md"], ["research", "Research", "research.md"], ["plan", "Design rationale", "design.md"]] as const) {
+    const text = await readFile(join(runDir, path!), "utf8").then(compactMarkdown).catch(() => "");
+    if (text) notes.push({ id: id!, title: title!, path: path!, text });
+  }
+  if (notes.length) return notes;
   const unified = await hasUnifiedContext(runDir);
   for (const candidate of NOTE_FILES) {
     const existing = unified ? undefined : await findRunDocument(runDir, candidate.path);

@@ -69,7 +69,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
       } else throw new Error(`Unsupported project file: ${path}`);
     }
     // Keep relative asset links intact, without sessions, caches or duplicate historical Runs.
-    for (const path of ["artifacts", "plan", "research", "review", "context", "references", "inputs", "brief.json", "run-state.json", "completion-summary.json"]) {
+    for (const path of ["artifacts", "plan", "research", "review", "context", "references", "inputs", "intent.md", "research.md", "design.md", "showcase.md", "brief.json", "run-state.json", "completion-summary.json"]) {
       const exists = await lstat(join(runDir, path)).then(() => true).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return false;
         throw error;
@@ -106,7 +106,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
     const previewEntry = typeof manifest.modelPreviewEntry === "string" && files.includes(manifest.modelPreviewEntry) ? manifest.modelPreviewEntry : entry;
     const entryUrl = previewEntry.split("/").map(encodeURIComponent).join("/");
     // A portable launcher; the approved page itself is copied byte-for-byte.
-    await writeFile(join(packageDir, "index.html"), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${entryUrl}"><title>DreamaticArt Preview</title><a href="${entryUrl}">Open preview</a>\n`);
+    await writeFile(join(packageDir, "index.html"), `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${entryUrl}"><title>Dreamatic · Art Preview</title><a href="${entryUrl}">Open preview</a>\n`);
     await writeFile(join(packageDir, "package-manifest.json"), JSON.stringify({ runId, exportedAt: new Date().toISOString(), entry, files: [...files, "index.html", "package-manifest.json"] }, null, 2));
     if (options.publication) await writeFile(join(packageDir, "publication.json"), JSON.stringify(options.publication, null, 2));
     const archive = join(temp, `${runId}.zip`);

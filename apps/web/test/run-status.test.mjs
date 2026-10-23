@@ -1,17 +1,56 @@
 import assert from 'node:assert/strict';import test from 'node:test';import {createServer} from 'node:http';import {fileURLToPath} from 'node:url';import {readFile} from 'node:fs/promises';import {build} from 'vite';import {browserExecutable} from '../../../scripts/browser-executable.mjs';
 test('fixed status displays live receipts without opening tool details and keeps successful thumbnails after completion',{timeout:60000},async t=>{
  const executablePath=await browserExecutable();if(!executablePath){t.skip('Chromium unavailable');return}
- const root=fileURLToPath(new URL('..',import.meta.url)),panel=fileURLToPath(new URL('../src/components/AgentPanel.tsx',import.meta.url)),entry='virtual:run-status';
- const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return id},load(id){if(id===entry)return `import React from 'react';import {createRoot} from 'react-dom/client';import {AgentPanel} from ${JSON.stringify(panel)};const root=createRoot(document.getElementById('root'));window.update=props=>root.render(React.createElement(AgentPanel,{timeline:[],streamingText:'',stopping:false,onSend(){},onStop(){},onAnswerClarification(){},onDismissClarification(){},...props}));window.update({running:true,workflow:[]});`;}}],build:{write:false,rollupOptions:{input:entry},minify:false}});
+ const root=fileURLToPath(new URL('..',import.meta.url)),panel=fileURLToPath(new URL('../src/components/AgentPanel.tsx',import.meta.url)),locale=fileURLToPath(new URL('../src/i18n.tsx',import.meta.url)),entry='virtual:run-status';
+ const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return id},load(id){if(id===entry)return `import React from 'react';import {createRoot} from 'react-dom/client';import {AgentPanel} from ${JSON.stringify(panel)};import {I18nProvider} from ${JSON.stringify(locale)};const root=createRoot(document.getElementById('root'));window.update=props=>root.render(React.createElement(I18nProvider,null,React.createElement(AgentPanel,{timeline:[],streamingText:'',stopping:false,onSend(){},onStop(){},onAnswerClarification(answers){window.submittedAnswers=answers},onDismissClarification(){},...props})));window.update({running:true,workflow:[]});`;}}],build:{write:false,rollupOptions:{input:entry},minify:false}});
  const js=bundle.output.find(x=>x.type==='chunk').code,css=await readFile(new URL('../src/styles.css',import.meta.url),'utf8');
  const server=createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/bundle.js'?'text/javascript':req.url==='/style.css'?'text/css':'text/html');res.end(req.url==='/bundle.js'?js:req.url==='/style.css'?css:'<html><head><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script type="module" src="/bundle.js"></script></body></html>')});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve)}));
  const {chromium}=await import('playwright-core');const browser=await chromium.launch({executablePath,headless:true});t.after(()=>browser.close());const page=await browser.newPage({viewport:{width:1100,height:800}});await page.goto('http://127.0.0.1:'+server.address().port);
+ const request={id:'clarify',title:'Choose your design direction',context:'Affects the concept',questions:[{id:'setting',header:'Setting',question:'Where will this be used?',options:[{label:'Home',description:'Domestic setting'},{label:'Office',description:'Workplace setting'}],multiple:false,custom:true,required:true}]};
+ const oldError={id:'old-error',kind:'agent',status:'interrupted',actor:'Orchestrator',agent:'orchestrator',label:'Orchestrator',children:[{id:'err',kind:'error',status:'error',actor:'Orchestrator',label:'Agent interrupted'}]};
+ await page.evaluate(({request,oldError})=>window.update({running:false,canResume:true,clarification:request,workflow:[oldError,{id:'waiting',kind:'agent',status:'waiting',actor:'Orchestrator',agent:'orchestrator',label:'Orchestrator',output:'Waiting for your answers',children:[]}]}),{request,oldError});
+ const questionCard=page.getByRole('region',{name:'Design brief questions'});
+ await questionCard.getByText('Choose your design direction',{exact:true}).waitFor();
+ assert.equal(await questionCard.locator('.clarification-options button').count(),2);
+ assert.equal(await page.getByRole('button',{name:'Continue workflow',exact:true}).count(),0);
+ assert.equal(await questionCard.getByRole('button',{name:'Submit answers',exact:true}).isDisabled(),true);
+ await questionCard.getByRole('button',{name:'Home Domestic setting'}).click();
+ await questionCard.getByRole('button',{name:'Submit answers',exact:true}).click();
+ assert.deepEqual(await page.evaluate(()=>window.submittedAnswers),{setting:'Home'});
+ await page.evaluate(oldError=>window.update({running:false,canResume:false,workflow:[oldError,{id:'done',kind:'agent',status:'completed',actor:'Builder',label:'Builder',children:[]}]}),oldError);
+ await page.waitForFunction(()=>!document.querySelector('.clarification-card'));
+ assert.equal(await page.getByRole('button',{name:'Continue workflow',exact:true}).count(),0,'historical interruption must not show resume on completed project');
+ await page.evaluate(oldError=>window.update({running:false,canResume:true,workflow:[oldError]}),oldError);
+ await page.getByRole('button',{name:'Continue workflow',exact:true}).waitFor();
  const event={id:'batch',kind:'tool',status:'running',actor:'Builder',label:'Generated design images',at:new Date(Date.now()-10000).toISOString(),updatedAt:new Date().toISOString(),output:'Image hero: receiving response',imageProgress:{total:3,items:{hero:{ok:true,path:'runs/p/artifacts/hero.png'},detail:{ok:false}}}};
  await page.evaluate(event=>window.update({running:true,workflow:[event]}),event);const status=page.getByRole('region',{name:'Run status'});await status.getByText('Saved: 1 · Failed: 1 · Pending: 1 · Total: 3',{exact:true}).waitFor();assert.equal(await status.locator('img').count(),1);assert.match(await status.textContent(),/receiving response/);assert.match(await status.textContent(),/Last status update/);assert.equal(await page.locator('.workflow-event-card').getAttribute('open'),null);assert.equal(await page.getByText('Pi runtime connected',{exact:true}).count(),0);
+ const liveEvent={...event,imageProgress:{total:4,items:{hero:{ok:true,state:'saved',path:'runs/p/artifacts/hero.png',durationMs:90000,reused:false},reuse:{ok:true,state:'saved',durationMs:1,reused:true},detail:{state:'generating',label:'Habitat interior',startedAt:new Date(Date.now()-30000).toISOString()},last:{state:'queued'}}}};
+ await page.evaluate(event=>window.update({running:true,workflow:[event]}),liveEvent);
+ await status.getByText('Images saved: 2 / 4',{exact:true}).waitFor();
+ await status.getByText('Habitat interior',{exact:true}).waitFor();
+ assert.match(await status.textContent(),/1min 30sec/);
+ assert.match(await status.textContent(),/Reused: 1/);
+ assert.match(await status.textContent(),/Keep Dreamatic · Art running/);
+ assert.equal(await status.getByRole('progressbar').getAttribute('value'),'2');
+ await page.screenshot({path:'/tmp/dreamatic-image-progress.png'});
+ await page.evaluate(event=>window.update({running:true,workflow:[{...event,imageProgress:{total:2,items:{hero:{state:'generating',label:'Main visual',startedAt:new Date().toISOString()},detail:{state:'queued'}}}}]}),event);
+ await status.getByText('Calculating after the first image',{exact:true}).waitFor();
+ await page.evaluate(event=>window.update({running:true,workflow:[event]}),event);
+ await status.getByText('Saved: 1 · Failed: 1 · Pending: 1 · Total: 3',{exact:true}).waitFor();
  const bounds=await status.boundingBox(),composer=await page.locator('.composer').boundingBox();assert.ok(bounds.y+bounds.height<composer.y);
- await page.evaluate(event=>window.update({running:false,workflow:[{...event,status:'completed'}]}),event);assert.equal(await status.locator('img').count(),1);assert.equal(await status.locator('.run-status-heading').count(),0);
+ await page.evaluate(event=>window.update({running:false,workflow:[{...event,status:'completed'}]}),event);assert.equal(await status.locator('img').count(),1);assert.equal(await status.locator('.run-status-heading').count(),0);assert.equal(await status.locator('.image-waiting-status').count(),0);
  await page.evaluate(()=>window.update({running:false,workflow:[{id:'p-completion-initial',kind:'message',status:'completed',actor:'Dreamatic',label:'Project completion summary',stage:'completion',detail:'Project completed\nUsage: 100 text tokens',artifactRefs:['runs/p/final/artifacts/site/index.html']}]}));
  const message=page.locator('.workflow-message-bubble');await message.getByText(/Project completed/).waitFor();assert.equal(await message.locator('details').count(),0);assert.equal(await message.getByRole('link',{name:'View project'}).getAttribute('href'),'/assets/runs/p/final/artifacts/site/index.html');assert.equal(await message.getByRole('link',{name:'Download project'}).getAttribute('href'),'/api/runs/p/export');
+ await page.evaluate(()=>window.update({running:true,workflow:[{id:'designer-live',kind:'agent',agent:'designer',status:'running',actor:'Designer',label:'Designer',at:new Date().toISOString(),output:'Choosing materials and visual hierarchy',children:[]}]}));
+ const progress=page.getByRole('region',{name:'Designer progress'});
+ await progress.getByText('Choosing materials and visual hierarchy',{exact:true}).waitFor();
+ assert.equal(await page.locator('.assistant-copy').count(),0);
+ await page.locator('.workflow-agent-card > summary').click();
+ await page.locator('.workflow-progress-preview').filter({hasText:'Choosing materials'}).waitFor();
+ await page.evaluate(()=>window.update({running:false,workflow:[{id:'designer-live',kind:'agent',agent:'designer',status:'completed',actor:'Designer',label:'Designer',output:'Design completed',children:[]}]}));
+ await page.waitForFunction(()=>!document.querySelector('.workflow-agent-progress'));
+ assert.equal(await page.locator('.workflow-agent-progress').count(),0);
+ assert.equal(await page.locator('.workflow-agent-output').getAttribute('open'),null);
  await t.test('nested actions keep the reading position and do not toggle their parent agent',async()=>{
   await page.evaluate(()=>window.update({running:false,workflow:[{id:'agent',kind:'agent',status:'running',actor:'Designer',label:'Designer actions',children:Array.from({length:45},(_,index)=>({id:`action-${index}`,kind:'tool',status:'completed',actor:'Designer',label:`Action ${index}`,input:'Action input',output:'Action result'}))}]}));
   const agent=page.locator('.workflow-agent-card'),action=page.locator('.workflow-event-card').nth(20),scroll=page.locator('.agent-scroll');
@@ -21,8 +60,12 @@ test('fixed status displays live receipts without opening tool details and keeps
    const container=element.closest('.agent-scroll');
    container.scrollTop+=element.getBoundingClientRect().top-container.getBoundingClientRect().top-120;
   });
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   const before=await scroll.evaluate(element=>element.scrollTop);
   assert.ok(before>200,'the parent heading must be above the viewport');
+  await page.evaluate(()=>window.update({running:false,workflow:[{id:'agent',kind:'agent',status:'running',actor:'Designer',label:'Designer actions',output:'New streamed progress while reading history',children:Array.from({length:45},(_,index)=>({id:`action-${index}`,kind:'tool',status:'completed',actor:'Designer',label:`Action ${index}`,input:'Action input',output:'Action result'}))}]}));
+  await page.waitForTimeout(100);
+  assert.ok(Math.abs(await scroll.evaluate(element=>element.scrollTop)-before)<2,'streamed progress must not scroll a user reading history');
   await action.locator('summary').click();
   await page.waitForTimeout(500);
   assert.equal(await action.evaluate(element=>element.open),true);
@@ -33,4 +76,30 @@ test('fixed status displays live receipts without opening tool details and keeps
   assert.equal(await agent.evaluate(element=>element.open),true,'closing a nested action must leave its agent expanded');
   assert.ok(Math.abs(await scroll.evaluate(element=>element.scrollTop)-before)<1,'collapsing an action must preserve scroll position');
  });
+ await t.test('completion stays in the conversation with deliverables, per-stage totals and honest unknown usage',async()=>{
+  const completion={schemaVersion:1,runId:'demo',startedAt:'2026-01-01T00:00:00Z',completedAt:'2026-01-01T00:10:00Z',elapsedMs:600000,executionMs:540000,pausedMs:60000,timingIncomplete:false,tokens:12345,unreportedCalls:1,unreportedImageCalls:1,
+   deliverables:[{kind:'page',path:'runs/demo/final/00-index.html',label:'Showcase page'},{kind:'image',path:'runs/demo/artifacts/hero.png',label:'Primary brand identity'},{kind:'image',path:'runs/demo/artifacts/detail.png',label:'Material study'},{kind:'document',path:'runs/demo/design.md',label:'Design proposal'}],
+   stages:['orchestrator','researcher','designer','builder'].map((stage,index)=>({stage,durationMs:[30000,60000,90000,360000][index],tokens:[1000,2000,3000,6345][index],attempts:1,unreportedCalls:index===3?1:0}))};
+  await page.evaluate(completion=>window.update({running:false,canResume:false,workflow:[{id:'completion',kind:'message',status:'completed',actor:'Dreamatic',stage:'completion',detail:'Legacy detail',completion,artifactRefs:['runs/demo/final/00-index.html']}]}),completion);
+  const bubble=page.getByRole('region',{name:'Project completion summary'});
+  await bubble.getByText('Design task completed',{exact:true}).waitFor();
+  assert.equal(await bubble.locator('tbody tr').count(),4);
+  assert.match(await bubble.locator('tfoot').innerText(),/12,345\+/);
+  assert.match(await bubble.innerText(),/10min 0sec/);
+  await bubble.getByText('Image token usage was not reported by the provider.',{exact:true}).waitFor();
+  await bubble.locator('summary').click();
+  assert.equal(await bubble.getByRole('link',{name:'Primary brand identity',exact:true}).getAttribute('href'),'/assets/runs/demo/artifacts/hero.png');
+  assert.equal(await page.getByRole('button',{name:'Continue workflow',exact:true}).count(),0);
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await bubble.evaluate(node=>node.scrollWidth<=node.clientWidth+1),'summary must not overflow a narrow conversation');
+  await page.screenshot({path:'/tmp/dreamatic-completion-summary-en.png'});
+  await page.evaluate(()=>localStorage.setItem('dreamatic-ui-language','zh'));
+  await page.reload();
+  await page.evaluate(completion=>window.update({running:false,workflow:[{id:'completion',kind:'message',status:'completed',actor:'Dreamatic',stage:'completion',completion,artifactRefs:['runs/demo/final/00-index.html']}]}),completion);
+  const chinese=page.getByRole('region',{name:'项目完成总结'});
+  await chinese.getByText('设计任务已执行完毕',{exact:true}).waitFor();
+  assert.match(await chinese.innerText(),/意图理解/);assert.match(await chinese.innerText(),/部分图像调用未提供 Token 用量/);
+  await page.screenshot({path:'/tmp/dreamatic-completion-summary.png'});
+ });
+
 });
