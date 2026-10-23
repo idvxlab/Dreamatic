@@ -651,7 +651,7 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
       .slice(-40);
     const rawBrief = typeof brief.brief === "string" ? brief.brief.trim() : "";
     const display = await readFile(join(runDir, "project-display.json"), "utf8").then(source => record(JSON.parse(source))).catch(() => ({} as Record<string, unknown>));
-    const title = [display.title, scope.human_title, brief.title, scope.run_name]
+    const title = [display.title, brief.titleStatus === "formal" ? brief.title : undefined, scope.human_title, brief.title, scope.run_name]
       .find((value): value is string => typeof value === "string" && Boolean(value.trim()))
       ?? (rawBrief ? rawBrief.slice(0, 72) : entry.name);
     const stages = Object.fromEntries(Object.entries(record(state.stages)).filter((pair): pair is [string, string] => typeof pair[1] === "string"));

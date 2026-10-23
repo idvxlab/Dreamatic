@@ -105,6 +105,11 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
  assert.ok(!waiting.children.some(item=>item.kind==='error'));
  await runDesign({...options,text:'Home use'});
  assert.deepEqual([...new Set(calls)],['orchestrator','researcher','designer','builder']);
+ assert.equal(JSON.parse(await readFile(join(root,'runs/project/brief.json'),'utf8')).title,'Work');
+ assert.ok(emitted.some(item=>item.type==='workflow_event' && item.event.type==='project_renamed' && item.event.title==='Work'));
+ const titleIndex=emitted.findIndex(item=>item.type==='workflow_event' && item.event.type==='project_renamed' && item.event.title==='Work');
+ const builderIndex=emitted.findIndex(item=>item.type==='workflow_event' && item.event.type==='agent_started' && item.event.agent==='builder');
+ assert.ok(titleIndex>=0 && titleIndex<builderIndex,'final name is published before Builder starts');
  assert.equal(JSON.parse(await readFile(join(root,'runs/project/run-state.json'),'utf8')).status,'completed');
  const completionEvents=emitted.filter(item=>item.type==='workflow_event' && item.event.type==='project_completed');
  assert.equal(completionEvents.length,1);assert.equal(completionEvents[0].event.completion.deliverables.filter(item=>item.kind==='image').length,2);

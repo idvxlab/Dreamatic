@@ -1,3 +1,4 @@
+import { updateWorkTitle } from './project-title.js';
 import { recoverBuilderDraft, savedShowcaseDirection, showcaseAssets } from './builder-recovery.js';
 import { publishCompletionSummary, imageUsageTokens } from './completion-summary.js';
 import { publicWorkflowData } from './workflow-data.js';
@@ -205,6 +206,10 @@ export async function runDesign(options: PipelineOptions) {
     void busWrites.catch(() => undefined);
     return busWrites;
   };
+  const syncWorkTitle = async (stage: 'orchestrator' | 'designer', markdown: string) => {
+    const title = await updateWorkTitle(root, markdown, stage);
+    if (title) await bus({ type: 'project_renamed', title });
+  };
   const saveShowcaseDirection = async (fingerprint: string, images: PlannedImage[], generated: Record<string, GeneratedShowcaseImage>, direction: ShowcaseDirection) => {
     await saveStageOutput(join(root, 'showcase.md'), showcaseDirectionMarkdown(direction));
     await atomic(join(root, '.showcase-direction.json'), { schemaVersion: 1, fingerprint, direction, assets: showcaseAssets(images, generated) });
@@ -253,7 +258,10 @@ export async function runDesign(options: PipelineOptions) {
           if (!record || !record.digest || await readFile(join(root, record.path)).then(bytes => createHash('sha256').update(bytes).digest('hex')).catch(() => '') !== record.digest) reusable = false;
         }
       }
-      if (reusable) continue;
+      if (reusable) {
+        if (stage === 'orchestrator' || stage === 'designer') await syncWorkTitle(stage, existing);
+        continue;
+      }
       for (const downstream of STAGES.slice(index)) delete state.completed[downstream];
       await atomic(statePath, state);
       invocationId = randomUUID();
@@ -304,6 +312,7 @@ export async function runDesign(options: PipelineOptions) {
         } catch { draft = undefined; /* Retain the draft, but regenerate if it still fails validation. */ }
         if (draft) {
           await saveStageOutput(join(root, 'design.md'), draft.text);
+          await syncWorkTitle('designer', draft.text);
           state.completed[stage] = checkpoint(fingerprint, draft.text); await atomic(statePath, state);
           await bus({ type: 'agent_finished', agent: stage, invocationId, output: 'Completed and saved: design.md (revalidated draft)' + (citationNote ? `\n${citationNote}` : ''), artifactRefs: [`runs/${runId}/design.md`] });
           continue;
@@ -479,7 +488,7 @@ export async function runDesign(options: PipelineOptions) {
         result = delivery.html; buildReceipt = delivery.files;
         if (delivery.repairs.length) deliveryNote = `Corrected image references: ${delivery.repairs.map(repair => repair.id).join(', ')}.`;
       } else await saveStageOutput(join(root, outputs[index]!), result);
-      if (stage === 'orchestrator') { const title = /^#\s+(.+)$/m.exec(result)?.[1]?.trim(); if (title) { brief.title = title; brief.titleStatus = 'formal'; await atomic(briefPath, brief); } }
+      if (stage === 'orchestrator' || stage === 'designer') await syncWorkTitle(stage, result);
       state.completed[stage] = checkpoint(fingerprint, result); await atomic(statePath, state);
       if (buildReceipt) await bus({ type: 'build_done', commitReceipt: { files: buildReceipt } });
       await bus({ type: 'agent_finished', agent: stage, invocationId, output: `Completed and saved: ${outputs[index]}` + (citationNote ? `\n${citationNote}` : '') + (deliveryNote ? `\n${deliveryNote}` : ''), artifactRefs: [`runs/${runId}/${outputs[index]}`] });

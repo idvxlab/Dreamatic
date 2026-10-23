@@ -9,3 +9,5 @@ Complete standalone image generation prompt.
 End each prompt at the next heading. When verified supported sizes are supplied, select from those within budget. When capabilities are explicitly unknown, choose dimensions within the supplied budget ceiling and treat them as unverified requests to be validated by generation; never describe the budget as detected model support. Avoid redundant images. Include every valid planned image.
 
 Delivery: return the complete Markdown content for `design.md` in the final response. Dreamatic validates and saves it automatically. Do not call write/edit or tell the user to save the file. Do not repeat the full deliverable in both progress messages and the final response.
+
+Naming: The first H1 (# ...) must contain only the final formal name of the design work, without a document-type suffix such as Design Proposal. Preserve an established work name unless the design or user request calls for a change. If the work has no name yet, use # Design proposal rather than inventing a placeholder work name. Dreamatic uses a concrete first H1 to update the project name immediately after saving the validated design.

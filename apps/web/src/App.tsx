@@ -182,6 +182,10 @@ export function App() {
       if (message.type === "snapshot") setWorkflow(message.workflow);
       else {
         setPendingAgentStatus(undefined);
+        if (message.event.type === "project_renamed" && typeof message.event.title === "string") {
+          const title = message.event.title;
+          setRuns(current => current.map(run => run.id === activeRunId ? { ...run, title } : run));
+        }
         if (message.event.type === "run_status" && typeof message.event.status === "string") {
           const status = message.event.status;
           setRuns(current => current.map(run => run.id === activeRunId ? { ...run, status } : run));
