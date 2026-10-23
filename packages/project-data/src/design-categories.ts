@@ -1,4 +1,4 @@
-/** Design scope belongs to Orchestrator; Skills describe their own applicability. */
+/** Historical design categories used to render existing project scopes. */
 export const DESIGN_CATEGORIES = [
   { id: "media_communication", name: "媒体传达设计", description: "Brand identity, logos, advertising, posters, editorial, illustration and visual information." },
   { id: "industrial", name: "工业设计", description: "Physical products, hardware, ergonomics, product architecture, materials and CMF. Digital interfaces are a separate UX scope." },
@@ -34,7 +34,7 @@ export function briefDesignScopes(brief: Record<string, unknown>): DesignScope[]
   return designScopes(resolved && typeof resolved === "object" && !Array.isArray(resolved) ? (resolved as Record<string, unknown>).designScopes : undefined);
 }
 
-/** Shared runtime handoff: ids identify tasks, categories identify domains, names identify Skills. */
+/** Format historical scope classifications for the existing workflow view. */
 export function designClassificationMessage(scopes: DesignScope[], revised = false) {
   const names = [...new Set(scopes.map((scope) => DESIGN_CATEGORIES.find((category) => category.id === scope.category)!.name))];
   const summary = `${revised ? "设计类型已更新" : "设计类型识别"}：${names.join("、")}`;

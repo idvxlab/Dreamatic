@@ -58,13 +58,3 @@ test('summary inventories preserve project identity and full detail stays scoped
     assert.ok(!details.some((run) => run.id === two.id));
   } finally { await rm(workspace, { recursive: true, force: true }); }
 });
-
-test('compact web events avoid cumulative message payloads while retaining clarification', async () => {
-  const { compactPromptEvent } = await import('../dist/stream-writer.js');
-  const delta = compactPromptEvent({ type: 'message_update', message: { enormous: 'x'.repeat(10000) }, assistantMessageEvent: { type: 'text_delta', delta: 'next', partial: { enormous: 'x'.repeat(10000) } } });
-  assert.deepEqual(delta, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: 'next' } });
-  assert.equal(compactPromptEvent({ type: 'message_update', assistantMessageEvent: { type: 'toolcall_delta', partial: {} } }), undefined);
-  const card = { content: [{ type: 'text', text: '{"questions":[]}' }] };
-  assert.equal(compactPromptEvent({ type: 'tool_execution_end', toolName: 'ask_user', result: card }).result, card);
-  assert.equal(compactPromptEvent({ type: 'tool_execution_end', toolName: 'spawn_agent', result: { enormous: 'x'.repeat(10000) } }).result, undefined);
-});

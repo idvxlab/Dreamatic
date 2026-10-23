@@ -52,4 +52,4 @@ Pi remains an upstream dependency for reading historical session files. The serv
 never creates Pi AgentSession instances or loads extensions/role instructions.
 
 See [reconstruction preparation](docs/REFACTOR-PREPARATION.md) for the retained
-boundaries, removal scope and configuration integration requirements.
+boundaries, removal scope, latest cleanup audit and configuration integration requirements.

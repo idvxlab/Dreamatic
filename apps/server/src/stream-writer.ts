@@ -28,19 +28,3 @@ export function streamWriter(response: ServerResponse, maxBytes = 1024 * 1024) {
     end() { ending = true; pump(); },
   };
 }
-
-/** The Web UI consumes deltas and tool status, not repeated full Pi message snapshots. */
-export function compactPromptEvent(event: Record<string, unknown>): Record<string, unknown> | undefined {
-  if (event.type === 'message_update') {
-    const update = event.assistantMessageEvent as Record<string, unknown> | undefined;
-    return update?.type === 'text_delta' && typeof update.delta === 'string'
-      ? { type: event.type, assistantMessageEvent: { type: 'text_delta', delta: update.delta } } : undefined;
-  }
-  if (event.type === 'tool_execution_start' || event.type === 'tool_execution_end') {
-    return { type: event.type, toolCallId: event.toolCallId, toolName: event.toolName,
-      ...(event.type === 'tool_execution_end' ? { isError: event.isError } : {}),
-      ...(event.type === 'tool_execution_end' && event.toolName === 'ask_user' ? { result: event.result } : {}),
-    };
-  }
-  return undefined;
-}
