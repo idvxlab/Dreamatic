@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "taxonomyVersion": "dreamatic-design-v1",
+  "categories": [
+    {
+      "id": "brand",
+      "name": "品牌设计",
+      "en": "Brand Design",
+      "aliases": [
+        "brand-identity",
+        "brand-design",
+        "brand design"
+      ],
+      "pattern": "品牌(?:形象|系统|识别|设计|手册|化)|标志|文创|\\b(?:brand(?:ing| identity)?|logo|merchandise)\\b"
+    },
+    {
+      "id": "visual",
+      "name": "视觉传达设计",
+      "en": "Visual Communication",
+      "aliases": [
+        "media_communication",
+        "媒体传达设计",
+        "视觉设计",
+        "visual-design",
+        "visual design"
+      ],
+      "pattern": "画册|宣传图|海报|插画|视觉传达|广告|平面设计|信息可视化|\\b(?:poster|illustration|graphic design|advertising|visual communication|editorial design)\\b"
+    },
+    {
+      "id": "product",
+      "name": "产品与工业设计",
+      "en": "Product & Industrial Design",
+      "aliases": [
+        "industrial",
+        "industrial-design",
+        "product-design",
+        "工业设计",
+        "产品设计",
+        "product design"
+      ],
+      "pattern": "产品(?:设计|概念)|工业设计|机器人|机翼|仿生肌肉|键盘|设备|承力结构|\\b(?:industrial|product design|robot|aircraft|wing|device|keyboard|biomimetic muscle)\\b"
+    },
+    {
+      "id": "space",
+      "name": "建筑与空间设计",
+      "en": "Architecture & Spatial Design",
+      "aliases": [
+        "architecture-space",
+        "建筑设计",
+        "空间设计",
+        "architecture",
+        "spatial design"
+      ],
+      "pattern": "建筑(?:设计|外观|学)|城市(?:花园|空间|规划|概念)|(?:月球|火星|太空|科研|殖民|资源开发)基地|(?:月球|火星)(?:移民|城市|永久殖民)|空间(?:设计|概念|布局)|景观|游客中心|栖息地|\\b(?:architecture|urban|landscape|habitat|visitor center|lunar (?:city|base)|mars base)\\b"
+    },
+    {
+      "id": "digital",
+      "name": "数字产品与界面设计",
+      "en": "Digital Product & Interface Design",
+      "aliases": [
+        "ux",
+        "ux-ui",
+        "UX 设计",
+        "交互设计",
+        "用户体验设计",
+        "ui-web-design",
+        "digital-product-design",
+        "interaction design"
+      ],
+      "pattern": "交互(?:设计|界面)|用户体验|网页|个人主页|学术主页|响应式|数字产品|界面设计|\\b(?:ux|ui|website|web app|interface|homepage)\\b"
+    },
+    {
+      "id": "fashion",
+      "name": "服装与纺织设计",
+      "en": "Fashion & Textile Design",
+      "aliases": [
+        "fashion-textiles",
+        "fashion-textile-design",
+        "fashion design"
+      ],
+      "pattern": "服装|纺织|时装|面料|\\b(?:fashion|textile|garment|apparel)\\b"
+    },
+    {
+      "id": "game",
+      "name": "游戏概念与体验设计",
+      "en": "Game Concept & Experience Design",
+      "aliases": [
+        "游戏设计",
+        "游戏体验设计",
+        "game-experience",
+        "game-experience-design",
+        "game design"
+      ],
+      "pattern": "游戏(?:设计|概念|体验|机制|关卡)|\\b(?:game design|gameplay|level design)\\b"
+    },
+    {
+      "id": "service",
+      "name": "服务设计",
+      "en": "Service Design",
+      "aliases": [
+        "service-design",
+        "service design"
+      ],
+      "pattern": "服务设计|服务蓝图|用户旅程|\\b(?:service design|service blueprint|customer journey)\\b"
+    }
+  ]
+}

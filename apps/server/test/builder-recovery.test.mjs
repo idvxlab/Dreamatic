@@ -51,3 +51,18 @@ test('legacy recovery pairs the draft to its own successful plan, without borrow
  await writeFile(join(root,'sessions/builder/one.jsonl'),JSON.stringify({...session,message:{...session.message,content:[{type:'text',text:'<html>A different output</html>'}]}})+'\n');
  assert.equal(await recoverBuilderDraft(root,'current',[image],generated),undefined);
 });
+
+test('wrapped output recovers locally without changing raw output or bypassing page checks',async t=>{
+ const {root,generated}=await fixture(t),assets=showcaseAssets([image],generated);
+ const html='<html><body><img src="dreamatic-image:preface-opening"></body></html>';
+ const raw={fingerprint:'current',text:'Now I will compose the page.\n\n```html\n'+html+'\n```\nDone.',direction,assets};
+ const draft=join(root,'.builder-output.json');
+ await writeFile(draft,JSON.stringify(raw));
+ const recovered=await recoverBuilderDraft(root,'current',[image],generated);
+ assert.equal(recovered.html,html.replace('dreamatic-image:preface-opening',canonical));
+ assert.deepEqual(JSON.parse(await readFile(draft,'utf8')),raw);
+ for(const invalid of [html.replace('dreamatic-image:preface-opening','https://example.org/fake.png'),html.replace('<body>','<body><script>run()</script>'),'<html><body>No works</body></html>']) {
+  await writeFile(draft,JSON.stringify({...raw,text:'Here is your page\n'+invalid}));
+  assert.equal(await recoverBuilderDraft(root,'current',[image],generated),undefined);
+ }
+});

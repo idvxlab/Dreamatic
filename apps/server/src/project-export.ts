@@ -1,3 +1,4 @@
+import { resolveProjectClassification } from '@dreamatic/project-data';
 import { hasUnifiedContext, CONTEXT_PROJECTIONS, annotateModelUsage, collectModelUsage, type ModelUsage } from "@dreamatic/project-data";
 import { ZipFile } from "yazl";
 import { createHash } from "node:crypto";
@@ -80,6 +81,13 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
       if (path.startsWith("artifacts/") && !files.includes(path)) throw new Error(`Committed build output is missing: ${path}`);
     }
     const manifest = JSON.parse(await readFile(join(packageDir, "artifacts/artifact-manifest.json"), "utf8").catch(() => "{}"));
+    const exportedBrief = JSON.parse(await readFile(join(packageDir, 'brief.json'), 'utf8'));
+    const classification = resolveProjectClassification(exportedBrief, manifest);
+    if (classification) {
+      exportedBrief.classification = classification; manifest.classification = classification;
+      await writeFile(join(packageDir, 'brief.json'), JSON.stringify(exportedBrief, null, 2));
+      await writeFile(join(packageDir, 'artifacts/artifact-manifest.json'), JSON.stringify(manifest, null, 2));
+    }
     const entry = manifest.presentation?.entry ?? "artifacts/00-gallery.html";
     if (typeof entry !== "string" || !files.includes(entry) || !entry.endsWith(".html")) throw new Error("Completed project presentation is missing");
     if (receipt && typeof receipt["artifacts/artifact-manifest.json"] !== "string") throw new Error("Build manifest has no approval receipt");

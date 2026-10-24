@@ -37,6 +37,7 @@ export interface Asset {
 }
 
 export interface RunView {
+  classification?: import('@dreamatic/project-data/project-classification').ProjectClassification;
   id: string;
   title: string;
   createdAt: string;
@@ -104,6 +105,7 @@ export interface WorkflowEvent {
   id: string;
   kind: WorkflowKind;
   status: WorkflowStatus;
+  waitReason?: 'images';
   actor: string;
   label: string;
   detail?: string;

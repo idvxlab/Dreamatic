@@ -38,12 +38,12 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
  const root = await mkdtemp(join(tmpdir(),'dreamatic-pipeline-')); const old = {...process.env};
  const calls = [];
  let shouldClarify = true;
- let skipPlan = false, imageRequests = 0;
+ let skipPlan = false, imageRequests = 0, brokenReferences = false, failHero = false, heroFailureRequests = 0, onlyMissingOnResume = false;
  const server = createServer(async (req,res) => {
   let body=''; for await(const chunk of req) body += chunk;
   const data = JSON.parse(body || '{}');
   if (req.method === 'GET') { res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({id:'fixture',object:'model'})); return; }
-  if(req.url.endsWith('/images/generations')) { imageRequests++; await new Promise(resolve=>setTimeout(resolve,1000)); res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='}]})); return; }
+  if(req.url.endsWith('/images/generations')) { imageRequests++; if(failHero && data.prompt.includes('portrait')) {heroFailureRequests++;res.writeHead(502,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'upstream unavailable'}));return;} await new Promise(resolve=>setTimeout(resolve,1000)); res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='}]})); return; }
   const system = data.messages.find(m=>m.role==='system')?.content || '';
   const stage = system.includes('Understand the request') ? 'orchestrator' : system.includes('Read intent.md. Use search') ? 'researcher' : system.includes('Produce only design.md') ? 'designer' : 'builder';
   assert.match(system,/Dreamatic saves your final response/);
@@ -66,19 +66,21 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
 
   const generationText=data.messages.find(m=>m.role==='tool' && m.tool_call_id==='generate')?.content || '';
   const imageTags=['hero','detail'].map(id=>`<img src="${generationText.match(new RegExp(id+': (dreamatic-image:[^\\s]+)'))?.[1] || 'dreamatic-image:'+id}">`).join('');
-  const result = stage==='orchestrator' ? '# Aurora\nA sustainable lamp.' : stage==='researcher' ? '# Research\nBackground source: https://example.org/background' : stage==='designer' ? design.replace('768x1024','1024x1024')+'\n## References\n[9] Background reading. https://example.org/background\n' : `<!doctype html><html><body>${imageTags}</body></html>`;
+  const result = stage==='orchestrator' ? '# Aurora\nA sustainable lamp.' : stage==='researcher' ? (brokenReferences ? '# Research\nUncertain evidence [8].\n## References\n[1] Known source. https://example.org/background\n[1] Different source with the same id. URL unavailable\n' : '# Research\nBackground source: https://example.org/background\n\n## References\n[1] Supporting evidence. https://example.org/support\n[2] Background reading. https://example.org/background\n') : stage==='designer' ? (brokenReferences ? '# Concept\nUnresolved evidence [77].\n' : '')+design.replace('768x1024','1024x1024')+'\n## References\n[2] Rewritten bibliography. https://wrong.example/source\n' : "Now I will compose the complete exhibition HTML.\n\n```html\n"+`<!doctype html><html><body>${imageTags}</body></html>`+"\n```\nThe exhibition is ready.";
   const needsRead = !data.messages.some(m=>m.role==='tool' && m.tool_call_id===`read-${stage}`);
+  const classify = ['orchestrator','designer'].includes(stage) && !data.messages.some(m=>m.role==='tool' && m.tool_call_id==='classification');
   const tool = stage === 'builder' && !data.messages.some(m=>m.role==='tool' && m.tool_call_id==='generate');
   const plan = stage==='builder' && !skipPlan && !data.messages.some(m=>m.role==='tool' && m.tool_call_id==='plan');
   const toolCall=(id,name,args)=>({tool_calls:[{index:0,id,type:'function',function:{name,arguments:JSON.stringify(args)}}]});
   const delta = needsRead ? toolCall(`read-${stage}`,'read',{path:join(process.cwd(),'apps/server/prompts',`${stage}.md`)})
-    : tool ? toolCall('generate','image_generate',{ids:['hero','detail']})
+    : classify ? toolCall('classification','set_project_classification',{primary:stage==='designer'?'product':'visual',secondary:[]})
+    : tool ? toolCall('generate','image_generate',{ids:onlyMissingOnResume?['hero']:['hero','detail']})
     : plan ? toolCall('plan','plan_showcase',{heroId:'hero',works:[{id:'hero',role:'hero',section:'Everyday light',purpose:'Introduce the concept'},{id:'detail',role:'detail',section:'Material logic',purpose:'Explain construction'}],direction:'## Thesis\nA sustainable lamp in everyday use.\n## Art direction\nA warm light field, quiet typography and a dominant full-view hero.\n## Sequence\nHero followed by the complete detail study and concise material rationale.'})
     : {content:result};
   res.writeHead(200,{'Content-Type':'text/event-stream'});
   const chunk = {id:'test',object:'chat.completion.chunk',created:1,model:'fixture',choices:[{index:0,delta:{role:'assistant',...delta},finish_reason:null}]};
   res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-  res.write(`data: ${JSON.stringify({...chunk,choices:[{index:0,delta:{},finish_reason:needsRead||tool||plan?'tool_calls':'stop'}]})}\n\n`);
+  res.write(`data: ${JSON.stringify({...chunk,choices:[{index:0,delta:{},finish_reason:needsRead||classify||tool||plan?'tool_calls':'stop'}]})}\n\n`);
   res.end('data: [DONE]\n\n');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -106,6 +108,8 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
  await runDesign({...options,text:'Home use'});
  assert.deepEqual([...new Set(calls)],['orchestrator','researcher','designer','builder']);
  assert.equal(JSON.parse(await readFile(join(root,'runs/project/brief.json'),'utf8')).title,'Work');
+ assert.equal(JSON.parse(await readFile(join(root,'runs/project/brief.json'),'utf8')).classification.primary,'product');
+ assert.ok(emitted.some(item=>item.type==='workflow_event' && item.event.type==='project_classified' && item.event.classification.primary==='product'));
  assert.ok(emitted.some(item=>item.type==='workflow_event' && item.event.type==='project_renamed' && item.event.title==='Work'));
  const titleIndex=emitted.findIndex(item=>item.type==='workflow_event' && item.event.type==='project_renamed' && item.event.title==='Work');
  const builderIndex=emitted.findIndex(item=>item.type==='workflow_event' && item.event.type==='agent_started' && item.event.agent==='builder');
@@ -119,17 +123,22 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
  assert.ok(!emitted.some(item=>item.type==='workflow_event' && item.event.toolName==='inspect_showcase_images'));
  const manifest=JSON.parse(await readFile(join(root,'runs/project/artifacts/artifact-manifest.json'),'utf8'));
  assert.equal(manifest.artifacts.length,2,'all images are generated and exhibited');
+ assert.equal(manifest.classification.primary,'product');
  assert.deepEqual(manifest.showcase.imageIds,['hero','detail']);
  assert.match(await readFile(join(root,'runs/project/showcase.md'),'utf8'),/Art direction/);
  assert.equal(manifest.showcase.works.length,2);
  const originalDesign=await readFile(join(root,'runs/project/design.md'),'utf8');
- assert.match(originalDesign,/\[9\] Background reading/,'uncited entries are retained, not silently edited');
+ assert.match(originalDesign,/\[2\] Background reading/,'research entries are copied rather than rewritten by Designer');
+ assert.match(originalDesign,/\[1\] Supporting evidence/,'all research entries are included even if Designer omitted them');
+ assert.ok(!originalDesign.includes('https://wrong.example/source'));
+ assert.match(JSON.parse(await readFile(join(root,'runs/project/.design-draft.json'),'utf8')).text,/https:\/\/wrong\.example\/source/,'raw draft remains unchanged for audit and recovery');
  const firstDesignerFinish=emitted.find(item=>item.type==='workflow_event' && item.event.type==='agent_finished' && item.event.agent==='designer');
- assert.match(firstDesignerFinish.event.output,/Citation note:.*\[9\]/);
+ assert.match(firstDesignerFinish.event.output,/Citation note:.*\[2\]/);
  assert.ok(!emitted.some(item=>item.type==='workflow_event' && item.event.type==='agent_interrupted'));
 
  assert.equal(((await readFile(join(root,'runs/project/final/00-index.html'),'utf8')).match(/<img /g)||[]).length,2);
- assert.ok(!(await readFile(join(root,'runs/project/final/00-index.html'),'utf8')).startsWith('```'));
+ assert.ok((await readFile(join(root,'runs/project/final/00-index.html'),'utf8')).startsWith('<!doctype html>'));
+ assert.match(JSON.parse(await readFile(join(root,'runs/project/.builder-output.json'),'utf8')).text,/Now I will compose/);
  assert.ok(!(await readFile(join(root,'runs/project/final/00-index.html'),'utf8')).includes('dreamatic-image:'));
  const {prepareProjectExport}=await import('../dist/project-export.js');
  const {promisify}=await import('node:util');const {execFile}=await import('node:child_process');
@@ -240,10 +249,65 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
  assert.equal(imageRequests,generatedCount,'resume must reuse all matching generated images');
  assert.equal(JSON.parse(await readFile(join(root,'runs/project/run-state.json'),'utf8')).status,'completed');
 
+ brokenReferences=true;
+ const beforeAdvisory=emitted.length;
  await writeFile(join(root,'runs/project/research.md'),'# Changed evidence');
  await runDesign({...options,text:'继续完成'});
  assert.ok(calls.length>count);
  assert.ok(calls.slice(beforeRecovery).includes('researcher'));
+ assert.equal(JSON.parse(await readFile(join(root,'runs/project/run-state.json'),'utf8')).status,'completed');
+ assert.ok(!emitted.slice(beforeAdvisory).some(item=>item.type==='workflow_event' && item.event.type==='agent_interrupted'));
+ const report=JSON.parse(await readFile(join(root,'runs/project/.citation-report.json'),'utf8'));
+ assert.ok(report.researcher.issues.length && report.designer.issues.length);
+ const advisoryDesign=await readFile(join(root,'runs/project/design.md'),'utf8');
+ assert.match(advisoryDesign,/## Citation verification/);
+ assert.match(advisoryDesign,/Unresolved evidence \[77\]/);
+ assert.ok(emitted.slice(beforeAdvisory).some(item=>item.type==='workflow_event' && item.event.type==='agent_finished' && item.event.output.includes('workflow continues')));
+ const advisoryCheckpoint=JSON.parse(await readFile(checkpointPath,'utf8'));
+ delete advisoryCheckpoint.completed.designer;delete advisoryCheckpoint.completed.builder;
+ await writeFile(checkpointPath,JSON.stringify(advisoryCheckpoint));
+ await rm(join(root,'runs/project/design.md'));
+ const callsBeforeAdvisoryRecovery=calls.length;
+ await runDesign({...options,text:'继续完成'});
+ assert.equal(calls.length,callsBeforeAdvisoryRecovery,'citation problems must not force model calls on draft recovery');
+ assert.equal(await readFile(join(root,'runs/project/design.md'),'utf8'),advisoryDesign);
+ const advisoryWorkflow=await workflowInventory(root,'project');
+ assert.equal(advisoryWorkflow.filter(node=>node.id==='project-citations-designer').length,1);
+ assert.equal(advisoryWorkflow.find(node=>node.id==='project-citations-designer').kind,'message');
+ assert.match(advisoryWorkflow.find(node=>node.id==='project-citations-designer').detail,/workflow will continue/);
+ assert.equal(JSON.parse(await readFile(join(root,'runs/project/run-state.json'),'utf8')).status,'completed');
+
+ // An exhausted first image must not discard or prevent subsequent successful work.
+ failHero=true;process.env.DREAMATIC_IMAGE_RETRY_ATTEMPTS='2';process.env.DREAMATIC_IMAGE_CONCURRENCY='1';
+ const beforeImagePause=emitted.length;
+ await runDesign({...options,runId:'image-retry',text:'Design another lamp'});
+ const retryRoot=join(root,'runs/image-retry');
+ const paused=JSON.parse(await readFile(join(retryRoot,'run-state.json'),'utf8'));
+ assert.equal(paused.status,'waiting_for_images');assert.equal(heroFailureRequests,2);
+ const receipt=JSON.parse(await readFile(join(retryRoot,'.image-generation-state.json'),'utf8'));
+ assert.deepEqual(receipt.saved,['detail']);assert.deepEqual(receipt.missing,['hero']);
+ assert.equal(receipt.failed[0].attempts,2);assert.equal(receipt.failed[0].error.code,'HTTP_502');
+ const pauseEvents=emitted.slice(beforeImagePause).filter(item=>item.type==='workflow_event').map(item=>item.event);
+ assert.ok(!pauseEvents.some(event=>event.type==='agent_interrupted'));
+ assert.ok(!pauseEvents.some(event=>event.type==='tool_started'&&event.toolName==='plan_showcase'));
+ assert.match(pauseEvents.find(event=>event.type==='agent_waiting').output,/1\/2 images saved/);
+ const toolReceipt=pauseEvents.find(event=>event.type==='tool_finished'&&event.toolName==='image_generate');
+ assert.equal(toolReceipt.isError,false);assert.match(toolReceipt.output,/HTTP_502/);assert.match(toolReceipt.output,/dreamatic-image:detail/);
+ const pausedWorkflow=await workflowInventory(root,'image-retry');
+ assert.equal(pausedWorkflow.find(node=>node.id==='image-retry-image-generation').kind,'message');
+ assert.equal(pausedWorkflow.findLast(node=>node.agent==='builder').status,'waiting');
+ assert.equal(pausedWorkflow.findLast(node=>node.agent==='builder').waitReason,'images');
+ const beforeImageResume=calls.length,requestsBeforeResume=imageRequests,eventsBeforeImageResume=emitted.length;
+ failHero=false;onlyMissingOnResume=true;
+ await runDesign({...options,runId:'image-retry',text:'继续完成'});
+ assert.ok(calls.slice(beforeImageResume).every(role=>role==='builder'));
+ assert.equal(imageRequests,requestsBeforeResume+1,'only the missing image may call the provider');
+ assert.ok(emitted.slice(eventsBeforeImageResume).some(item=>item.type==='workflow_event' && item.event.imageItems?.hero?.state==='generating' && item.event.imageItems?.detail?.state==='saved' && item.event.imageItems.detail.reused),'progress must show saved works even if the tool requests only missing ids');
+ assert.equal(JSON.parse(await readFile(join(retryRoot,'run-state.json'),'utf8')).status,'completed');
+ const resumedWorkflow=await workflowInventory(root,'image-retry');
+ assert.equal(resumedWorkflow.filter(node=>node.id==='image-retry-image-generation').length,1);
+ assert.match(resumedWorkflow.find(node=>node.id==='image-retry-image-generation').detail,/All 2 design images/);
+
 });
 
 test('IEEE citations reject missing entries and unresearched sources', async () => {

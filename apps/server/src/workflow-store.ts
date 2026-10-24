@@ -19,6 +19,7 @@ export interface WorkflowEventView {
   id: string;
   kind: WorkflowKind;
   status: WorkflowStatus;
+  waitReason?: 'images';
   actor: string;
   label: string;
   detail?: string;
@@ -168,6 +169,7 @@ function toolLabel(tool: string): string {
     research_asset_validate: "Validated reference library",
     inspect_showcase_images: "Inspected design works",
     plan_showcase: "Art directed exhibition",
+    set_project_classification: "Classified project",
     image_generate: "Generated design image",
     image_generate_batch: "Generated design images",
     image_edit: "Edited design image",
@@ -467,6 +469,7 @@ function lifecycleInvocations(records: Record<string, unknown>[], runId: string)
     }
     if (type === "agent_waiting") {
       invocation.status = "waiting";
+      if (event.reason === "images") invocation.waitReason = "images";
       invocation.output = typeof event.output === "string" ? event.output : "Waiting for your answers";
       if (at) invocation.endedAt = at;
       continue;
@@ -533,6 +536,7 @@ function busEvents(records: Record<string, unknown>[], runId: string): WorkflowE
       const type = typeof event.type === "string" ? event.type : "workflow_update";
       if (LIFECYCLE_TYPES.has(type) || type === "operation_finished") return [];
       if (type === "project_completed" && typeof event.detail === "string") return [{ id: String(event.id), kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, ...(event.completion ? { completion: event.completion as unknown as import("@dreamatic/project-data").CompletionSummary } : {}), stage: "completion", artifactRefs: [...collectPaths(event.artifactRefs, runId)], at: String(event.at) }];
+      if ((type === "citation_review" || type === "image_batch_result") && typeof event.id === "string" && typeof event.detail === "string") return [{ id: event.id, kind: "message", status: "completed", actor: "Dreamatic", label: type === "image_batch_result" ? String(event.summary ?? "Image generation paused") : "Reference verification", detail: event.detail, ...(typeof event.at === "string" ? { at: event.at } : {}) }];
       if (type === "design_categories_identified" && typeof event.detail === "string") return [{ id: typeof event.id === "string" ? event.id : `classification-${index}`, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, ...(typeof event.at === "string" ? { at: event.at } : {}) }];
       const failed = type.includes("interrupted") || event.severity === "error";
       const retry = type === "operation_retry";

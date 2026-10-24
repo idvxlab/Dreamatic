@@ -6,3 +6,4 @@ export * from "./model-usage.js";
 export * from "./preview.js";
 export * from "./design-categories.js";
 export type { CompletionSummary, CompletionStage, CompletionDeliverable } from './completion-summary.js';
+export * from './project-classification.js';

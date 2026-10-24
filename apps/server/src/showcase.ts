@@ -139,12 +139,40 @@ export function createShowcaseTools(options: {
   return { tools, get direction() { return direction; } };
 }
 
+/** Extract only one complete standalone document. Ambiguous boundaries are never guessed. */
 export function normalizeShowcaseHtml(output: string): string {
-  let html = output.trim();
-  const fenced = /^```(?:html)?[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/i.exec(html);
-  if (fenced) html = fenced[1]!.trim();
-  if (!/^(?:<!doctype\s+html[^>]*>\s*)?<html[\s>]/i.test(html) || !/<\/html>\s*$/i.test(html)) throw new Error('Builder must return a complete HTML exhibition, without commentary');
-  return html;
+  const text = output.trim();
+  const fail = () => new Error('Builder must return a complete HTML exhibition, without commentary or ambiguous documents');
+  // Deliberately conservative: tag-shaped examples in comments/strings are
+  // ambiguous too. Do not choose the first/last document or repair truncation.
+  const starts = [...text.matchAll(/<html(?=[\s>])(?:[^"'<>]|"[^"]*"|'[^']*')*>/gi)];
+  const ends = [...text.matchAll(/<\/html\s*>/gi)];
+  const doctypes = [...text.matchAll(/<!doctype\s+html\b[^>]*>/gi)];
+  if (starts.length !== 1 || ends.length !== 1 || doctypes.length > 1) throw fail();
+  const opening = starts[0]!, closing = ends[0]!;
+  if (closing.index! < opening.index! + opening[0].length) throw fail();
+  let start = opening.index!;
+  if (doctypes.length) {
+    const doctype = doctypes[0]!;
+    if (doctype.index! > start || text.slice(doctype.index! + doctype[0].length, start).trim()) throw fail();
+    start = doctype.index!;
+  }
+  const end = closing.index! + closing[0].length;
+  let before = text.slice(0, start), after = text.slice(end);
+  // A document must occupy its own lines, not be embedded in a prose example.
+  if (!/(?:^|\n)[ \t]*$/.test(before) || !/^[ \t]*(?:\r?\n|$)/.test(after)) throw fail();
+  const fence = /(?:^|\r?\n)[ \t]{0,3}(`{3,}|~{3,})(?:html)?[ \t]*\r?\n[ \t\r\n]*$/i.exec(before);
+  if (fence) {
+    const marker = fence[1]!;
+    const close = new RegExp('^[ \t\r\n]*' + marker[0] + '{' + marker.length + ',}[ \t]*(?:\r?\n|$)').exec(after);
+    if (!close) throw fail();
+    before = before.slice(0, fence.index); after = after.slice(close[0].length);
+  }
+  // Only plain explanatory text may surround the document. Extra markup or
+  // code blocks could be another deliverable or unsafe content: reject them.
+  const extraContent = /<[!/?a-z]|^[ \t]{0,3}(?:`{3,}|~{3,})/im;
+  if (extraContent.test(before) || extraContent.test(after)) throw fail();
+  return text.slice(start, end);
 }
 
 /** Static visibility checks for explicit hiding, inactive containers and tiny placeholders.

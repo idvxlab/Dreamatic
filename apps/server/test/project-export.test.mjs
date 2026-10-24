@@ -112,3 +112,18 @@ test('unified ZIP export preserves canonical Context and excludes stale split fi
     assert.equal(await readFile(join(f.run, path), 'utf8'), 'Stale adapter');
   }
 });
+
+
+test('export adds consistent category metadata to snapshots without rewriting the source or build receipts',async t=>{
+ const f=await fixture(t,'gallery');
+ const path=join(f.run,'brief.json');const before=await readFile(path,'utf8');
+ await writeFile(path,JSON.stringify({...JSON.parse(before),title:'月球资源开发基地'}));
+ const original=await readFile(path,'utf8');const originalManifest=await readFile(join(f.run,'artifacts/artifact-manifest.json'),'utf8');
+ const zip=await prepareProjectExport(f.workspace,f.runId);
+ try {
+  const extract=async name=>JSON.parse((await exec('unzip',['-p',zip.path,f.runId+'/'+name])).stdout);
+  const brief=await extract('brief.json'),manifest=await extract('artifacts/artifact-manifest.json');
+  assert.equal(brief.classification.primary,'space');assert.deepEqual(brief.classification,manifest.classification);
+  assert.equal(await readFile(path,'utf8'),original);assert.equal(await readFile(join(f.run,'artifacts/artifact-manifest.json'),'utf8'),originalManifest);
+ }finally{await zip.cleanup()}
+});

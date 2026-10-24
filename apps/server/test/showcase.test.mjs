@@ -66,10 +66,20 @@ test('a failed direction save does not advance the mandatory curation gate',asyn
  await assert.rejects(showcase.tools[0].execute('plan',{heroId:'hero',works,direction:'Light and material'}),/Disk full/);
  assert.equal(showcase.direction,undefined);
 });
-test('exhibition normalization removes only a full enclosing HTML fence',()=>{
- const html='<!doctype html><html><head><title>Work</title></head><body>Work</body></html>';
- assert.equal(normalizeShowcaseHtml('```html\n'+html+'\n```'),html);
- assert.equal(normalizeShowcaseHtml(html),html);
- assert.throws(()=>normalizeShowcaseHtml('Here is your page\n'+html),/complete HTML/);
- assert.throws(()=>normalizeShowcaseHtml('<html>Incomplete'),/complete HTML/);
+test('exhibition normalization extracts one complete document and preserves its contents',()=>{
+ const html='<!doctype html><html lang="zh-CN"><head><style>body { margin: 0; }</style></head><body><!-- Work -->作品</body></html>';
+ for(const text of [html,'```html\n'+html+'\n```','Here is your page\n'+html,'现在开始展示。\n\n```html\n'+html+'\n```\n\n页面已完成。','Preface\r\n~~~HTML\r\n'+html+'\r\n~~~\r\nDone','````html\n'+html+'\n`````']) assert.equal(normalizeShowcaseHtml(text),html);
+ assert.equal(normalizeShowcaseHtml('Page\n<html>Work</html>\nDone'),'<html>Work</html>');
+});
+test('exhibition normalization rejects incomplete, ambiguous or non-prose surrounding content',()=>{
+ const html='<!doctype html><html><body>Work</body></html>';
+ for(const text of [
+  '<html>Incomplete', html+'\n<html>Incomplete', html+'\n'+html,
+  '</html>\n<html>Wrong order', '<!doctype html>\n'+html,
+  'Example: '+html, html+' trailing inline text',
+  '```html\n'+html, '```html\n'+html+'\n~~~',
+  '```css\nbody {}\n```\n'+html, html+'\n```js\nrun()\n```',
+  '<script>run()</script>\n'+html, html+'\n<img src="other.png">',
+  '<!-- wrapper -->\n'+html,
+ ]) assert.throws(()=>normalizeShowcaseHtml(text),/complete HTML/,text);
 });

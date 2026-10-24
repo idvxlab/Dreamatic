@@ -41,6 +41,13 @@ test('fixed status displays live receipts without opening tool details and keeps
  await page.evaluate(event=>window.update({running:false,workflow:[{...event,status:'completed'}]}),event);assert.equal(await status.locator('img').count(),1);assert.equal(await status.locator('.run-status-heading').count(),0);assert.equal(await status.locator('.image-waiting-status').count(),0);
  await page.evaluate(()=>window.update({running:false,workflow:[{id:'p-completion-initial',kind:'message',status:'completed',actor:'Dreamatic',label:'Project completion summary',stage:'completion',detail:'Project completed\nUsage: 100 text tokens',artifactRefs:['runs/p/final/artifacts/site/index.html']}]}));
  const message=page.locator('.workflow-message-bubble');await message.getByText(/Project completed/).waitFor();assert.equal(await message.locator('details').count(),0);assert.equal(await message.getByRole('link',{name:'View project'}).getAttribute('href'),'/assets/runs/p/final/artifacts/site/index.html');assert.equal(await message.getByRole('link',{name:'Download project'}).getAttribute('href'),'/api/runs/p/export');
+ await page.evaluate(()=>window.update({running:false,canResume:true,workflow:[{id:'images-pending',kind:'message',status:'completed',actor:'Dreamatic',label:'Image generation paused',detail:'Image generation paused: 7/8 images saved. Successful images are retained. Continue workflow to retry the missing image.'},{id:'builder-waiting',kind:'agent',agent:'builder',status:'waiting',waitReason:'images',actor:'Builder',label:'Builder',output:'7/8 images saved; waiting for explicit retry.',children:[]}]}));
+ await page.getByText(/Image generation paused: 7\/8 images saved/).waitFor();
+ assert.match(await page.locator('.workflow-agent-card summary').textContent(),/Waiting for image retry/);
+ assert.ok(!(await page.locator('.workflow-agent-card summary').textContent()).includes('Waiting For Answers'));
+ await page.getByRole('button',{name:'Continue workflow',exact:true}).waitFor();
+ assert.equal(await page.getByText('Agent interrupted',{exact:true}).count(),0);
+ await page.screenshot({path:'/tmp/dreamatic-image-retry-paused.png'});
  await page.evaluate(()=>window.update({running:true,workflow:[{id:'designer-live',kind:'agent',agent:'designer',status:'running',actor:'Designer',label:'Designer',at:new Date().toISOString(),output:'Choosing materials and visual hierarchy',children:[]}]}));
  const progress=page.getByRole('region',{name:'Designer progress'});
  await progress.getByText('Choosing materials and visual hierarchy',{exact:true}).waitFor();

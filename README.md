@@ -40,6 +40,7 @@ Showcase composition uses text evidence rather than image inspection. Builder's 
 ## Working with projects
 
 - **Live conversation:** follow specialist output, stage milestones, questions, and tool activity inside the existing conversation interface.
+- **Project categories:** projects carry one primary discipline and optional secondary disciplines from a shared eight-category taxonomy. Designer confirms the final classification; header tags update live, and exports preserve compatible category metadata for DreamaticSite.
 - **Image progress:** see the total image count, saved and reused work, active images, elapsed generation time, and the observed average for successfully generated images. Generation may take several minutes; keep the application running until it finishes.
 - **Completion report:** see delivered outputs, total elapsed time, per-stage durations, and reported token usage. Retries and resumed work are included; unavailable usage is marked rather than counted as zero.
 - **Canvas and preview:** inspect project assets and the generated showcase, with saved thumbnails remaining available after generation.

@@ -17,7 +17,7 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     const runs = ['A','B','C'].map(id => ({id,title:'Project '+id,status:'draft',stages:{},activity:[],assetCount:0,documents:[],notes:[],agentSessions:[],...(id==='C'?{}:{sessionId:'session-'+id})}));
     const sessions = ['A','B'].map(id => ({id:'session-'+id,title:'Session '+id,projectId:id,running:false}));
     const prompts = new Map(), creations = new Map(), stopped = [];
-    window.testApi = {prompts,creations,stopped,emit(id,text){prompts.get(id).callback({type:'event',event:{type:'message_update',assistantMessageEvent:{type:'text_delta',delta:text}}});},finish(id){sessions.find(s=>s.id===id).running=false;prompts.get(id).resolve();},finishCreation(id){const session={id:'session-'+id,projectId:id,title:'Session '+id,running:false};sessions.push(session);runs.find(run=>run.id===id).sessionId=session.id;creations.get(id)(session);}};
+    window.testApi = {prompts,creations,stopped,classify(id,classification){runs.find(run=>run.id===id).classification=classification;prompts.get('session-'+id).callback({type:'workflow_event',event:{type:'project_classified',classification}});},emit(id,text){prompts.get(id).callback({type:'event',event:{type:'message_update',assistantMessageEvent:{type:'text_delta',delta:text}}});},finish(id){sessions.find(s=>s.id===id).running=false;prompts.get(id).resolve();},finishCreation(id){const session={id:'session-'+id,projectId:id,title:'Session '+id,running:false};sessions.push(session);runs.find(run=>run.id===id).sessionId=session.id;creations.get(id)(session);}};
     export async function listSessions(){return structuredClone(sessions)}
     export async function listRuns(){return structuredClone(runs)}
     export async function getRun(id){return structuredClone(runs.find(run=>run.id===id))}
@@ -62,6 +62,21 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
   await page.waitForFunction(()=>!document.querySelector('.composer textarea')?.disabled).catch(async error=>{console.error(await page.locator('body').innerText());throw error});
   const select = id => page.locator('.project-select').filter({hasText:'Project '+id}).click();
   const heading = page.locator('.workspace-header h2');
+  await page.locator('.composer textarea').fill('Classify A');await page.locator('.composer .send').click();
+  await page.waitForFunction(()=>window.testApi.prompts.has('session-A'));
+  await page.evaluate(()=>window.testApi.classify('A',{schemaVersion:1,taxonomyVersion:'dreamatic-design-v1',primary:'space',secondary:['visual']}));
+  await page.getByLabel('Project categories').getByText('Architecture & Spatial Design',{exact:true}).waitFor();
+  await page.getByLabel('Project categories').getByText('Visual Communication',{exact:true}).waitFor();
+  await page.locator('.header-actions button[title="Hide agent panel"]').click();
+  await page.setViewportSize({width:390,height:844});
+  const headerBox=await page.locator('.workspace-header').boundingBox(),tagsBox=await page.locator('.project-category-tags').boundingBox();
+  assert.ok(tagsBox.y+tagsBox.height<=headerBox.y+headerBox.height,'mobile classification tags stay within the header');
+  await page.screenshot({path:'/tmp/dreamatic-classification-mobile.png',animations:'disabled'});
+  await page.setViewportSize({width:1440,height:960});
+  await page.locator('.header-actions button[title="Show agent panel"]').click();
+  await page.evaluate(()=>window.testApi.finish('session-A'));
+  await page.waitForFunction(()=>!document.querySelector('.agent-stop'));
+
   await page.locator('.composer textarea').fill('Run A');await page.locator('.composer .send').click();
   await page.waitForFunction(()=>window.testApi.prompts.has('session-A'));
   await page.evaluate(()=>window.testApi.emit('session-A','A visible text'));

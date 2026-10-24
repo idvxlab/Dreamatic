@@ -351,7 +351,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "label": "Image generation retry attempts",
     "module": "system",
     "example": "3",
-    "description": "",
+    "description": "Maximum provider attempts per image in one Builder run, including the initial request. Temporary errors use backoff; exhausted images wait for explicit user retry. Successful images are reused.",
     "type": "number",
     "defaultValue": "3",
     "min": 1,

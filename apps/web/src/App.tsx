@@ -1,3 +1,4 @@
+import { PROJECT_CATEGORIES, projectClassification } from '@dreamatic/project-data/project-classification';
 import { usePublication } from "./publication-state";
 import { useI18n, LanguageToggle } from "./i18n";
 import { Upload, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw } from "lucide-react";
@@ -21,6 +22,7 @@ const LIVE_TOOL_LABELS: Record<string, string> = {
   todo_write: "Planning the workflow",
   spawn_agent: "Starting a specialist agent",
   design_bus_read: "Reading workflow context",
+  set_project_classification: "Classifying project",
   design_bus_post: "Updating workflow progress",
   artifact_lint: "Checking design deliverables",
   export_package: "Preparing the final preview",
@@ -182,6 +184,10 @@ export function App() {
       if (message.type === "snapshot") setWorkflow(message.workflow);
       else {
         setPendingAgentStatus(undefined);
+        if (message.event.type === "project_classified") {
+          const classification = projectClassification(message.event.classification);
+          if (classification) setRuns(current => current.map(run => run.id === activeRunId ? { ...run, classification } : run));
+        }
         if (message.event.type === "project_renamed" && typeof message.event.title === "string") {
           const title = message.event.title;
           setRuns(current => current.map(run => run.id === activeRunId ? { ...run, title } : run));
@@ -324,6 +330,10 @@ export function App() {
     }
     if (!item.event) return;
     if (item.type === "workflow_event") {
+      if (item.event.type === "project_classified") {
+        const classification = projectClassification(item.event.classification);
+        if (classification) setRuns(current => current.map(run => run.id === activeRunId ? { ...run, classification } : run));
+      }
       if (item.event.type === "run_status" && typeof item.event.status === "string") {
         const status = item.event.status;
         setRuns(current => current.map(run => run.id === activeRunId ? { ...run, status } : run));
@@ -466,13 +476,13 @@ export function App() {
       />
       <section className="workspace">
         <header className="workspace-header">
-          <div><button className="navigation-trigger" aria-label={t("Open project navigation")} aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">{t("Project")}</span><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2></div>
+          <div><button className="navigation-trigger" aria-label={t("Open project navigation")} aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">{t("Project")}</span><div className="project-heading"><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2>{activeRun?.classification && <span className="project-category-tags" aria-label={t("Project categories")}>{[activeRun.classification.primary, ...activeRun.classification.secondary].map(id => <span key={id}>{t(PROJECT_CATEGORIES.find(c => c.id === id)?.en ?? id)}</span> )}</span>}</div></div>
           <div className="header-actions"><span className="saved publication-status" role="status" title={t(publicationLabel)}><Upload size={14} /> {t(publicationLabel)}</span><button disabled={!activeRunId || openingAssets} title={t("Open project assets folder")} onClick={() => void openAssetsFolder()}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><LanguageToggle /><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
         </header>
         <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
 
       </section>
-      {panelOpen && <AgentPanel canResume={activeRun?.status === "interrupted"} connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
+      {panelOpen && <AgentPanel canResume={["interrupted", "waiting_for_images"].includes(activeRun?.status ?? "")} connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
       {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}
       {panelOpen && <button className="agent-scrim" aria-label={t("Close agent panel")} onClick={() => setPanelOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{t(connectionError)}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}

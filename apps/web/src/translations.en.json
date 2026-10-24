@@ -56,5 +56,18 @@
   "Some timing records are incomplete; only observed execution time is counted.": "Some timing records are incomplete; only observed execution time is counted.",
   "design image": "design image",
   "showcase page": "showcase page",
-  "design document": "design document"
+  "design document": "design document",
+  "Project categories": "Project categories",
+  "Brand Design": "Brand Design",
+  "Visual Communication": "Visual Communication",
+  "Product & Industrial Design": "Product & Industrial Design",
+  "Architecture & Spatial Design": "Architecture & Spatial Design",
+  "Digital Product & Interface Design": "Digital Product & Interface Design",
+  "Fashion & Textile Design": "Fashion & Textile Design",
+  "Game Concept & Experience Design": "Game Concept & Experience Design",
+  "Service Design": "Service Design",
+  "Classifying project": "Classifying project",
+  "Classified project": "Classified project",
+  "Waiting for image retry": "Waiting for image retry",
+  "waiting_for_images": "Waiting for image retry"
 }

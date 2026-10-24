@@ -612,3 +612,9 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 
 .brand-row .brand-name { font-weight: 500; white-space: nowrap; }
 .brand-row .brand-name b { color: var(--lime); font-weight: 700; }
+
+.workspace-header > div:first-child { min-width:0; flex:1; }
+.workspace-header .header-actions { flex-shrink:0; }
+.project-heading { min-width:0; max-width:480px; }
+.project-category-tags { display:flex; gap:4px; max-width:320px; overflow-x:auto; scrollbar-width:none; margin-top:4px; }
+.project-category-tags > span { flex-shrink:0; font-size:10px; line-height:1.4; padding:3px 6px; border-radius:5px; background:#e8eddb; color:#526438; white-space:nowrap; }

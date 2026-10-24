@@ -1,3 +1,4 @@
+import { resolveProjectClassification, type ProjectClassification } from '@dreamatic/project-data';
 import { hasUnifiedContext, syncProjectContext, readRunContext, CONTEXT_FILES } from "@dreamatic/project-data";
 import type { Dirent } from "node:fs";
 import { indexedJsonl } from "./jsonl-index.js";
@@ -157,6 +158,7 @@ export interface RunNoteView {
 }
 
 export interface RunView {
+  classification?: ProjectClassification;
   id: string;
   title: string;
   createdAt: string;
@@ -661,7 +663,9 @@ export async function runInventory(workspaceDir: string, options: { summary?: bo
     const updatedAt = typeof state.updatedAt === "string" ? state.updatedAt : info.mtime.toISOString();
     const lastError = activity.filter((item) => item.kind === "error").at(-1);
     const persistedStatus = typeof state.status === "string" ? state.status : "existing";
+    const classification = resolveProjectClassification(brief, builtManifest);
     runs.push({
+      ...(classification ? { classification } : {}),
       id: entry.name,
       title,
       createdAt: typeof brief.createdAt === "string" ? brief.createdAt : info.birthtime.toISOString(),

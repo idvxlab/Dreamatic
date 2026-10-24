@@ -93,11 +93,11 @@ function WorkflowNode({ event, nested = false }: { event: WorkflowEvent; nested?
       if (toggleEvent.target !== toggleEvent.currentTarget) return;
       setAgentOpen(toggleEvent.currentTarget.open);
     }}>
-      <summary><span><strong>{t(event.label)}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} {t("actions ·")} {t(event.status)}{at ? ` · ${at}` : ""}</small>{event.status === "running" && <small className="workflow-progress-preview">{event.output ? event.output.split("\n").filter(Boolean).at(-1)?.slice(-140) : t("Working…")}{Number.isFinite(elapsed) ? ` · ${elapsed}s` : ""}</small>}</span><ChevronDown size={14} /></summary>
+      <summary><span><strong>{t(event.label)}</strong><small>{event.actionCount ?? event.children?.filter((child) => child.kind === "tool").length ?? 0} {t("actions ·")} {t(event.status === "waiting" && event.waitReason === "images" ? "Waiting for image retry" : event.status)}{at ? ` · ${at}` : ""}</small>{event.status === "running" && <small className="workflow-progress-preview">{event.output ? event.output.split("\n").filter(Boolean).at(-1)?.slice(-140) : t("Working…")}{Number.isFinite(elapsed) ? ` · ${elapsed}s` : ""}</small>}</span><ChevronDown size={14} /></summary>
       <div className="workflow-agent-body">
         {event.detail && <section className="workflow-assignment"><h4>{t("Assigned by Orchestrator")}</h4><p>{event.detail}</p></section>}
         {(event.status === "running" || event.status === "waiting") && <section className="workflow-agent-progress" role="region" aria-label={`${event.label} progress`}>
-          <h4>{event.status === "running" && <LoaderCircle className="spin" size={11} />} {t(event.status === "waiting" ? "Waiting for your answers" : "Current progress")}</h4>
+          <h4>{event.status === "running" && <LoaderCircle className="spin" size={11} />} {t(event.status === "waiting" ? (event.waitReason === "images" ? "Waiting for image retry" : "Waiting for your answers") : "Current progress")}</h4>
           <p>{t(event.output || "Working…")}</p>
         </section>}
         {event.children?.length ? <div className="workflow-stream nested-stream">{event.children.map((child) => <WorkflowNode event={child} nested key={child.id} />)}</div> : null}

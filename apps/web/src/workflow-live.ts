@@ -20,6 +20,7 @@ const toolTitles: Record<string, string> = {
   research_asset_validate: "Validated reference library",
   inspect_showcase_images: "Inspected design works",
   plan_showcase: "Art directed exhibition",
+    set_project_classification: "Classified project",
   image_generate: "Generated design image",
   image_generate_batch: "Generated design images",
   image_edit: "Edited design image",
@@ -86,6 +87,10 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
     const node: WorkflowEvent = { id: event.id, kind: "message", status: "completed", actor: "Dreamatic", label: String(event.summary), detail: event.detail, ...(event.completion ? { completion: event.completion as import("@dreamatic/project-data").CompletionSummary } : {}), stage: "completion", artifactRefs: artifactRefs(event.artifactRefs), at };
     return sorted([...workflow.filter(candidate => candidate.id !== node.id), node]);
   }
+  if ((type === "citation_review" || type === "image_batch_result") && typeof event.id === "string" && typeof event.detail === "string") {
+    const node: WorkflowEvent = { id: event.id, kind: "message", status: "completed", actor: "Dreamatic", label: type === "image_batch_result" ? String(event.summary ?? "Image generation paused") : "Reference verification", detail: event.detail, at };
+    return sorted([...workflow.filter(candidate => candidate.id !== node.id), node]);
+  }
   if (type === "design_categories_identified" && typeof event.detail === "string") {
     const id = typeof event.id === "string" ? event.id : `classification-${at}`;
     const node: WorkflowEvent = { id, kind: "message", status: "completed", actor: "Orchestrator", label: typeof event.summary === "string" ? event.summary : "设计类型识别", detail: event.detail, at };
@@ -150,7 +155,7 @@ export function applyWorkflowStreamEvent(workflow: WorkflowEvent[], event: Recor
     return updateAgent(workflow, invocationId, (agent) => ({ ...agent, status: "completed", output: text(event.output), endedAt: at }), event);
   }
   if (invocationId && type === "agent_waiting") {
-    return updateAgent(workflow, invocationId, agent => ({ ...agent, status: "waiting", output: text(event.output) ?? "Waiting for your answers", endedAt: at }), event);
+    return updateAgent(workflow, invocationId, agent => ({ ...agent, status: "waiting", ...(event.reason === "images" ? { waitReason: "images" as const } : {}), output: text(event.output) ?? "Waiting for your answers", endedAt: at }), event);
   }
   if (invocationId && type === "agent_interrupted") {
     return updateAgent(workflow, invocationId, (agent) => {

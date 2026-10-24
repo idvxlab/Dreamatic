@@ -1,3 +1,6 @@
+import { requestImage, retryImage, type ImageFailure } from './image-request.js';
+import { saveProjectClassification } from './project-classification.js';
+import { PROJECT_CATEGORIES, projectClassification, resolveProjectClassification, type ProjectClassification } from '@dreamatic/project-data';
 import { updateWorkTitle } from './project-title.js';
 import { recoverBuilderDraft, savedShowcaseDirection, showcaseAssets } from './builder-recovery.js';
 import { publishCompletionSummary, imageUsageTokens } from './completion-summary.js';
@@ -5,7 +8,7 @@ import { publicWorkflowData } from './workflow-data.js';
 import { createBuilderTextReadTool, createShowcaseTools, normalizeShowcaseHtml, validateShowcaseHtml, showcaseDirectionMarkdown, showcaseImageSource, resolveShowcaseImages, type ShowcaseDirection, type GeneratedShowcaseImage, type ImageReferenceRepair } from './showcase.js';
 import type { ImageProgressItem } from '@dreamatic/project-data/workflow-progress';
 import { createModelResponseTimer } from './model-response-timer.js';
-import { validateCitations } from './design-citations.js';
+import { reviewResearchCitations, reviewDesignCitations, annotateCitationIssues, type CitationReview } from './design-citations.js';
 export { validateCitations } from './design-citations.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, appendFile, stat, rm, readdir } from 'node:fs/promises';
@@ -210,6 +213,10 @@ export async function runDesign(options: PipelineOptions) {
     const title = await updateWorkTitle(root, markdown, stage);
     if (title) await bus({ type: 'project_renamed', title });
   };
+  const syncClassification = async (stage: 'orchestrator' | 'designer', markdown: string, candidate?: unknown) => {
+    const classification = await saveProjectClassification(root, stage, candidate, markdown);
+    if (classification) await bus({ type: 'project_classified', classification });
+  };
   const saveShowcaseDirection = async (fingerprint: string, images: PlannedImage[], generated: Record<string, GeneratedShowcaseImage>, direction: ShowcaseDirection) => {
     await saveStageOutput(join(root, 'showcase.md'), showcaseDirectionMarkdown(direction));
     await atomic(join(root, '.showcase-direction.json'), { schemaVersion: 1, fingerprint, direction, assets: showcaseAssets(images, generated) });
@@ -227,7 +234,8 @@ export async function runDesign(options: PipelineOptions) {
       reasoning: STAGES.map(role => ({ role, model: setting(`DREAMATIC_MODEL_${role.toUpperCase()}`) || setting('DREAMATIC_MODEL'), provider: setting('DREAMATIC_BASE_URL') })),
       generation: [{ model: setting('DREAMATIC_IMAGE_MODEL'), provider: setting('DREAMATIC_IMAGE_BASE_URL'), method: 'image_generate' }]
     };
-    await atomic(join(root, 'artifacts/artifact-manifest.json'), { schemaVersion: 2, artifacts: artifactList, modelUsage, presentation: { mode: 'gallery', entry: 'artifacts/00-gallery.html' }, showcase: { heroId: direction.heroId, imageIds: direction.works.map(work => work.id), works: direction.works, direction: 'showcase.md' } });
+    const classification = resolveProjectClassification(JSON.parse(await source(briefPath) || '{}'));
+    await atomic(join(root, 'artifacts/artifact-manifest.json'), { ...(classification ? { classification } : {}), schemaVersion: 2, artifacts: artifactList, modelUsage, presentation: { mode: 'gallery', entry: 'artifacts/00-gallery.html' }, showcase: { heroId: direction.heroId, imageIds: direction.works.map(work => work.id), works: direction.works, direction: 'showcase.md' } });
     await saveStageOutput(join(root, 'final/00-index.html'), bound.html);
     const files: Record<string, string> = {};
     for (const path of ['artifacts/00-gallery.html', 'artifacts/artifact-manifest.json', ...artifactList.map(image => image.path)]) files[path] = createHash('sha256').update(await readFile(join(root, path))).digest('hex');
@@ -259,7 +267,12 @@ export async function runDesign(options: PipelineOptions) {
         }
       }
       if (reusable) {
-        if (stage === 'orchestrator' || stage === 'designer') await syncWorkTitle(stage, existing);
+        if (stage === 'orchestrator' || stage === 'designer') {
+          await syncWorkTitle(stage, existing);
+          let savedOutput: { fingerprint?: string; classification?: unknown } = {};
+          try { savedOutput = JSON.parse(await source(join(root, `.${stage}-output.json`)) || '{}') || {}; } catch { /* Optional classification metadata must not block a valid checkpoint. */ }
+          await syncClassification(stage, existing, savedOutput.fingerprint === fingerprint ? savedOutput.classification : undefined);
+        }
         continue;
       }
       for (const downstream of STAGES.slice(index)) delete state.completed[downstream];
@@ -290,15 +303,35 @@ export async function runDesign(options: PipelineOptions) {
       const draftPath = join(root, '.design-draft.json');
       let citationNote = '';
       const checkDesign = (text: string) => {
-        const validation = validateCitations(text, prior[1]!);
         for (const image of plannedImages(text)) if (!acceptsSize(image.size)) throw new Error(`Invalid planned size: ${image.size}`);
-        citationNote = validation.unusedReferences.length
-          ? `Citation note: listed but uncited references ${validation.unusedReferences.map(id => `[${id}]`).join(', ')} were retained. The design and image plan are unchanged.`
-          : '';
+      };
+
+      const saveCitationReview = async (result: CitationReview) => {
+        const reportPath = join(root, '.citation-report.json');
+        let report: Record<string, unknown> = {};
+        try { const saved = JSON.parse(await source(reportPath) || '{}'); if (saved && typeof saved === 'object' && !Array.isArray(saved)) report = saved; } catch { /* Rebuild optional diagnostic metadata; it is never a stage gate. */ }
+        const previous = report[stage] as { issues?: string[]; fingerprint?: string } | undefined;
+        report[stage] = { fingerprint, repairs: result.repairs, issues: result.issues, unusedReferences: result.unusedReferences };
+        await atomic(reportPath, report);
+        if ((result.issues.length || previous?.issues?.length) &&
+            (previous?.fingerprint !== fingerprint || JSON.stringify(previous?.issues) !== JSON.stringify(result.issues))) {
+          await bus({ type: 'citation_review', id: `${runId}-citations-${stage}`, agent: stage,
+            summary: 'Reference verification',
+            detail: result.issues.length
+              ? `${stage === 'researcher' ? 'Researcher' : 'Designer'}: Some references need verification. Automatic repairs were applied where possible; the workflow will continue. ${result.issues.length} issue(s) remain. See the reference notes and stage output for details.`
+              : 'Previously reported reference issues have been resolved. The workflow will continue.' });
+        }
+        const notes = [
+          ...result.repairs,
+          ...(result.issues.length ? ['References need verification; workflow continues.', ...result.issues] : []),
+          ...(result.unusedReferences.length ? [`Citation note: listed but uncited references ${result.unusedReferences.map(id => `[${id}]`).join(', ')} were retained.`] : [])
+        ];
+        citationNote = notes.join('\n');
       };
 
       if (stage === 'designer') {
-        let draft: { fingerprint: string; text: string } | undefined;
+        let draftCitationReview: CitationReview | undefined;
+        let draft: { fingerprint: string; text: string; classification?: ProjectClassification } | undefined;
         try {
           draft = JSON.parse(await source(draftPath) || 'null');
           if (draft && typeof draft.text === 'string' && draft.fingerprint !== fingerprint) {
@@ -307,12 +340,17 @@ export async function runDesign(options: PipelineOptions) {
           }
           if (draft?.fingerprint !== fingerprint || typeof draft.text !== 'string') draft = undefined;
           if (draft) {
-            checkDesign(draft.text);
+            const citationReview = reviewDesignCitations(draft.text, prior[1]!);
+            checkDesign(citationReview.text);
+            draftCitationReview = citationReview;
+            draft.text = annotateCitationIssues(citationReview);
           }
         } catch { draft = undefined; /* Retain the draft, but regenerate if it still fails validation. */ }
         if (draft) {
+          await saveCitationReview(draftCitationReview!);
           await saveStageOutput(join(root, 'design.md'), draft.text);
           await syncWorkTitle('designer', draft.text);
+          await syncClassification('designer', draft.text, draft.classification);
           state.completed[stage] = checkpoint(fingerprint, draft.text); await atomic(statePath, state);
           await bus({ type: 'agent_finished', agent: stage, invocationId, output: 'Completed and saved: design.md (revalidated draft)' + (citationNote ? `\n${citationNote}` : ''), artifactRefs: [`runs/${runId}/design.md`] });
           continue;
@@ -341,6 +379,18 @@ export async function runDesign(options: PipelineOptions) {
         saveDirection: direction => saveShowcaseDirection(fingerprint, images, generated, direction)
       }) : undefined;
       const tools: ToolDefinition[] = showcase ? [createBuilderTextReadTool(root), ...showcase.tools] : [];
+      let pendingClassification: ProjectClassification | undefined;
+      if (stage === 'orchestrator' || stage === 'designer') tools.push({
+        name: 'set_project_classification', label: 'Classify design project',
+        description: 'Choose the actual design discipline, not the HTML/image format or supporting Skills. One primary category and only substantive secondary scopes. This records pending metadata, published after the stage deliverable is saved. Categories: ' + JSON.stringify(PROJECT_CATEGORIES.map(({ id, en }) => ({ id, name: en }))),
+        parameters: Type.Object({ primary: Type.String(), secondary: Type.Array(Type.String()) }),
+        async execute(_id, params) {
+          const candidate = projectClassification({ schemaVersion: 1, taxonomyVersion: 'dreamatic-design-v1', ...(params as object) });
+          if (!candidate) return { content: [{ type: 'text' as const, text: 'Classification not recorded: use only the listed canonical ids. You may correct it; do not interrupt the design task.' }], details: {} };
+          pendingClassification = candidate;
+          return { content: [{ type: 'text' as const, text: JSON.stringify(candidate) }], details: {} };
+        }
+      });
       let question: DesignClarificationRequest | undefined;
       if (stage === 'orchestrator') tools.push({
         name: 'ask_user', label: 'Clarify direction', description: 'Present structured questions using Dreamatic’s existing clarification card. Ask only essential questions, then stop and wait.',
@@ -372,17 +422,30 @@ export async function runDesign(options: PipelineOptions) {
         return { content: [{ type: 'text', text: await response.text() }], details: {} };
       } });
       const imageItems: Record<string, ImageProgressItem> = {};
-      if (stage === 'builder') tools.push({ name: 'image_generate', label: 'Generate design image', description: 'Generate planned images. Existing matching images are reused. Returns stable dreamatic-image:ID sources for img and full-resolution links; Dreamatic resolves physical files on delivery.', parameters: Type.Object({ ids: Type.Array(Type.String()) }), executionMode: 'sequential', async execute(toolCallId, params) {
+      const imageAttempts: Record<string, number> = {};
+      let pendingImages: { saved: number; total: number; failed: Array<{ id: string; attempts: number; error: ImageFailure }>; message: string } | undefined;
+      if (stage === 'builder') tools.push({ name: 'image_generate', label: 'Generate design image', description: 'Generate planned images with bounded provider retries. Returns a complete success/failure receipt; failures pause the stage for explicit user retry. Existing matching images are reused. Returns stable dreamatic-image:ID sources for img and full-resolution links; Dreamatic resolves physical files on delivery.', parameters: Type.Object({ ids: Type.Array(Type.String()) }), executionMode: 'sequential', async execute(toolCallId, params) {
         const reportImages = () => bus({ type: 'agent_progress', agent: stage, invocationId, toolCallId, total: images.length, imageItems: structuredClone(imageItems), output: 'Image generation progress' });
+        if (pendingImages) return { content: [{ type: 'text', text: pendingImages.message }], details: pendingImages };
         const ids = [...new Set((params as { ids: string[] }).ids)];
-        for (const image of images) imageItems[image.id] ??= { state: 'queued', label: image.id.replaceAll('-', ' ').replaceAll('_', ' ') };
+        const imageLocation = (image: PlannedImage) => {
+          const signature = hash(JSON.stringify([image, setting('DREAMATIC_IMAGE_MODEL'), setting('DREAMATIC_IMAGE_BASE_URL'), setting('DREAMATIC_IMAGE_GENERATION_ENDPOINT')]));
+          return { signature, path: `artifacts/${image.id}-${signature.slice(0,12)}.png` };
+        };
+        const cached = async (image: PlannedImage) => {
+          const { signature, path } = imageLocation(image), record = generated[image.id];
+          return record?.signature === signature && record.path === path && await readFile(join(root, path)).then(bytes => createHash('sha256').update(bytes).digest('hex')).catch(() => '') === record.digest;
+        };
+        for (const image of images) {
+          imageItems[image.id] ??= { state: 'queued', label: image.id.replaceAll('-', ' ').replaceAll('_', ' ') };
+          if (await cached(image)) imageItems[image.id] = { ...imageItems[image.id], state: 'saved', ok: true, path: `runs/${runId}/${generated[image.id]!.path}`, reused: true };
+        }
         await reportImages();
         const generate = async (imageId: string) => {
         const image = images.find(i => i.id === imageId); if (!image) throw new Error('Unknown planned image');
         if (!acceptsSize(image.size)) throw new Error('Planned image violates verified size or budget');
-        const signature = hash(JSON.stringify([image, setting('DREAMATIC_IMAGE_MODEL'), setting('DREAMATIC_IMAGE_BASE_URL'), setting('DREAMATIC_IMAGE_GENERATION_ENDPOINT')]));
-        const path = `artifacts/${image.id}-${signature.slice(0,12)}.png`;
-        if (generated[image.id]?.signature === signature && await readFile(join(root, path)).then(bytes => createHash('sha256').update(bytes).digest('hex')).catch(() => '') === generated[image.id]?.digest) {
+        const { signature, path } = imageLocation(image);
+        if (await cached(image)) {
           imageItems[image.id] = { ...imageItems[image.id], ok: true, state: 'saved', path: `runs/${runId}/${path}`, reused: true };
           await reportImages();
           return { content: [{ type: 'text', text: showcaseImageSource(image.id) }], details: {} };
@@ -391,21 +454,32 @@ export async function runDesign(options: PipelineOptions) {
         const started = Date.now();
         imageItems[image.id] = { label: image.id.replaceAll('-', ' ').replaceAll('_', ' '), state: 'generating', startedAt: new Date(started).toISOString() };
         try {
-        await reportImages();
-        const response = await fetch(setting('DREAMATIC_IMAGE_GENERATION_ENDPOINT') || `${setting('DREAMATIC_IMAGE_BASE_URL').replace(/\/$/, '')}/images/generations`, { method: 'POST', headers: { Authorization: `Bearer ${setting('DREAMATIC_IMAGE_API_KEY') || setting('DREAMATIC_API_KEY')}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: setting('DREAMATIC_IMAGE_MODEL'), prompt: image.prompt, size: image.size, response_format: setting('DREAMATIC_IMAGE_RESPONSE_FORMAT') }), signal: AbortSignal.any([signal, AbortSignal.timeout(Number(setting('DREAMATIC_IMAGE_TIMEOUT_MS')))]) });
-        if (!response.ok) {
-          const body = await response.json().catch(() => undefined) as { error?: { message?: string } | string } | undefined;
-          const reason = typeof body?.error === 'string' ? body.error : body?.error?.message;
-          throw new Error(`Image generation failed (${response.status}, model ${setting('DREAMATIC_IMAGE_MODEL')}, requested size ${image.size})${reason ? `: ${reason}` : ''}`);
-        }
-        const responseBody = await response.json() as { data?: { b64_json?: string; url?: string }[]; usage?: unknown };
-        await bus({ type: 'agent_progress', agent: stage, invocationId, toolCallId, output: 'Image generation progress', imageUsage: { imageId: image.id, startedAt: new Date(started).toISOString(), tokens: imageUsageTokens(responseBody.usage) } });
-        const data = responseBody.data?.[0];
-        let bytes: Buffer;
-        if (data?.b64_json) bytes = Buffer.from(data.b64_json, 'base64');
-        else if (data?.url) { const download = await fetch(data.url, { signal }); if (!download.ok) throw new Error('Image download failed'); bytes = Buffer.from(await download.arrayBuffer()); }
-        else throw new Error('Image response has no image');
-        if (!bytes.length) throw new Error('Empty image result');
+        const maxAttempts = Number(setting('DREAMATIC_IMAGE_RETRY_ATTEMPTS'));
+        const remaining = maxAttempts - (imageAttempts[image.id] ?? 0);
+        if (remaining <= 0) throw new Error('Image attempt budget exhausted');
+        const attemptResult = await retryImage(async () => {
+          imageAttempts[image.id] = (imageAttempts[image.id] ?? 0) + 1;
+          const attemptStartedAt = new Date().toISOString();
+          imageItems[image.id] = { ...imageItems[image.id], startedAt: attemptStartedAt };
+          await reportImages();
+          return requestImage({
+            url: setting('DREAMATIC_IMAGE_GENERATION_ENDPOINT') || `${setting('DREAMATIC_IMAGE_BASE_URL').replace(/\/$/, '')}/images/generations`,
+            apiKey: setting('DREAMATIC_IMAGE_API_KEY') || setting('DREAMATIC_API_KEY'),
+            model: setting('DREAMATIC_IMAGE_MODEL'), prompt: image.prompt, size: image.size,
+            responseFormat: setting('DREAMATIC_IMAGE_RESPONSE_FORMAT'),
+            timeoutMs: Number(setting('DREAMATIC_IMAGE_TIMEOUT_MS')),
+            bodyIdleTimeoutMs: Number(setting('DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS')), signal,
+            onUsage: async usage => { await bus({ type: 'agent_progress', agent: stage, invocationId, toolCallId, output: 'Image generation progress',
+              imageUsage: { imageId: image.id, startedAt: attemptStartedAt, tokens: imageUsageTokens(usage) } }); }
+          });
+        }, { maxAttempts: remaining, signal, onRetry: async (attempt, failure, waitMs) => {
+          await bus({ type: 'image_retry', agent: stage, invocationId, toolCallId, imageId: image.id,
+            attempt, maxAttempts, waitMs, error: failure });
+          await bus({ type: 'agent_progress', agent: stage, invocationId, toolCallId,
+            output: `Image ${image.id}: ${failure.code}. Retrying after ${Math.round(waitMs / 1000)}s (${attempt + 1}/${maxAttempts}).` });
+        } });
+        if (!attemptResult.ok) return { failed: true as const, id: image.id, attempts: imageAttempts[image.id]!, error: attemptResult.error };
+        const { bytes } = attemptResult.value;
         await writeFile(join(root, path), bytes);
         await recordSuccessfulImageSize(image.size);
         generated[image.id] = { signature, path, method: 'image_generate', digest: createHash('sha256').update(bytes).digest('hex') };
@@ -417,18 +491,38 @@ export async function runDesign(options: PipelineOptions) {
         } finally { release(); }
         };
         const results: string[] = [];
+        const failures: Array<{ id: string; attempts: number; error: ImageFailure }> = [];
         let cursor = 0;
         const workers = Array.from({ length: Math.min(ids.length, Number(setting('DREAMATIC_IMAGE_CONCURRENCY'))) }, async () => {
           while (cursor < ids.length) {
+            signal.throwIfAborted();
             const id = ids[cursor++]!;
-            try { const result = await generate(id); results.push(`${id}: ${result.content[0]!.text}`); }
-            catch (error) { imageItems[id] = { ...imageItems[id], ok: false, state: 'failed' }; await reportImages(); throw error; }
+            const result = await generate(id);
+            if (result.failed === true) {
+              failures.push(result);
+              imageItems[id] = { ...imageItems[id], ok: false, state: 'failed', durationMs: Date.now() - Date.parse(imageItems[id]?.startedAt ?? new Date().toISOString()) };
+              await reportImages();
+            } else results.push(`${id}: ${result.content[0]!.text}`);
           }
         });
         const settled = await Promise.allSettled(workers);
-        const failed = settled.find(result => result.status === 'rejected');
-        if (failed?.status === 'rejected') throw failed.reason;
-        return { content: [{ type: 'text', text: results.join('\n') }], details: {} };
+        signal.throwIfAborted();
+        const fatal = settled.find(result => result.status === 'rejected');
+        if (fatal?.status === 'rejected') throw fatal.reason;
+        const saved: string[] = [];
+        for (const image of images) if (await cached(image)) saved.push(image.id);
+        const missing = images.filter(image => !saved.includes(image.id)).map(image => image.id);
+        const receipt = { total: images.length, saved, missing, failed: failures };
+        await atomic(join(root, '.image-generation-state.json'), { fingerprint, invocationId, ...receipt });
+        if (failures.length) {
+          const message = `Image generation paused: ${saved.length}/${images.length} images saved. Needs retry: ${failures.map(item => `${(images.find(image => image.id === item.id)?.introduction || item.id).replace(/\[\d+(?:[,–—-]\d+)*\]/g, '').split(/[。.!?\n]/)[0]!.trim().slice(0, 80)} (${item.error.code}, ${item.attempts} attempt(s))`).join('; ')}. Successful images are retained. Check the image service/settings, then Continue workflow to retry only missing images.`;
+          pendingImages = { saved: saved.length, total: images.length, failed: failures, message };
+          await bus({ type: 'image_batch_result', id: `${runId}-image-generation`, summary: 'Image generation paused', detail: message });
+        } else if (!missing.length) {
+          await bus({ type: 'image_batch_result', id: `${runId}-image-generation`, summary: 'Design images ready', detail: `All ${saved.length} design images are saved. Continuing exhibition production.` });
+        }
+        return { content: [{ type: 'text', text: results.join('\n') + '\n' + JSON.stringify(receipt) + (failures.length ? '\nAutomatic retry budget reached. The workflow is pausing for user retry; do not call image_generate or plan_showcase again.' : '') }], details: receipt };
+
       } });
       const { session } = await createAgentSession({ cwd: root, modelRuntime: runtime, model: runtime.getModel('dreamatic', id)!, thinkingLevel: (setting(`DREAMATIC_THINKING_LEVEL_${stage.toUpperCase()}`) || 'off') as AgentSession['thinkingLevel'], settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.create(root, join(root, 'sessions', stage)), tools: [...new Set(['read', ...tools.map(t => t.name)])], customTools: tools });
       options.onSession?.(session);
@@ -457,19 +551,25 @@ export async function runDesign(options: PipelineOptions) {
         if (event.type === 'tool_execution_start') {
           void bus({ type: 'tool_started', agent: stage, invocationId, toolCallId: event.toolCallId, toolName: event.toolName, input: JSON.stringify(event.args) });
         } else if (event.type === 'tool_execution_end') {
-          if (event.toolName === 'ask_user' && question && !event.isError) void session.abort();
+          if ((event.toolName === 'ask_user' && question && !event.isError) || (event.toolName === 'image_generate' && pendingImages)) void session.abort();
           void bus({ type: 'tool_finished', agent: stage, invocationId, toolCallId: event.toolCallId, toolName: event.toolName, isError: event.isError, output: JSON.stringify(event.result) });
         }
       });
       const abort = () => { void session.abort(); }; signal.addEventListener('abort', abort, { once: true });
       let result: string;
       try {
-        await session.prompt(`User request:\n${state.request}\n\n${prior.map((doc,i) => `--- ${outputs[i]} ---\n${doc}`).join('\n\n')}\n\n${allowed ? `${capability?.verified ? 'Verified supported sizes within current budget (not necessarily exhaustive)' : 'Model size capability is UNKNOWN. Choose WIDTHxHEIGHT within the configured ceiling, which is only a budget, not detected model support or a model maximum; Builder will validate through actual generation. Unverified ceiling'}: ${allowed.join(', ')}` : ''}${exhibitionContext}${restoredDirection ? '\nA validated exhibition direction from the earlier attempt is restored. Preserve it; repair the saved .builder-output.json HTML instead of starting the exhibition over. Call plan_showcase only if you need to change the direction.' : ''}`, { images: (stage === 'builder' ? [] : attachments).map(image => ({ type: 'image' as const, data: image.data.replace(/^data:[^,]+,/, ''), mimeType: image.mimeType })) });
+        await session.prompt(`User request:\n${state.request}\n\n${prior.map((doc,i) => `--- ${outputs[i]} ---\n${doc}`).join('\n\n')}\n\n${allowed ? `${capability?.verified ? 'Verified supported sizes within current budget (not necessarily exhaustive)' : 'Model size capability is UNKNOWN. Choose WIDTHxHEIGHT within the configured ceiling, which is only a budget, not detected model support or a model maximum; Builder will validate through actual generation. Unverified ceiling'}: ${allowed.join(', ')}` : ''}${['designer', 'builder'].includes(stage) ? '\n\nReference verification report (advisory, never a reason to stop):\n' + await source(join(root, '.citation-report.json')) : ''}${exhibitionContext}${restoredDirection ? '\nA validated exhibition direction from the earlier attempt is restored. Preserve it; repair the saved .builder-output.json HTML instead of starting the exhibition over. Call plan_showcase only if you need to change the direction.' : ''}`, { images: (stage === 'builder' ? [] : attachments).map(image => ({ type: 'image' as const, data: image.data.replace(/^data:[^,]+,/, ''), mimeType: image.mimeType })) });
         signal.throwIfAborted();
-        if (responseTimer.failure) throw new Error(`Model response timeout (${responseTimer.failure}); tool execution time is excluded. Resume to retry this stage`);
+        if (!pendingImages && responseTimer.failure) throw new Error(`Model response timeout (${responseTimer.failure}); tool execution time is excluded. Resume to retry this stage`);
         result = session.getLastAssistantText() || '';
-        if (!question && session.messages.some(m => m.role === 'assistant' && (m.stopReason === 'error' || m.stopReason === 'aborted'))) throw new Error('Model execution failed; resume to retry this stage');
+        if (!question && !pendingImages && session.messages.some(m => m.role === 'assistant' && (m.stopReason === 'error' || m.stopReason === 'aborted'))) throw new Error('Model execution failed; resume to retry this stage');
       } finally { flushProgress(); responseTimer.dispose(); signal.removeEventListener('abort', abort); session.dispose(); options.onSession?.(undefined); await busWrites; }
+      if (pendingImages) {
+        await atomic(statePath, state);
+        await status('waiting_for_images');
+        await bus({ type: 'agent_waiting', agent: stage, invocationId, reason: 'images', output: pendingImages.message });
+        return;
+      }
       if (question) {
         await atomic(statePath, state);
         await status('waiting_for_user');
@@ -478,9 +578,20 @@ export async function runDesign(options: PipelineOptions) {
       }
       if (!result.trim()) throw new Error(`${stage} returned no result`);
       // Keep the complete public output before validation or disk publication can fail.
-      await atomic(join(root, `.${stage}-output.json`), { fingerprint, text: result, ...(stage === 'builder' ? { direction: showcase?.direction ?? null, assets: showcaseAssets(images, generated) } : {}) });
+      await atomic(join(root, `.${stage}-output.json`), { fingerprint, text: result, ...(pendingClassification ? { classification: pendingClassification } : {}), ...(stage === 'builder' ? { direction: showcase?.direction ?? null, assets: showcaseAssets(images, generated) } : {}) });
       let buildReceipt: Record<string, string> | undefined;
-      if (stage === 'designer') { await atomic(draftPath, { fingerprint, text: result }); checkDesign(result); }
+      if (stage === 'researcher') {
+        const citationReview = reviewResearchCitations(result);
+        await saveCitationReview(citationReview);
+        result = citationReview.text;
+      }
+      if (stage === 'designer') {
+        await atomic(draftPath, { fingerprint, text: result, ...(pendingClassification ? { classification: pendingClassification } : {}) });
+        const citationReview = reviewDesignCitations(result, prior[1]!);
+        checkDesign(citationReview.text);
+        await saveCitationReview(citationReview);
+        result = annotateCitationIssues(citationReview);
+      }
       let deliveryNote = '';
       if (stage === 'builder') {
         if (!showcase?.direction) throw new Error('Record the exhibition direction for every planned work before delivering HTML');
@@ -488,7 +599,10 @@ export async function runDesign(options: PipelineOptions) {
         result = delivery.html; buildReceipt = delivery.files;
         if (delivery.repairs.length) deliveryNote = `Corrected image references: ${delivery.repairs.map(repair => repair.id).join(', ')}.`;
       } else await saveStageOutput(join(root, outputs[index]!), result);
-      if (stage === 'orchestrator' || stage === 'designer') await syncWorkTitle(stage, result);
+      if (stage === 'orchestrator' || stage === 'designer') {
+        await syncWorkTitle(stage, result);
+        await syncClassification(stage, result, pendingClassification);
+      }
       state.completed[stage] = checkpoint(fingerprint, result); await atomic(statePath, state);
       if (buildReceipt) await bus({ type: 'build_done', commitReceipt: { files: buildReceipt } });
       await bus({ type: 'agent_finished', agent: stage, invocationId, output: `Completed and saved: ${outputs[index]}` + (citationNote ? `\n${citationNote}` : '') + (deliveryNote ? `\n${deliveryNote}` : ''), artifactRefs: [`runs/${runId}/${outputs[index]}`] });

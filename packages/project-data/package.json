@@ -15,6 +15,10 @@
     "./workflow-retries": {
       "types": "./dist/workflow-retries.d.ts",
       "import": "./dist/workflow-retries.js"
+    },
+    "./project-classification": {
+      "types": "./dist/project-classification.d.ts",
+      "import": "./dist/project-classification.js"
     }
   },
   "scripts": {

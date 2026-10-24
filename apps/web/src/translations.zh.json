@@ -374,5 +374,18 @@
   "Some timing records are incomplete; only observed execution time is counted.": "部分耗时记录不完整，仅统计可确认的执行时间。",
   "design image": "张设计图",
   "showcase page": "个展示页面",
-  "design document": "份方案文档"
+  "design document": "份方案文档",
+  "Project categories": "项目分类",
+  "Brand Design": "品牌设计",
+  "Visual Communication": "视觉传达设计",
+  "Product & Industrial Design": "产品与工业设计",
+  "Architecture & Spatial Design": "建筑与空间设计",
+  "Digital Product & Interface Design": "数字产品与界面设计",
+  "Fashion & Textile Design": "服装与纺织设计",
+  "Game Concept & Experience Design": "游戏概念与体验设计",
+  "Service Design": "服务设计",
+  "Classifying project": "正在识别项目分类",
+  "Classified project": "已识别项目分类",
+  "Waiting for image retry": "等待重试图片",
+  "waiting_for_images": "等待重试图片"
 }

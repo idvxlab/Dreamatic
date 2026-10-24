@@ -42,13 +42,15 @@ credentials and representative design tasks; automated tests use a local provide
 Citation validation treats References as a Markdown section ending at the next
 heading of equal or higher level. Citations before and after that section are
 checked, including adjacent numbers, grouped numbers and ranges. Missing entries
-and duplicate numbers are rejected; additional uncited entries produce a
+and duplicate numbers are recorded as advisory issues; additional uncited entries produce a
 non-blocking completion note and still require source traceability. Multiline
 reference entries retain URLs.
-Designer places References last by convention. Before validation, its complete
+Designer places References last by convention; with a canonical research directory,
+the host reconciles that section before validation (see Fixed research reference numbers).
+Before validation, its complete
 output is retained in a private .design-draft.json keyed to current stage inputs.
 Resume revalidates a matching draft before calling the model; invalid or stale
-drafts do not block a fresh Designer attempt. Only validated text becomes design.md.
+drafts do not block a fresh Designer attempt. Image contracts are still validated before saving design.md; citation issues alone never prevent publication.
 
 All role prompts and the shared system delivery policy explicitly instruct models
 to return the complete deliverable without calling write/edit or asking the user
@@ -95,7 +97,11 @@ page template or regeneration for layout changes.
 
 The page must contain all planned real images and work as static HTML: inline CSS,
 local imagery, system/local fonts, no scripts or remote imports. Full enclosing
-Markdown fences are normalized before delivery. Objective checks verify paths,
+A unique complete HTML document may be extracted from surrounding explanatory text
+and a matching Markdown fence before delivery. Incomplete documents, multiple
+documents, unmatched fences and extra markup/code blocks are rejected; document
+contents are not rewritten by this cleanup. Fresh delivery and local draft recovery
+share this normalization and retain the raw model output unchanged. Objective checks verify paths,
 files and full image coverage, excluding comments, inactive containers, explicit
 hiding and tiny placeholders. Static checks cover simple unconditional CSS and
 inline hiding, not arbitrary computed layout or aesthetic quality. Prompts require
@@ -141,15 +147,18 @@ because the server may already have saved the new project.
 
 A listed, traceable source that is not cited in design prose is an editorial
 warning, not an execution failure. The validator returns unused reference ids;
-Designer completion reports them while preserving the exact Markdown, numbering,
-image ids, prompts and sizes. Missing entries, duplicate/invalid numbers, malformed
-citation ranges and untraceable URLs still fail validation.
+Designer completion reports them while preserving prose, citation numbers, image
+ids, prompts and sizes. With legacy research, the bibliography also remains exact.
+With canonical research, the host replaces it with the complete source directory.
+Unknown citations, malformed ranges, invalid research directories and legacy
+missing/duplicate entries or untraceable URLs are retained as non-blocking issues.
 
 The same checks run before publishing a new design and when recovering a saved
 .design-draft.json. A draft previously rejected only for uncited sources now passes
-and is published byte-for-byte without a new Designer model session. Upstream
-checkpoints are reused as before. Hard-invalid or incompatible drafts still
-follow the existing retry policy; this change does not bypass substantive checks.
+and is published without a new Designer model session. Legacy drafts remain
+byte-for-byte; canonical research supplies the reconciled bibliography. Upstream
+checkpoints are reused as before. Drafts with invalid image contracts or incompatible inputs still follow the
+existing retry policy; this change does not bypass non-citation checks.
 
 ## Project completion message
 
@@ -197,3 +206,81 @@ message exactly matches the draft and its own Builder invocation has a successfu
 all-work plan whose source receipt matches the current generated inventory. A
 later invocation's direction is never borrowed. Recovery uses the same delivery,
 manifest, receipt/checkpoint and completion-summary path as a fresh Builder result.
+
+
+## Project classification
+
+The versioned `dreamatic-design-v1` taxonomy defines eight disciplines in `packages/project-data/src/project-taxonomy.json`. Historical `design-categories.ts` contracts remain unchanged. Orchestrator and Designer may submit one primary id and substantive secondary ids through `set_project_classification` in their existing sessions. Pending classification is paired with the retained stage output/draft and published to `brief.json` only after successful document validation and saving. Designer metadata takes precedence over earlier checkpoint replay. Missing classification falls back conservatively to existing metadata or clear title/request evidence; it never requires an additional model call.
+
+Classification is independent of stage fingerprints and image signatures. Run views expose the metadata and `project_classified` events update header tags. Builder manifests and export snapshots carry the same classification; export supplements historical snapshots without rewriting original runs or receipts. HTML showcase production alone does not imply digital/interface design. DreamaticSite keeps an identical deployable taxonomy snapshot and accepts both canonical ids and historical category names.
+
+## Fixed research reference numbers
+
+New Researcher outputs must end with one `## References` directory of plain
+IEEE-style `[1]`, `[2]`, ... entries, consecutively numbered with source URLs.
+The directory establishes fixed project-wide ids; it is not renumbered by later
+stages' first use. Missing bibliographic facts must not be invented. Original
+research with no sources may have an empty directory. This checks structural
+consistency, not whether a source actually supports a claim or whether its URL is live.
+
+Designer cites these fixed ids in prose and image Introductions. Before publication,
+Dreamatic removes the model-produced bibliography and appends the complete research
+directory verbatim, retaining uncited background entries. It never manufactures
+in-text citations. A missing or rewritten bibliography is repaired locally; an
+unknown in-text id is retained and flagged for verification. The original model output and design draft remain
+unchanged, while the saved design/checkpoint use the reconciled document. Draft
+recovery applies the same reconciliation without another model call. Existing
+valid checkpoints remain reusable; old research without a References directory
+keeps URL-based checks in advisory mode instead of being silently renumbered.
+Builder preserves the same ids for adopted sources in the showcase.
+
+## Advisory reference repair and continuation
+
+Reference review is non-blocking for both newly generated research and Designer
+publication/recovery. Strict validators remain available for tests and diagnostics;
+the runtime collects their findings instead of throwing citation errors. Research
+can unwrap a complete Markdown fence, normalize a unique bibliography's heading
+and placement, and remove only identical complete duplicate entries. Ambiguous
+numbers, gaps, missing URLs and unresolved facts are preserved, never guessed or
+renumbered. Designer still copies a unique research directory (including imperfect
+entries) and records unresolved ids/ranges/sources. Multiple research directories
+remain ambiguous and do not overwrite the design bibliography.
+
+Private `.citation-report.json` stores stage input fingerprints, deterministic
+repairs, unresolved issues and unused ids. Raw stage output/drafts are retained.
+A deduplicated `citation_review` conversation message explains that work continues;
+refresh/live replay and draft recovery preserve it without adding duplicate cards.
+Designer documents with unresolved findings contain a separate Citation verification
+section outside image prompts. Designer/Builder receive the report in context;
+Builder must retain uncertainty visibly rather than claim verification. Formatting
+repairs add no model calls. Filesystem errors, user cancellation, model errors,
+image contracts and HTML/asset safety checks retain their existing failure policy.
+
+## Bounded image requests and explicit retry
+
+Image generation and URL downloads use a dedicated Undici dispatcher. Response
+headers use DREAMATIC_IMAGE_TIMEOUT_MS, body inactivity uses the existing
+DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS, and one total deadline covers both generation
+and download for each attempt. Pi/model/global dispatchers are unchanged. Safe
+failure receipts include HTTP status, transport cause code and generation/download
+phase, without provider bodies, prompts or credentials. Reported usage is captured
+before downloading, including attempts whose download later fails.
+
+DREAMATIC_IMAGE_RETRY_ATTEMPTS is the maximum total attempts per image per Builder
+invocation, including the first request. Network/timeout errors and HTTP 408/429/5xx
+retry with exponential backoff (2s, 4s, ...), bounded at 60s, honoring Retry-After
+within that bound. Other HTTP failures are terminal. Cancellation immediately
+escapes retry; persistence/programming errors retain their normal failure policy.
+Every batch processes all requested ids, preserving successful files and collecting
+all failures rather than failing its workers at the first provider error. The tool
+returns stable sources plus a complete saved/missing/failed receipt, persisted in
+.image-generation-state.json with fingerprint and invocation id.
+
+Exhaustion stops further model/tool calls after the completed batch receipt. The
+run becomes waiting_for_images and Builder emits agent_waiting, not a misleading
+Agent interrupted error. One image_batch_result conversation message shows the
+saved/total count and failed works, survives refresh and is replaced when images
+are ready. Continue workflow explicitly starts a fresh bounded Builder attempt;
+matching upstream checkpoints and verified generated images are reused. All-work
+curation, image coverage/digests and HTML safety gates remain mandatory, so a missing
+file is never published under a fabricated stable source.

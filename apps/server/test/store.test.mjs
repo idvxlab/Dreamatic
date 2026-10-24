@@ -561,3 +561,23 @@ test('live and restored image receipts preserve in-flight status, durations and 
  const legacy=imageProgress(undefined,{total:2,imageId:'old',result:{ok:true,path:'runs/p/artifacts/old.png'}});
  assert.equal(legacy.items.old.ok,true);
 });
+
+test('reference warnings remain non-blocking messages and deduplicate in live and restored conversations',async()=>{
+ const workspace=await mkdtemp(join(tmpdir(),'dreamatic-citation-notice-'));
+ try {
+  const run=join(workspace,'runs','citation-test');await mkdir(run,{recursive:true});
+  const event={type:'citation_review',id:'citation-test-citations-designer',agent:'designer',summary:'Reference verification',detail:'Some references need verification; workflow will continue.',at:'2026-10-24T00:00:00Z'};
+  await writeFile(join(run,'bus.jsonl'),[event,event].map(JSON.stringify).join('\n')+'\n');
+  const restored=await workflowInventory(workspace,'citation-test');
+  const message=restored.find(node=>node.id===event.id);
+  assert.equal(restored.filter(node=>node.id===event.id).length,1);
+  assert.equal(message.kind,'message');assert.equal(message.status,'completed');
+  const source=await readFile(new URL('../../web/src/workflow-live.ts',import.meta.url),'utf8');
+  const compiled=ts.transpileModule(source.replace('"@dreamatic/project-data/workflow-progress"',JSON.stringify(new URL('../../../packages/project-data/dist/workflow-progress.js',import.meta.url).href)).replace('"../../../packages/project-data/src/workflow-retries"',JSON.stringify(new URL('../../../packages/project-data/dist/workflow-retries.js',import.meta.url).href)),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
+  const {applyWorkflowStreamEvent}=await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+  const live=applyWorkflowStreamEvent(applyWorkflowStreamEvent([],event),event);
+  assert.equal(live.length,1);assert.equal(live[0].detail,message.detail);assert.equal(live[0].status,'completed');
+  const resolved=applyWorkflowStreamEvent(live,{...event,detail:'Reference issues resolved.'});
+  assert.equal(resolved.length,1);assert.equal(resolved[0].detail,'Reference issues resolved.');
+ } finally {await rm(workspace,{recursive:true,force:true});}
+});
