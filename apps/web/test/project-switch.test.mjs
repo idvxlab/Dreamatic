@@ -23,6 +23,10 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     export async function getRun(id){return structuredClone(runs.find(run=>run.id===id))}
     export async function getHealth(){return {ok:true}}
     export async function listAssets(){return []}
+    export async function listProjectFiles(){return []}
+    export async function getReferenceArticle(){return {title:"Source",nodes:[],embeddingBlocked:false,url:"https://example.org"}}
+    export function projectFileUrl(){return ""}
+    export async function downloadPortfolio(){}
     export async function listRunAssets(){return []}
     export async function getWorkflow(id){return [{id:'workflow-'+id,kind:'message',status:'completed',actor:'User',label:'Persisted '+id,at:new Date().toISOString()}]}
     export function streamWorkflow(id,callback){callback({type:'snapshot',workflow:[]});return ()=>{}}
@@ -67,15 +71,15 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
   await page.evaluate(()=>window.testApi.classify('A',{schemaVersion:1,taxonomyVersion:'dreamatic-design-v1',primary:'space',secondary:['visual']}));
   await page.getByLabel('Project categories').getByText('Architecture & Spatial Design',{exact:true}).waitFor();
   await page.getByLabel('Project categories').getByText('Visual Communication',{exact:true}).waitFor();
-  await page.locator('.header-actions button[title="Hide agent panel"]').click();
+  await page.locator('.panel-controls button[title="Hide tool panel"]').click();
   await page.setViewportSize({width:390,height:844});
   const headerBox=await page.locator('.workspace-header').boundingBox(),tagsBox=await page.locator('.project-category-tags').boundingBox();
   assert.ok(tagsBox.y+tagsBox.height<=headerBox.y+headerBox.height,'mobile classification tags stay within the header');
   await page.screenshot({path:'/tmp/dreamatic-classification-mobile.png',animations:'disabled'});
   await page.setViewportSize({width:1440,height:960});
-  await page.locator('.header-actions button[title="Show agent panel"]').click();
+  await page.locator('.panel-controls button[title="Show tool panel"]').click();
   await page.evaluate(()=>window.testApi.finish('session-A'));
-  await page.waitForFunction(()=>!document.querySelector('.agent-stop'));
+  await page.waitForFunction(()=>!document.querySelector('.composer .send.is-stop'));
 
   await page.locator('.composer textarea').fill('Run A');await page.locator('.composer .send').click();
   await page.waitForFunction(()=>window.testApi.prompts.has('session-A'));
@@ -110,15 +114,15 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
   await page.getByText('B visible text',{exact:true}).waitFor();
   await page.evaluate(()=>window.testApi.finish('session-A'));
   await page.waitForTimeout(100);
-  assert.equal(await heading.textContent(),'Project B');assert.equal(await page.locator('.agent-stop').count(),1);
+  assert.equal(await heading.textContent(),'Project B');assert.equal(await page.locator('.composer .send.is-stop').count(),1);
   assert.equal(await page.getByText('B visible text',{exact:true}).count(),1);
-  await page.locator('.agent-stop').click();
+  await page.locator('.composer .send.is-stop').click();
   assert.deepEqual(await page.evaluate(()=>window.testApi.stopped),['session-B']);
   await page.evaluate(()=>window.testApi.finish('session-B'));
   await select('C');await page.waitForFunction(()=>window.testApi.creations.has('C'));
   await select('B');await page.evaluate(()=>window.testApi.finishCreation('C'));await page.waitForTimeout(100);
   assert.equal(await heading.textContent(),'Project B');
   await page.locator('.composer textarea').fill('B remains selected');await page.locator('.composer .send').click();
-  await page.waitForFunction(()=>window.testApi.prompts.get('session-B') && document.querySelector('.agent-stop'));
+  await page.waitForFunction(()=>window.testApi.prompts.get('session-B') && document.querySelector('.composer .send.is-stop'));
   assert.equal(await page.evaluate(()=>window.testApi.prompts.has('session-C')),false);
 });

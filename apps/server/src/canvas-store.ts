@@ -3,12 +3,13 @@ import { dirname, join } from "node:path";
 
 export interface CanvasElementState {
   id: string;
-  kind: "image" | "html" | "text" | "group";
+  kind: "image" | "video" | "html" | "text" | "group";
   x: number;
   y: number;
   width: number;
   height: number;
   assetPath?: string;
+  fileId?: string;
   text?: string;
   role?: string;
 }
@@ -36,7 +37,7 @@ export function normalizeCanvasState(runId: string, value: unknown): CanvasState
   const elements = Array.isArray(source.elements) ? source.elements.flatMap((candidate) => {
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return [];
     const item = candidate as Record<string, unknown>;
-    if (typeof item.id !== "string" || !["image", "html", "text", "group"].includes(String(item.kind))) return [];
+    if (typeof item.id !== "string" || !["image", "video", "html", "text", "group"].includes(String(item.kind))) return [];
     return [{
       id: item.id.slice(0, 180),
       kind: item.kind as CanvasElementState["kind"],
@@ -44,6 +45,7 @@ export function normalizeCanvasState(runId: string, value: unknown): CanvasState
       y: finite(item.y),
       width: Math.max(80, Math.min(2400, finite(item.width, 320))),
       height: Math.max(40, Math.min(2400, finite(item.height, 220))),
+      ...(typeof item.fileId === "string" ? { fileId: item.fileId } : {}),
       ...(typeof item.assetPath === "string" ? { assetPath: item.assetPath } : {}),
       ...(typeof item.text === "string" ? { text: item.text.slice(0, 20_000) } : {}),
       ...(typeof item.role === "string" ? { role: item.role } : {}),

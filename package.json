@@ -17,6 +17,7 @@
     "check": "npm run check -w @dreamatic/project-data && npm run check -w @dreamatic/cli && npm run check -w @dreamatic/server && npm run check -w @dreamatic/web",
     "start": "npm run start -w @dreamatic/server",
     "cli": "npm run start -w @dreamatic/cli --",
+    "portfolio": "npm run build -w @dreamatic/server && node scripts/portfolio.mjs",
     "desktop:prepare": "npm run build && node scripts/desktop/prepare.mjs",
     "desktop": "npm run desktop:prepare && electron apps/desktop",
     "desktop:package": "npm run desktop:prepare && node scripts/desktop/package.mjs",

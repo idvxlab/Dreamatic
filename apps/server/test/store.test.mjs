@@ -20,7 +20,7 @@ import { assetInventory, attachSessionToRun, createDraftRun, deleteRun, primeDra
 import { workflowInventory } from "../dist/workflow-store.js";
 
 test("Showcase preview permits external source tabs without enabling embedded scripts or top navigation", async () => {
-  const source = await readFile(new URL("../../web/src/components/Canvas.tsx", import.meta.url), "utf8");
+  const source = await readFile(new URL("../../web/src/components/Showcase.tsx", import.meta.url), "utf8");
   const sandbox = /<iframe\b[^>]*sandbox="([^"]+)"/u.exec(source)?.[1].split(/\s+/u) ?? [];
   assert.ok(sandbox.includes("allow-popups"));
   assert.ok(sandbox.includes("allow-popups-to-escape-sandbox"));
@@ -118,7 +118,11 @@ test("new projects have an isolated draft Run before the agent starts", async ()
     const first = await createDraftRun(workspace, "session-one");
     const second = await createDraftRun(workspace, "session-two");
     assert.notEqual(first.id, second.id);
+    for (const project of [first, second]) {
+      await assert.rejects(readFile(join(workspace, "runs", project.id, "design-context.json")), { code: "ENOENT" });
+    }
     await primeDraftRun(workspace, first.id, "session-one", "设计一款 AI 玩偶");
+    await assert.rejects(readFile(join(workspace, "runs", first.id, "design-context.json")), { code: "ENOENT" });
     const runs = await runInventory(workspace);
     const firstRun = runs.find((run) => run.id === first.id);
     const secondRun = runs.find((run) => run.id === second.id);

@@ -2,7 +2,7 @@ import type { CompletionSummary as Summary } from '@dreamatic/project-data';
 import { useI18n } from '../i18n';
 import { assetUrl } from '../asset-url';
 
-export function CompletionSummary({ summary }: { summary: Summary }) {
+export function CompletionSummary({ summary, showHeading = true }: { summary: Summary; showHeading?: boolean }) {
   const { t, language } = useI18n();
   const count = (value: number) => value.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US');
   const duration = (ms: number) => {
@@ -15,7 +15,7 @@ export function CompletionSummary({ summary }: { summary: Summary }) {
   const documents = summary.deliverables.filter(item => item.kind === 'document');
   const stages: Record<string, string> = { orchestrator: 'Intent understanding', researcher: 'Research', designer: 'Design', builder: 'Image generation and showcase' };
   return <section className="completion-summary" aria-label={t('Project completion summary')}>
-    <strong>{t('Design task completed')}</strong>
+    {showHeading && <strong>{t('Design task completed')}</strong>}
     <p className="completion-products">{t('Deliverables')}: {count(images.length)} {t(images.length === 1 ? 'design image' : 'design images')}, {count(pages.length)} {t(pages.length === 1 ? 'showcase page' : 'showcase pages')}, {count(documents.length)} {t(documents.length === 1 ? 'design document' : 'design documents')}.</p>
     {images.length > 0 && <details className="completion-products-list"><summary>{t('Design images')}</summary><ul>{images.map(item => <li key={item.path}><a href={assetUrl(item.path)} target="_blank" rel="noreferrer">{item.label}</a></li>)}</ul></details>}
     {documents.length > 0 && <p className="completion-documents">{documents.map((item, i) => <span key={item.path}>{i > 0 ? ' · ' : ''}<a href={assetUrl(item.path)} target="_blank" rel="noreferrer">{t(item.label)}</a></span>)}</p>}

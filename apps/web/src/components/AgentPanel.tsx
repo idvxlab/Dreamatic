@@ -1,5 +1,4 @@
 import { CompletionSummary } from "./CompletionSummary";
-import { RunStatus } from "./RunStatus";
 import { useI18n } from "../i18n";
 import { ArrowUp, Bot, Check, ChevronDown, Circle, ExternalLink, ImagePlus, LoaderCircle, Paperclip, Square, WandSparkles, Wrench, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -191,21 +190,25 @@ export function AgentPanel({ canResume = false, disabled = false, connected = fa
   }
 
   function submit() {
-    if ((!text.trim() && images.length === 0) || running || disabled) return;
+    if ((!text.trim() && images.length === 0) || running || stopping || disabled) return;
     onSend(text.trim() || "请分析这些上传资料，并开始设计。", images);
     setText("");
     setImages([]);
   }
 
+  const stopMode = running || stopping;
+  const actionLabel = stopMode ? (stopping ? "Stopping…" : "Stop") : "Send message";
+  const actionButton = <button type="button" className={`send${stopMode ? " is-stop" : ""}`} aria-label={t(actionLabel)} title={t(stopMode ? (stopping ? "Stopping…" : "Stop the current run") : "Send message")} aria-busy={stopping} disabled={stopMode ? stopping : disabled || (!text.trim() && images.length === 0)} onClick={() => {
+    if (stopping) return;
+    if (running) onStop(); else submit();
+  }}>{stopping ? <LoaderCircle className="spin" size={17} /> : running ? <Square size={12} fill="currentColor" /> : <ArrowUp size={17} />}</button>;
+
   return (
     <aside className="agent-panel">
       <header className="agent-header">
-        <div><span className="agent-sigil"><WandSparkles size={16} /></span><span><strong>{t("Design agent")}</strong><small><i /> {t(connected ? "Local service available" : "Connecting to local service…")}</small></span></div>
-        {running
-          ? <button className="agent-stop" type="button" onClick={onStop} disabled={stopping} title={t("Stop the current run")}><Square size={10} fill="currentColor" /> {stopping ? t("Stopping…") : t("Stop")}</button>
-          : <span className="agent-mode">{t("Auto workflow")}</span>}
+        <div><span className="agent-sigil"><WandSparkles size={16} /></span><span><strong>{t("Talk to Agent")}</strong><small><i /> {t(connected ? "Local service available" : "Connecting to local service…")}</small></span></div>
+        <span className="agent-mode">{t("Auto workflow")}</span>
       </header>
-      <RunStatus workflow={workflow} running={running} pending={pendingAgentStatus} />
       <div className="agent-scroll" ref={scrollRef} onScroll={(event) => {
         const element = event.currentTarget;
         readingTopRef.current = element.scrollTop;
@@ -234,15 +237,15 @@ export function AgentPanel({ canResume = false, disabled = false, connected = fa
         )}
       </div>
       <div className={`composer-wrap${clarification ? " composer-clarification" : ""}`}>
-        {clarification ? <ClarificationCard request={clarification} disabled={running || disabled} onSubmit={onAnswerClarification} onDismiss={onDismissClarification} /> : <>
+        {clarification ? <><ClarificationCard request={clarification} disabled={running || stopping || disabled} onSubmit={onAnswerClarification} onDismiss={onDismissClarification} />{stopMode && <div className="composer composer-action-only"><div><span>{t("Stop the current run")}</span>{actionButton}</div></div>}</> : <>
         {images.length > 0 && <div className="attachment-row">{images.map((image, index) => <span key={`${image.name}-${index}`}><ImagePlus size={13} />{image.name}<button onClick={() => setImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={11} /></button></span>)}</div>}
         <div className="composer">
-          <textarea disabled={disabled} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder={t(disabled ? "Create a project to start chatting" : "Describe the design outcome…")} rows={3} />
+          <textarea disabled={disabled} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); submit(); } }} placeholder={t(disabled ? "Create a project to start chatting" : "Describe the design outcome…")} rows={3} />
           <div>
             <button disabled={disabled} className="attach" onClick={() => fileRef.current?.click()}><Paperclip size={17} /></button>
             <input disabled={disabled} ref={fileRef} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv,.html,.htm" multiple onChange={(event) => addFiles(event.target.files)} />
-            <span>{t("Enter to send")}</span>
-            <button className="send" disabled={disabled || running || (!text.trim() && images.length === 0)} onClick={submit}>{running ? <LoaderCircle className="spin" size={17} /> : <ArrowUp size={17} />}</button>
+            <span>{!stopMode && t("Enter to send")}</span>
+            {actionButton}
           </div>
         </div>
         </>}

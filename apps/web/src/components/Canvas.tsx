@@ -1,402 +1,221 @@
-import { useI18n } from "../i18n";
-import { Download, ExternalLink, FileImage, Hand, LayoutDashboard, LayoutGrid, Minus, MousePointer2, Plus, Scan, Share2, Upload, ZoomIn } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { downloadProject, getCanvasState, getHtmlPreview, saveCanvasState } from "../api";
-import { usePublication } from "../publication-state";
-import { PublishDialog } from "./PublishDialog";
-import { assetUrl } from "../asset-url";
-import type { Asset, CanvasElementState, CanvasState, RunView } from "../types";
+import { ExternalLink, Grid3X3, Grip, Hand, LayoutGrid, Minus, MousePointer2, Plus, Scan, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n } from '../i18n';
+import { getCanvasState, projectFileUrl } from '../api';
+import { assetUrl } from '../asset-url';
+import { CANVAS_MEDIA_MIME, creativeCanvasElements, draggedMedia, mediaKind } from '../canvas-media';
+import { useCanvasSave, waitForCanvasWrites } from '../use-canvas-save';
+import type { CanvasElementState, CanvasState, ProjectFile, RunView } from '../types';
 
 interface CanvasProps {
-  assets: Asset[];
-  selected?: string;
-  onSelect: (path: string) => void;
+  files: ProjectFile[];
   run?: RunView;
+  visible: boolean;
+  addRequest?: { fileId: string; nonce: string };
+  onSelectFile: (file: ProjectFile) => void;
+  onOpenPreview?: (path: string) => void;
 }
-
-type Camera = CanvasState["camera"];
+type Camera = CanvasState['camera'];
 type Gesture =
-  | { kind: "pan"; pointerId: number; startX: number; startY: number; camera: Camera }
-  | { kind: "element"; pointerId: number; startX: number; startY: number; id: string; x: number; y: number };
-
+  | { kind: 'pan'; pointerId: number; startX: number; startY: number; camera: Camera }
+  | { kind: 'move'; pointerId: number; startX: number; startY: number; id: string; x: number; y: number }
+  | { kind: 'resize'; pointerId: number; startX: number; startY: number; id: string; width: number; height: number };
 const DEFAULT_CAMERA: Camera = { x: 72, y: 72, zoom: .78 };
-const LAYOUT_MARKER = "canvas-overview-v3";
-const BOARD_X = 40;
-const BOARD_WIDTH = 1098;
-const CARD_GAP = 24;
-const CARD_WIDTH = 350;
-
-function overviewText(run: RunView, visualCount: number) {
-  return `${run.title}\n\n${visualCount} visual assets  ·  ${run.notes.length} design notes  ·  ${run.showcasePath ? "preview available" : "preview pending"}`;
-}
-
-function autoLayout(assets: Asset[], run?: RunView): CanvasElementState[] {
-  const visual = assets
-    .filter((asset) => /^(png|jpg|jpeg|webp|gif|svg)$/.test(asset.kind))
-    .sort((left, right) => left.path.localeCompare(right.path, undefined, { numeric: true }));
-  const candidates: Array<{ role: Asset["role"]; title: string; items: Asset[] }> = [
-    { role: "reference", title: "Reference library", items: visual.filter((asset) => asset.role === "reference") },
-    { role: "generated", title: "Design development", items: visual.filter((asset) => asset.role === "generated") },
-    { role: "edited", title: "Selected and refined", items: visual.filter((asset) => asset.role === "edited") },
-    { role: "other", title: "Project assets", items: visual.filter((asset) => !["reference", "generated", "edited"].includes(asset.role)) },
-  ];
-  const groups = candidates.filter((group) => group.items.length > 0);
-  const elements: CanvasElementState[] = [];
-  let y = 40;
-  if (run) {
-    elements.push({ id: "group-overview", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Project overview", role: "overview" });
-    y += 62;
-    elements.push({
-      id: LAYOUT_MARKER,
-      kind: "text",
-      role: "overview",
-      x: BOARD_X,
-      y,
-      width: BOARD_WIDTH,
-      height: 172,
-      text: overviewText(run, visual.length),
-    });
-    y += 212;
-  }
-  if (run?.notes.length) {
-    elements.push({ id: "group-rationale", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Design record", role: "rationale" });
-    y += 62;
-    run.notes.forEach((note, index) => {
-      elements.push({
-        id: `note-${note.id}`,
-        kind: "text",
-        role: note.id,
-        x: BOARD_X + (index % 3) * (CARD_WIDTH + CARD_GAP),
-        y: y + Math.floor(index / 3) * 324,
-        width: CARD_WIDTH,
-        height: 284,
-        text: `${note.title}\n\n${note.text}`,
-      });
-    });
-    y += Math.ceil(run.notes.length / 3) * 324 + 38;
-  }
-  for (const group of groups) {
-    elements.push({ id: `group-${group.role}`, kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: group.title, role: group.role });
-    y += 62;
-    group.items.forEach((asset, index) => {
-      const column = index % 3;
-      const row = Math.floor(index / 3);
-      elements.push({
-        id: `asset-${asset.path}`,
-        kind: "image",
-        assetPath: asset.path,
-        role: asset.role,
-        x: BOARD_X + column * (CARD_WIDTH + CARD_GAP),
-        y: y + row * 320,
-        width: CARD_WIDTH,
-        height: 280,
-      });
-    });
-    y += Math.ceil(group.items.length / 3) * 320 + 54;
-  }
-  if (run?.htmlEntries?.length) {
-    const pages = assets.filter((asset) => asset.kind === "html" && run.htmlEntries?.some((entry) => asset.path === `runs/${run.id}/${entry}`));
-    if (pages.length) {
-      elements.push({ id: "group-interfaces", kind: "group", x: BOARD_X, y, width: BOARD_WIDTH, height: 42, text: "Interactive pages", role: "interface" });
-      y += 62;
-      pages.forEach((asset, index) => elements.push({ id: `asset-${asset.path}`, kind: "html", assetPath: asset.path, role: "interface", x: BOARD_X + (index % 3) * (CARD_WIDTH + CARD_GAP), y: y + Math.floor(index / 3) * 180, width: CARD_WIDTH, height: 140, text: asset.label }));
-    }
-  }
-  return elements;
-}
-
 function bounds(elements: CanvasElementState[]) {
   if (!elements.length) return { x: 0, y: 0, width: 1000, height: 700 };
-  const left = Math.min(...elements.map((item) => item.x));
-  const top = Math.min(...elements.map((item) => item.y));
-  const right = Math.max(...elements.map((item) => item.x + item.width));
-  const bottom = Math.max(...elements.map((item) => item.y + item.height));
-  return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+  const x = Math.min(...elements.map(item => item.x)), y = Math.min(...elements.map(item => item.y));
+  return { x, y, width: Math.max(1, ...elements.map(item => item.x + item.width - x)), height: Math.max(1, ...elements.map(item => item.y + item.height - y)) };
 }
 
-export function Canvas({ assets, selected, onSelect, run }: CanvasProps) {
+export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPreview }: CanvasProps) {
   const { t } = useI18n();
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | undefined>(undefined);
-  const loadedRun = useRef<string | undefined>(undefined);
-  const [mode, setMode] = useState<"canvas" | "showcase">("canvas");
-  const [tool, setTool] = useState<"select" | "hand">("hand");
+  const handledAdd = useRef<string | undefined>(undefined);
+  const measured = useRef(new Set<string>());
+  const [tool, setTool] = useState<'select' | 'hand'>('select');
   const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
+  const [guides, setGuides] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('dreamatic-canvas-guides') ?? 'null');
+      return { dots: typeof saved?.dots === 'boolean' ? saved.dots : true, grid: typeof saved?.grid === 'boolean' ? saved.grid : false };
+    } catch { return { dots: true, grid: false }; }
+  });
+  useEffect(() => { try { localStorage.setItem('dreamatic-canvas-guides', JSON.stringify(guides)); } catch { /* Controls still work without local storage. */ } }, [guides]);
+  const guideBackground = useMemo(() => {
+    const layers: string[] = [], sizes: string[] = [], positions: string[] = [];
+    const dotSpacing = 18 * camera.zoom, gridSpacing = 72 * camera.zoom;
+    if (guides.dots) {
+      const radius = Math.max(.5, camera.zoom);
+      layers.push(`radial-gradient(circle, #b8bcb4 ${radius}px, transparent ${radius}px)`);
+      sizes.push(`${dotSpacing}px ${dotSpacing}px`);
+      positions.push(`${camera.x - dotSpacing / 2}px ${camera.y - dotSpacing / 2}px`);
+    }
+    if (guides.grid) {
+      const lineWidth = Math.max(.5, .75 * camera.zoom);
+      layers.push(`linear-gradient(to right, #d2d6ce ${lineWidth}px, transparent ${lineWidth}px)`, `linear-gradient(to bottom, #d2d6ce ${lineWidth}px, transparent ${lineWidth}px)`);
+      sizes.push(`${gridSpacing}px ${gridSpacing}px`, `${gridSpacing}px ${gridSpacing}px`);
+      positions.push(`${camera.x - lineWidth / 2}px ${camera.y - lineWidth / 2}px`, `${camera.x - lineWidth / 2}px ${camera.y - lineWidth / 2}px`);
+    }
+    return { backgroundImage: layers.join(', ') || 'none', backgroundSize: sizes.join(', ') || 'auto', backgroundPosition: positions.join(', ') || '0 0' };
+  }, [camera, guides]);
   const [elements, setElements] = useState<CanvasElementState[]>([]);
-  const [saving, setSaving] = useState(false);
-  const previewRequest = useRef(0);
-  const [previewUrl, setPreviewUrl] = useState<string>();
-  const [previewError, setPreviewError] = useState<string>();
-  const [previewMode, setPreviewMode] = useState(false);
-  const [previewPages, setPreviewPages] = useState<Array<{ path: string; url: string }>>([]);
-  const [publishOpen, setPublishOpen] = useState(false);
-  const publication = usePublication(run?.id);
-  const publishedLink = !publication.error && publication.status?.published && !publication.status.inProgress ? publication.status.receipt?.previewUrl : undefined;
-  const [shareMessage, setShareMessage] = useState<string>();
-  const [shareMessageFading, setShareMessageFading] = useState(false);
-  const [shareNotice, setShareNotice] = useState(0);
+  const [selectedId, setSelectedId] = useState<string>();
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [dirty, setDirty] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
+  const [notice, setNotice] = useState<string>();
   useEffect(() => {
-    if (!shareMessage) return;
-    setShareMessageFading(false);
-    const fade = setTimeout(() => setShareMessageFading(true), 4000);
-    const dismiss = setTimeout(() => setShareMessage(undefined), 4400);
-    return () => { clearTimeout(fade); clearTimeout(dismiss); };
-  }, [shareMessage, shareNotice]);
-  useEffect(() => { setShareMessage(undefined); }, [run?.id, mode, publishOpen]);
-  async function shareProject() {
-    if (!publishedLink) return;
-    setShareMessageFading(false); setShareNotice(value => value + 1);
-    const desktop = (window as Window & { dreamaticDesktop?: { copyPublicationLink: (url: string) => Promise<void> } }).dreamaticDesktop;
-    // Start clipboard writing before opening the browser so web retains focus
-    // and both operations begin within the original click gesture.
-    const copy = desktop ? desktop.copyPublicationLink(publishedLink) : navigator.clipboard?.writeText(publishedLink) ?? Promise.reject(new Error("Clipboard unavailable"));
-    window.open(publishedLink, "_blank", "noopener,noreferrer");
-    try { await copy; setShareMessage("Published project link copied"); }
-    catch { setShareMessage("Could not copy the link. Please try again."); }
-  }
-
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string>();
-  useEffect(() => {
-    // Invalidate in-flight requests when switching projects or rebuilding.
-    previewRequest.current++;
-    setPublishOpen(false);
-    setPreviewUrl(undefined);
-    setPreviewError(undefined);
-    setPreviewPages([]);
-    setPreviewMode(false);
-    setExportError(undefined);
-    setMode("canvas");
-  }, [run?.id, run?.presentation?.entry, run?.presentation?.mode, run?.stages.build]);
-  useEffect(() => () => { previewRequest.current++; }, []);
-  const visualAssets = useMemo(() => assets.filter((asset) => /^(png|jpg|jpeg|webp|gif|svg)$/.test(asset.kind)), [assets]);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadedRun.current = undefined;
-    if (!run) {
-      setElements([]);
-      setCamera(DEFAULT_CAMERA);
-      return;
-    }
-    void getCanvasState(run.id).then((saved) => {
-      if (cancelled) return;
-      const savedIsCurrent = saved?.elements.some((item) => item.id === LAYOUT_MARKER);
-      setElements(savedIsCurrent ? saved!.elements : autoLayout(assets, run));
-      setCamera(saved?.camera ?? DEFAULT_CAMERA);
-      loadedRun.current = run.id;
-    }).catch(() => {
-      if (cancelled) return;
-      setElements(autoLayout(assets, run));
-      setCamera(DEFAULT_CAMERA);
-      loadedRun.current = run.id;
-    });
-    return () => { cancelled = true; };
-  }, [run?.id]);
-
-  useEffect(() => {
-    if (!run || loadedRun.current !== run.id) return;
-    const next = autoLayout(assets, run);
-    const currentIds = new Set(elements.map((item) => item.id));
-    const nextIds = new Set(next.map((item) => item.id));
-    const membershipChanged = currentIds.size !== nextIds.size || [...nextIds].some((id) => !currentIds.has(id));
-    if (membershipChanged) {
-      setElements(next);
-      return;
-    }
-    const nextById = new Map(next.map((item) => [item.id, item]));
-    const contentChanged = elements.some((item) => item.text !== nextById.get(item.id)?.text);
-    if (contentChanged) {
-      setElements((current) => current.map((item) => ({ ...item, text: nextById.get(item.id)?.text ?? item.text })));
-    }
-  }, [assets, elements, run]);
-
-  useEffect(() => {
-    if (!run || loadedRun.current !== run.id) return;
-    setSaving(true);
-    const timer = window.setTimeout(() => {
-      const state: CanvasState = { version: 1, runId: run.id, updatedAt: new Date().toISOString(), camera, elements };
-      void saveCanvasState(run.id, state).catch(() => undefined).finally(() => setSaving(false));
-    }, 650);
-    return () => { window.clearTimeout(timer); };
-  }, [camera, elements, run?.id]);
-
-  const fit = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const box = bounds(elements);
-    const padding = 84;
-    const zoom = Math.max(.2, Math.min(1.25, Math.min((viewport.clientWidth - padding * 2) / box.width, (viewport.clientHeight - padding * 2) / box.height)));
-    setCamera({ zoom, x: (viewport.clientWidth - box.width * zoom) / 2 - box.x * zoom, y: (viewport.clientHeight - box.height * zoom) / 2 - box.y * zoom });
-  }, [elements]);
-
-  function reflow() {
     if (!run) return;
-    setElements(autoLayout(assets, run));
-    setCamera(DEFAULT_CAMERA);
+    let disposed = false;
+    setLoadError(false); setReady(false);
+    void waitForCanvasWrites(run.id).then(() => getCanvasState(run.id)).then(saved => {
+      if (disposed) return;
+      const restored = creativeCanvasElements(saved?.elements ?? []);
+      setElements(restored);
+      setCamera(restored.length ? saved?.camera ?? DEFAULT_CAMERA : DEFAULT_CAMERA);
+      setReady(true);
+    }).catch(() => { if (!disposed) setLoadError(true); });
+    return () => { disposed = true; };
+  }, [run?.id, loadAttempt]);
+  // A failed restore must never overwrite a historical board with an empty one.
+  const state = useMemo<CanvasState | undefined>(() => ready && run ? { version: 1, runId: run.id, updatedAt: new Date().toISOString(), camera, elements } : undefined, [camera, elements, ready, run?.id]);
+  const persistence = useCanvasSave(state, dirty);
+  useEffect(() => { if (!visible) { gesture.current = undefined; setDropActive(false); viewport.current?.querySelectorAll('video').forEach(video => video.pause()); } }, [visible]);
+  const selected = elements.find(item => item.id === selectedId);
+  const mediaFile = (item: CanvasElementState) => files.find(file => file.id === item.fileId || (file.path && item.assetPath === `runs/${run?.id}/${file.path}`));
+  function source(item: CanvasElementState) {
+    return item.fileId && run ? projectFileUrl(run.id, item.fileId) : item.assetPath ? assetUrl(item.assetPath) : undefined;
   }
-
-  const zoomAt = useCallback((nextZoom: number, clientX?: number, clientY?: number) => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const rect = viewport.getBoundingClientRect();
-    const anchorX = (clientX ?? rect.left + rect.width / 2) - rect.left;
-    const anchorY = (clientY ?? rect.top + rect.height / 2) - rect.top;
-    setCamera((current) => {
-      const zoom = Math.max(.2, Math.min(2.4, nextZoom));
-      const worldX = (anchorX - current.x) / current.zoom;
-      const worldY = (anchorY - current.y) / current.zoom;
-      return { zoom, x: anchorX - worldX * zoom, y: anchorY - worldY * zoom };
-    });
-  }, []);
-
+  function choose(item: CanvasElementState) {
+    setSelectedId(item.id);
+    const file = mediaFile(item); if (file) onSelectFile(file);
+  }
+  function add(file: ProjectFile, clientX?: number, clientY?: number) {
+    const kind = mediaKind(file), rect = viewport.current?.getBoundingClientRect();
+    if (!ready || !run || !kind || !rect) return;
+    const x = ((clientX ?? rect.left + rect.width / 2) - rect.left - camera.x) / camera.zoom;
+    const y = ((clientY ?? rect.top + rect.height / 2) - rect.top - camera.y) / camera.zoom;
+    const item: CanvasElementState = {
+      id: crypto.randomUUID(), kind, fileId: file.id,
+      ...(file.path ? { assetPath: `runs/${run.id}/${file.path}` } : {}),
+      text: file.title, role: file.group, x, y, width: 360, height: 280,
+    };
+    measured.current.add(item.id);
+    setElements(current => [...current, item]); setDirty(true); setTool('select'); choose(item);
+    setNotice(undefined); viewport.current?.focus();
+  }
+  useEffect(() => {
+    if (!addRequest || !ready || !visible || handledAdd.current === addRequest.nonce) return;
+    handledAdd.current = addRequest.nonce;
+    const file = files.find(file => file.id === addRequest.fileId && file.category === 'assets');
+    if (file) add(file);
+  }, [addRequest, ready, visible, files]);
+  function drop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault(); setDropActive(false);
+    const file = run ? draggedMedia(event.dataTransfer.getData(CANVAS_MEDIA_MIME), run.id, files) : undefined;
+    if (!file || !ready) { setNotice('Only images and videos from this project can be added to the canvas.'); return; }
+    add(file, event.clientX, event.clientY);
+  }
   function beginPan(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || (tool !== "hand" && event.target !== event.currentTarget)) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = { kind: "pan", pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, camera };
+    if (event.target instanceof Element && event.target.closest('button, a, input, video')) return;
+    if (event.button !== 0 || (tool !== 'hand' && event.target !== event.currentTarget && !(event.target instanceof Element && event.target.closest('.canvas-empty-state')))) return;
+    event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId);
+    if (tool !== 'hand') setSelectedId(undefined);
+    gesture.current = { kind: 'pan', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, camera };
   }
-
-  function beginElement(event: React.PointerEvent<HTMLElement>, item: CanvasElementState) {
-    if (event.button !== 0 || tool === "hand") return;
-    event.stopPropagation();
+  function beginElement(event: React.PointerEvent<HTMLElement>, item: CanvasElementState, resize = false) {
+    if (event.button !== 0 || !ready) return;
+    choose(item); viewport.current?.focus();
+    if (tool === 'hand' && !resize) return;
+    event.stopPropagation(); event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    gesture.current = { kind: "element", pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, id: item.id, x: item.x, y: item.y };
-    if (item.assetPath) onSelect(item.assetPath);
+    gesture.current = resize ? { kind: 'resize', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, id: item.id, width: item.width, height: item.height }
+      : { kind: 'move', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, id: item.id, x: item.x, y: item.y };
   }
-
   function move(event: React.PointerEvent<HTMLDivElement>) {
     const active = gesture.current;
     if (!active || active.pointerId !== event.pointerId) return;
-    if (active.kind === "pan") {
-      setCamera({ ...active.camera, x: active.camera.x + event.clientX - active.startX, y: active.camera.y + event.clientY - active.startY });
-    } else {
-      const dx = (event.clientX - active.startX) / camera.zoom;
-      const dy = (event.clientY - active.startY) / camera.zoom;
-      setElements((current) => current.map((item) => item.id === active.id ? { ...item, x: active.x + dx, y: active.y + dy } : item));
+    const dx = (event.clientX - active.startX) / camera.zoom, dy = (event.clientY - active.startY) / camera.zoom;
+    if (active.kind === 'pan') setCamera({ ...active.camera, x: active.camera.x + event.clientX - active.startX, y: active.camera.y + event.clientY - active.startY });
+    else if (active.kind === 'move') setElements(current => current.map(item => item.id === active.id ? { ...item, x: active.x + dx, y: active.y + dy } : item));
+    else {
+      measured.current.delete(active.id);
+      const scale = Math.max(120 / active.width, 100 / active.height, Math.min(2400 / active.width, 2400 / active.height, 1 + (dx * active.width + dy * active.height) / (active.width ** 2 + active.height ** 2)));
+      setElements(current => current.map(item => item.id === active.id ? { ...item, width: active.width * scale, height: active.height * scale } : item));
     }
+    setDirty(true);
   }
-
-  function endGesture(event: React.PointerEvent<HTMLDivElement>) {
-    if (gesture.current?.pointerId === event.pointerId) gesture.current = undefined;
+  function endGesture(event: React.PointerEvent<HTMLElement>) { if (gesture.current?.pointerId === event.pointerId) gesture.current = undefined; }
+  function removeSelected() {
+    if (!selectedId) return;
+    setElements(current => current.filter(item => item.id !== selectedId)); setSelectedId(undefined); setDirty(true);
   }
-
-  function handleWheel(event: React.WheelEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest(".canvas-note")) return;
-    event.preventDefault();
-    zoomAt(camera.zoom * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY);
+  function metadata(item: CanvasElementState, width: number, height: number) {
+    if (!measured.current.has(item.id) || !width || !height) return;
+    measured.current.delete(item.id);
+    if (item.width !== 360 || item.height !== 280) return;
+    setElements(current => current.map(entry => entry.id === item.id ? { ...entry, height: Math.max(120, Math.min(1200, 342 * height / width + 66)) } : entry));
+    setDirty(true);
   }
-
-  async function openHtml(path?: string) {
-    if (!run || run.stages.build !== "completed") return;
-    const entry = path?.startsWith(`runs/${run.id}/`) ? path.slice(`runs/${run.id}/`.length) : path;
-    const request = ++previewRequest.current;
-    setExportError(undefined);
-    setPreviewMode(true); setMode("showcase"); setPreviewUrl(undefined); setPreviewError(undefined); setPreviewPages([]);
-    try {
-      const preview = await getHtmlPreview(run.id, entry);
-      if (request !== previewRequest.current) return;
-      setPreviewUrl(preview.url); setPreviewPages(preview.entries);
-    } catch (error) {
-      if (request === previewRequest.current) setPreviewError(error instanceof Error ? error.message : String(error));
+  const zoomAt = useCallback((nextZoom: number, clientX?: number, clientY?: number) => {
+    const rect = viewport.current?.getBoundingClientRect(); if (!rect || !ready) return;
+    const anchorX = (clientX ?? rect.left + rect.width / 2) - rect.left, anchorY = (clientY ?? rect.top + rect.height / 2) - rect.top;
+    setCamera(current => { const zoom = Math.max(.2, Math.min(2.4, nextZoom)); return { zoom, x: anchorX - (anchorX - current.x) / current.zoom * zoom, y: anchorY - (anchorY - current.y) / current.zoom * zoom }; });
+    setDirty(true);
+  }, [ready]);
+  function fit() {
+    const rect = viewport.current?.getBoundingClientRect(); if (!rect || !ready) return;
+    const box = bounds(elements), zoom = Math.max(.2, Math.min(1.25, (rect.width - 84) / box.width, (rect.height - 84) / box.height));
+    setCamera({ zoom, x: (rect.width - box.width * zoom) / 2 - box.x * zoom, y: (rect.height - box.height * zoom) / 2 - box.y * zoom }); setDirty(true);
+  }
+  function reflow() {
+    if (!ready) return;
+    // Arrange existing instances only. Duplicate media and custom elements remain intact.
+    const columnWidth = Math.max(360, ...elements.map(item => item.width)) + 24;
+    let y = 40;
+    const positions = new Map<string, { x: number; y: number }>();
+    for (let i = 0; i < elements.length; i += 3) {
+      const row = elements.slice(i, i + 3);
+      row.forEach((item, col) => positions.set(item.id, { x: 40 + col * columnWidth, y }));
+      y += Math.max(...row.map(item => item.height)) + 40;
     }
+    setElements(current => current.map(item => ({ ...item, ...positions.get(item.id)! }))); setCamera(DEFAULT_CAMERA); setDirty(true);
   }
-  async function exportProject() {
-    if (!run || exporting) return;
-    setExporting(true); setExportError(undefined);
-    const runId = run.id;
-    const request = previewRequest.current;
-    try { await downloadProject(runId); }
-    catch (error) { if (request === previewRequest.current) setExportError(error instanceof Error ? error.message : String(error)); }
-    finally { setExporting(false); }
-  }
-  function openShowcase() {
-    void publication.refresh();
-    setExportError(undefined);
-    if (run?.presentation?.mode === "html") { void openHtml(run.presentation.entry); return; }
-    previewRequest.current++;
-    setPreviewMode(false);
-    setMode("showcase");
-  }
-  const showcaseAvailable = run?.presentation?.mode === "html" ? run.stages.build === "completed" : Boolean(run?.showcasePath);
-
-  const htmlPublicationBlocked = !run?.hasImageDeliverables && (run?.presentation?.mode === "html" || Boolean(run?.htmlEntries?.length));
-  const interactive = run?.presentation?.mode === "html" || previewMode;
-  const showcaseUrl = interactive ? previewUrl : run?.showcasePath ? assetUrl(run.showcasePath) : undefined;
-
-  return (
-    <main className="canvas-shell">
-      <div className="canvas-view-switch" role="tablist" aria-label={t("Project view")}>
-        <button className={mode === "canvas" ? "active" : ""} onClick={() => setMode("canvas")}><LayoutDashboard size={14} /> {t("Canvas")}</button>
-        <button className={mode === "showcase" ? "active" : ""} disabled={!showcaseAvailable} onClick={openShowcase}><FileImage size={14} /> {t("Preview")}</button>
-      </div>
-      {mode === "showcase" && (showcaseUrl || interactive) ? (
-        <section className="showcase-view">
-          {interactive && previewPages.length > 1 && <div className="preview-pages"><label>{t("Page")} <select aria-label={t("Prototype page")} value={previewUrl ?? ""} onChange={(event) => setPreviewUrl(event.target.value)}>{previewPages.map((page) => <option key={page.path} value={page.url}>{page.path.split("/").at(-1)}</option>)}</select></label></div>}
-          {showcaseUrl ? !interactive ? <iframe title={`${run?.title ?? "Dreamatic · Art"} preview`} src={showcaseUrl} sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" /> : <iframe className="prototype-frame" style={{ width: "100%" }} title={`${run?.title ?? "Dreamatic · Art"} prototype`} src={showcaseUrl} sandbox="allow-scripts allow-downloads" /> : <div className="prototype-loading"><p role={previewError ? "alert" : "status"}>{previewError ?? t("Preparing interactive preview…")}</p>{previewError && <button onClick={() => void openHtml(run?.presentation?.mode === "html" ? run.presentation.entry : undefined)}>{t("Retry preview")}</button>}</div>}
-          {showcaseUrl && <div className="preview-actions"><a href={showcaseUrl} target="_blank" rel="noreferrer"><ExternalLink size={14} /> {t("Open")}</a><button disabled={exporting || run?.stages.build !== "completed"} onClick={() => void exportProject()}><Download size={14} /> {exporting ? t("Exporting…") : t("Export")}</button><button title={htmlPublicationBlocked ? t("HTML UX/UI projects cannot currently be published to the official Gallery") : undefined} disabled={htmlPublicationBlocked || exporting || run?.stages.build !== "completed"} onClick={() => setPublishOpen(true)}><Upload size={14} /> {t("Publish")}</button><button disabled={!publishedLink || exporting} title={!publishedLink ? t("Publish this project before sharing") : t("Copy and open published project")} onClick={() => void shareProject()}><Share2 size={14} /> {t("Share")}</button></div>}
-          {htmlPublicationBlocked && <small className="preview-model-credit">{t("HTML UX/UI projects cannot currently be published to the official Gallery")}</small>}
-          <small className="preview-model-credit">{t("Reasoning models")}: {[...new Set(run?.modelUsage?.reasoning.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}<br />{t("Generation models")}: {[...new Set(run?.modelUsage?.generation.map(item => item.model) ?? [])].join(" · ") || t("Not recorded")}</small>
-          {shareMessage && <p className={`preview-share-message${shareMessageFading ? " fading" : ""}`} role="status">{t(shareMessage)}</p>}
-          {exportError && <p className="preview-export-error" role="alert">{exportError}</p>}
-        </section>
-      ) : (
-        <div ref={viewportRef} className={`canvas-viewport tool-${tool}`} onPointerDown={beginPan} onPointerMove={move} onPointerUp={endGesture} onPointerCancel={endGesture} onWheel={handleWheel}>
-          {elements.length === 0 ? (
-            run ? (
-              <section className="run-progress">
-                <p className="eyebrow">{t("Loading project workspace")}</p>
-                <h1>{run.title}</h1>
-                <p className="canvas-loading-copy">{t("Restoring the saved design record and visual outputs…")}</p>
-              </section>
-            ) : (
-              <section className="empty-canvas">
-                <div className="empty-orbit"><div><FileImage size={28} /></div></div>
-                <p className="eyebrow">{t("A quiet canvas, ready to work")}</p>
-                <h1>{t("Turn a brief into a")}<br />{t("coherent design system.")}</h1>
-                <p>{t("Ask the agent to begin. Research, Design Context, review challenges, and built artifacts will appear here as the run develops.")}</p>
-                <span><ZoomIn size={14} /> {t("Approved designs are executed before delivery")}</span>
-              </section>
-            )
-          ) : (
-            <div className="canvas-world" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
-              {elements.map((item) => item.kind === "group" ? (
-                <section key={item.id} className={`canvas-group-label role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
-                  <span>{t(item.text ?? "")}</span><small>{item.role === "reference" ? t("Evidence and visual anchors") : t("Run outputs")}</small>
-                </section>
-              ) : item.kind === "image" && item.assetPath ? (
-                <figure key={item.id} className={`canvas-artboard role-${item.role ?? "other"} ${selected === item.assetPath ? "selected" : ""}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
-                  <div><img draggable={false} src={assetUrl(item.assetPath)} alt="" /></div>
-                  <figcaption><span><strong>{item.assetPath.split("/").at(-1)}</strong><small>{item.role}</small></span><a aria-label={t("Open asset")} href={assetUrl(item.assetPath)} target="_blank" rel="noreferrer" onPointerDown={(event) => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
-                </figure>
-              ) : item.kind === "html" ? (
-                <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}><strong>{item.text}</strong><p>{t("HTML interface")}</p><button onPointerDown={(event) => event.stopPropagation()} onClick={() => void openHtml(item.assetPath)}>{t("Open prototype")} <ExternalLink size={13} /></button></article>
-              ) : item.kind === "text" && item.id === LAYOUT_MARKER && run ? (
-                <section key={item.id} className="canvas-project-overview" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>
-                  <p className="eyebrow">{t("Project workspace")}</p>
-                  <h1>{run.title}</h1>
-                  <footer><span>{visualAssets.length} {t("visual assets")}</span><span>{run.notes.length} {t("design notes")}</span><span>{run.showcasePath ? t("Preview available") : t("Preview pending")}</span></footer>
-                </section>
-              ) : item.kind === "text" ? (
-                <article key={item.id} className={`canvas-note role-${item.role ?? "other"}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={(event) => beginElement(event, item)}>{item.text}</article>
-              ) : null)}
-            </div>
-          )}
-        </div>
-      )}
-      {mode === "canvas" && (
-        <div className="canvas-toolbar" aria-label={t("Canvas controls")}>
-          <button className={tool === "select" ? "active" : ""} aria-label={t("Select and move elements")} onClick={() => setTool("select")}><MousePointer2 size={16} /></button>
-          <button className={tool === "hand" ? "active" : ""} aria-label={t("Pan canvas")} onClick={() => setTool("hand")}><Hand size={16} /></button>
-          <span className="tool-separator" />
-          <button aria-label={t("Zoom out")} onClick={() => zoomAt(camera.zoom - .1)}><Minus size={15} /></button>
-          <button className="zoom-label" title={t("Reset to 100%")} onClick={() => zoomAt(1)}>{Math.round(camera.zoom * 100)}%</button>
-          <button aria-label={t("Zoom in")} onClick={() => zoomAt(camera.zoom + .1)}><Plus size={15} /></button>
-          <button aria-label={t("Fit project")} onClick={fit}><Scan size={16} /></button>
-          <button aria-label={t("Reflow project cards")} title={t("Reflow project cards")} onClick={reflow}><LayoutGrid size={16} /></button>
-          {saving && <span className="canvas-saving">{t("Saving…")}</span>}
-        </div>
-      )}
-      {publishOpen && run && !htmlPublicationBlocked && <PublishDialog key={run.id} runId={run.id} title={run.title} onClose={() => setPublishOpen(false)} />}
-    </main>
-  );
+  return <main className="canvas-shell">
+    <div ref={viewport} tabIndex={0} role="region" aria-label={t('Canvas editing area')} style={guideBackground} className={`canvas-viewport tool-${tool}${dropActive ? ' canvas-drop-active' : ''}`} onPointerDown={beginPan} onPointerMove={move} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
+      onWheel={event => { if (event.target instanceof Element && event.target.closest('.canvas-note, video')) return; event.preventDefault(); zoomAt(camera.zoom * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY); }}
+      onDragOver={event => { if (!ready || !event.dataTransfer.types.includes(CANVAS_MEDIA_MIME)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropActive(true); }}
+      onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false); }} onDrop={drop}
+      onKeyDown={event => { if (event.target instanceof Element && event.target.closest('button, a, input, textarea, video, [contenteditable="true"]')) return; if (['Delete', 'Backspace'].includes(event.key) && selectedId) { event.preventDefault(); removeSelected(); } }}>
+      {!ready && run ? <section className="run-progress canvas-empty-state"><p className="canvas-loading-copy" role={loadError ? 'alert' : 'status'}>{t(loadError ? 'Could not restore the canvas. Retry before editing.' : 'Restoring canvas…')}</p>{loadError && <button onClick={() => setLoadAttempt(value => value + 1)}>{t('Retry')}</button>}</section> : elements.length > 0 ? <div className="canvas-world" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
+        {elements.map(item => item.kind === 'group' ? <section key={item.id} className={`canvas-group-label role-${item.role ?? 'other'}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}><span>{t(item.text ?? '')}</span><small>{t('Run outputs')}</small></section>
+          : (item.kind === 'image' || item.kind === 'video') && source(item) ? <figure key={item.id} data-element-id={item.id} className={`canvas-artboard canvas-media ${selectedId === item.id ? 'selected' : ''}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>
+            <div>{item.kind === 'video' ? <video src={source(item)} controls preload="metadata" onPointerDown={event => { event.stopPropagation(); choose(item); }} onLoadedMetadata={event => metadata(item, event.currentTarget.videoWidth, event.currentTarget.videoHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} /> : <img draggable={false} src={source(item)} alt={item.text ?? item.assetPath?.split('/').at(-1) ?? ''} onLoad={event => metadata(item, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} />}</div>
+            <figcaption><span><strong>{item.text ?? item.assetPath?.split('/').at(-1)}</strong><small>{t(item.kind === 'video' ? 'Video file' : 'Image file')}</small></span><a aria-label={t('Open asset')} href={source(item)} target="_blank" rel="noreferrer" onPointerDown={event => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
+            {selectedId === item.id && <button className="canvas-resize-handle" aria-label={t('Resize selected media')} onPointerDown={event => beginElement(event, item, true)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); event.stopPropagation(); measured.current.delete(item.id); const factor = ['ArrowLeft', 'ArrowDown'].includes(event.key) ? .9 : 1.1; if (item.width * factor >= 120 && item.height * factor >= 100 && Math.max(item.width, item.height) * factor <= 2400) { setElements(current => current.map(entry => entry.id === item.id ? { ...entry, width: entry.width * factor, height: entry.height * factor } : entry)); setDirty(true); } }} />}
+          </figure>
+          : item.kind === 'html' ? <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}><strong>{item.text}</strong><p>{t('HTML interface')}</p><button onPointerDown={event => event.stopPropagation()} onClick={() => item.assetPath && onOpenPreview?.(item.assetPath)}>{t('Open prototype')} <ExternalLink size={13} /></button></article>
+          : item.kind === 'text' ? <article key={item.id} className="canvas-note" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>{item.text}</article> : null)}
+      </div> : null}
+      {dropActive && <div className="canvas-drop-indicator">{t('Drop to add media to the canvas')}</div>}
+    </div>
+    <div className="canvas-toolbar" aria-label={t('Canvas controls')}>
+      <button className={tool === 'select' ? 'active' : ''} aria-label={t('Select and move elements')} onClick={() => setTool('select')}><MousePointer2 size={16} /></button>
+      <button className={tool === 'hand' ? 'active' : ''} aria-label={t('Pan canvas')} onClick={() => setTool('hand')}><Hand size={16} /></button><span className="tool-separator" />
+      <button disabled={!ready} aria-label={t('Zoom out')} onClick={() => zoomAt(camera.zoom - .1)}><Minus size={15} /></button>
+      <button disabled={!ready} className="zoom-label" aria-label={t('Reset to 100%')} title={t('Reset to 100%')} onClick={() => zoomAt(1)}>{Math.round(camera.zoom * 100)}%</button>
+      <button disabled={!ready} aria-label={t('Zoom in')} onClick={() => zoomAt(camera.zoom + .1)}><Plus size={15} /></button>
+      <button disabled={!ready} aria-label={t('Fit project')} onClick={fit}><Scan size={16} /></button>
+      <button disabled={!ready} aria-label={t('Reflow project cards')} title={t('Reflow project cards')} onClick={reflow}><LayoutGrid size={16} /></button>
+      <span className="tool-separator" />
+      <button className={guides.dots ? 'active' : ''} aria-label={t('Positioning dots')} aria-pressed={guides.dots} title={t(guides.dots ? 'Hide positioning dots' : 'Show positioning dots')} onClick={() => setGuides(current => ({ ...current, dots: !current.dots }))}><Grip size={16} /></button>
+      <button className={guides.grid ? 'active' : ''} aria-label={t('Grid lines')} aria-pressed={guides.grid} title={t(guides.grid ? 'Hide grid lines' : 'Show grid lines')} onClick={() => setGuides(current => ({ ...current, grid: !current.grid }))}><Grid3X3 size={16} /></button>
+      <button disabled={!selected || !ready} aria-label={t('Remove selected element')} title={t('Remove selected element')} onClick={removeSelected}><Trash2 size={16} /></button>
+      {persistence.saving && <span className="canvas-saving">{t('Saving…')}</span>}
+    </div>
+    {(notice || persistence.error) && <div className="canvas-notice" role="alert">{t(persistence.error ?? notice!)}{persistence.error && <button onClick={persistence.retry}>{t('Retry')}</button>}</div>}
+  </main>;
 }

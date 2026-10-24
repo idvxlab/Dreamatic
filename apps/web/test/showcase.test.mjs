@@ -6,20 +6,25 @@ import test from 'node:test';
 import { build } from 'vite';
 import { browserExecutable } from '../../../scripts/browser-executable.mjs';
 
-// Render the actual React Canvas in a browser; API responses represent committed deliveries.
+// Render the extracted React Showcase in a browser; API responses represent committed deliveries.
 test('Preview opens the designed HTML with working interactions, retries failures and preserves Gallery routing', {timeout:60_000}, async (t) => {
   const executablePath = await browserExecutable();
   if (!executablePath) { t.skip('Chromium unavailable'); return; }
-  const canvasPath = fileURLToPath(new URL('../src/components/Canvas.tsx', import.meta.url));
+  const canvasPath = fileURLToPath(new URL('../src/components/Showcase.tsx', import.meta.url));
   const root = fileURLToPath(new URL('..', import.meta.url));
   const entry = 'virtual:showcase-test';
   const bundle = await build({ root, configFile: false, logLevel: 'silent', esbuild: { jsx: 'automatic' },
     plugins: [{ name: 'showcase-fixture', resolveId(id) { if (id === entry) return entry; }, load(id) {
       if (id !== entry) return;
-      return `import React from 'react'; import {createRoot} from 'react-dom/client'; import {Canvas} from ${JSON.stringify(canvasPath)};
-const root = createRoot(document.getElementById('root'));
-window.setRun = (run) => root.render(React.createElement(Canvas, {run, assets: [], onSelect() {}}));
-window.setRun(window.initialRun);`;
+      return `import React from 'react'; import {createRoot} from 'react-dom/client'; import {Showcase} from ${JSON.stringify(canvasPath)};
+function Fixture(){
+ const [run,setRun]=React.useState(window.initialRun),[open,setOpen]=React.useState(false),[revision,setRevision]=React.useState(0);
+ window.setRun=setRun;
+ React.useEffect(()=>setOpen(false),[run.id,run.presentation?.entry,run.presentation?.mode,run.stages.build]);
+ const available=run.presentation?.mode==='html'?run.stages.build==='completed':Boolean(run.showcasePath);
+ return React.createElement(React.Fragment,null,React.createElement('nav',{className:'canvas-view-switch'},React.createElement('button',{onClick:()=>setOpen(false)},'Canvas'),React.createElement('button',{disabled:!available,onClick:()=>{setOpen(true);setRevision(n=>n+1)}},'Preview')),open&&React.createElement(Showcase,{key:revision,run}));
+}
+createRoot(document.getElementById('root')).render(React.createElement(Fixture));`;
     } }], build: { write: false, rollupOptions: { input: entry }, minify: false } });
   const js = bundle.output.find((item) => item.type === 'chunk').code;
   const baseRun = { id: 'ux', title: 'Academic homepage', status: 'complete', stages: { build: 'completed' }, notes: [], documents: [], activity: [], agentSessions: [], assetCount: 0 };
@@ -146,7 +151,7 @@ window.setRun(window.initialRun);`;
     await page.getByRole('alert').waitFor();
     await page.getByRole('button', { name: 'Retry preview' }).click();
     await frame.getByRole('heading', { name: 'Designed academic homepage' }).waitFor();
-    assert.equal(calls, 4);
+    assert.equal(calls, 5);
     await page.evaluate((run) => window.setRun(run), { ...ux, id: 'pending', stages: { build: 'in_progress' } });
     await page.waitForFunction(() => document.querySelector('.canvas-view-switch button:last-child').disabled);
     await page.evaluate((run) => window.setRun(run), { ...baseRun, id: 'poster', showcasePath: 'runs/poster/artifacts/00-gallery.html', presentation: { mode: 'gallery', entry: 'artifacts/00-gallery.html' } });
@@ -159,7 +164,7 @@ window.setRun(window.initialRun);`;
     await page.getByRole('button', {name:'Export',exact:true}).click();
     assert.equal((await galleryDownload).suggestedFilename(), 'poster.zip');
     assert.equal(exportCalls, 5);
-    assert.equal(calls, 4); // Gallery never requests an HTML preview.
+    assert.equal(calls, 5); // Gallery never requests an HTML preview.
   } finally {
     await browser?.close(); server.closeAllConnections(); await new Promise((resolve) => server.close(resolve));
   }

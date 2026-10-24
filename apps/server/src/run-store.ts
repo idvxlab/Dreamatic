@@ -5,7 +5,7 @@ import { indexedJsonl } from "./jsonl-index.js";
 import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, relative } from "node:path";
 import { randomUUID } from "node:crypto";
-import { RUN_CONTEXT_SECTIONS, RUN_FILES, findRunDocument } from "@dreamatic/project-data";
+import { RUN_FILES, findRunDocument } from "@dreamatic/project-data";
 
 export type TimelineKind = "thought" | "tool" | "result" | "error";
 
@@ -48,14 +48,6 @@ export async function createDraftRun(workspaceDir: string, sessionId: string, ti
   await Promise.all([
     writeFile(join(runDir, "brief.json"), JSON.stringify({ runId, sessionId, title, titleStatus: "temporary", brief: "", resolvedScope: {}, createdAt }, null, 2), "utf8"),
     writeFile(join(runDir, "run-state.json"), JSON.stringify({ runId, status: "draft", stages: { research: "pending", design: "pending", review: "pending", build: "pending", export: "pending" }, createdAt, updatedAt: createdAt, lastEvent: "project_created" }, null, 2), "utf8"),
-    writeFile(join(runDir, "design-context.json"), JSON.stringify({
-      schemaVersion: 1,
-      runId,
-      status: "collecting",
-      revision: 0,
-      sections: structuredClone(RUN_CONTEXT_SECTIONS),
-      updatedAt: createdAt,
-    }, null, 2), "utf8"),
     writeFile(join(runDir, "bus.jsonl"), "", "utf8"),
   ]);
   return { id: runId, title };

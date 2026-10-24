@@ -307,3 +307,61 @@ existing trusted parent IPC channel. Electron holds one `prevent-app-suspension`
 blocker while enabled and busy, and releases it when idle or on service/application
 exit. Waiting for answers or image retry returns the task to idle. Web mode does not
 expose the sleep setting. Renderer content cannot request wake locks.
+
+## Independent portfolio PDF export
+
+Completed image-based Builder projects expose **Portfolio PDF** beside Export in
+ the exhibition preview. `POST /api/runs/:id/portfolio` returns the saved asset path,
+filename, byte size, page count, selected-work count, SHA-256 and warnings. The UI
+verifies the downloaded bytes before offering the file and keeps an Open PDF link.
+The same operation is available locally with `npm run portfolio -- <run-id>`.
+Neither path starts an agent, calls an image provider, nor changes the completed
+Builder checkpoint, generated images, exhibition HTML, manifest or receipt.
+
+The PDF reuses `.showcase-direction.json` (or historical manifest direction),
+its hero, narrative order, roles and groups. Selection suppresses exact and close
+visual duplicates using actual decoded pixels and limits repetitive sections;
+details retain their own explanatory purpose. All original works remain in HTML.
+This is deterministic curation guided by the Builder's prior art direction, not a
+new vision-model critique: the small perceptual signature cannot judge aesthetic
+quality or semantic similarity. Historical projects without direction metadata
+fall back to documented image purposes and return a warning.
+
+The print renderer reuses the exhibition's inline background, text contrast and
+heading type preference, and the documented project palette. Page orientation
+follows the selected works' median aspect ratio; portrait heroes in landscape
+series use a side-by-side opening composition. Opening, full-work, portrait specimen,
+detail and comparison arrangements preserve complete source proportions; grouping
+and page count follow available works. Short concept and introduction excerpts
+replace plan/task text. Only bibliography entries cited in the published excerpts
+are included. Every image uses its verified original bytes, including transparency.
+
+The existing `playwright-core` renders fixed-size, tagged PDF pages entirely
+locally, with network requests blocked. Desktop builds already bundle Chromium.
+Development uses Playwright's installed browser or local Chrome/Chromium; set
+`DREAMATIC_HTML_BROWSER_EXECUTABLE` for another Chromium installation. No runtime
+download or online PDF service is used. Missing rendering dependencies fail clearly.
+Chromium embeds the used fonts (including Type 3 CJK glyph programs on macOS).
+On Linux install Noto CJK, or set `DREAMATIC_PDF_FONT` to a readable, licensed,
+embeddable TTF/OTF/WOFF/WOFF2 font covering project languages. The file is inlined;
+font loading and required CJK glyph coverage are checked before printing.
+
+Missing/corrupt/low-resolution works produce explicit omission warnings; changed
+image digests fail rather than substituting material. Empty designs, no readable
+works, incomplete builds, invalid direction, unsafe paths and missing fonts fail.
+Limits: 80 MB per original image, 100 million decoded pixels, 240 MB total originals,
+40 MB optional font, two concurrent exports (one per project), 30-second PDF print
+timeout. Browser decode precedes the pixel-count guard; this is a processing limit,
+not a hardened untrusted-image decoder. Long content that cannot fit fails layout
+validation rather than being silently clipped. Low display density is reported.
+
+Before delivery, the renderer checks image decoding, page and text boundaries,
+font coverage, actual platform fonts, PDF header/EOF, expected page count and
+embedded glyph programs. Source digests and completed-build state are rechecked
+before commit. These checks establish mechanical validity; they cannot replace
+human art-direction review. Each export is atomically saved to a new
+`artifacts/portfolio-<uuid>/` directory with `portfolio.pdf`, a self-contained
+`print.html` proof and `curation.json` (selection, omissions, warnings, source
+hashes and font names). Repeated exports never overwrite earlier results. Failed
+exports clean temporary directories. Existing project ZIP exports naturally
+include these additional deliverables without changing the original manifest.

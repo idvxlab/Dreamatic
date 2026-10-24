@@ -3,7 +3,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useI18n } from '../i18n';
 import { assetUrl } from '../asset-url';
 import type { WorkflowEvent } from '../types';
-export function RunStatus({ workflow, running, pending }: { workflow: WorkflowEvent[]; running: boolean; pending?: string }) {
+export function RunStatus({ workflow, running, pending, showImages = true }: { workflow: WorkflowEvent[]; running: boolean; pending?: string; showImages?: boolean }) {
   const { t } = useI18n();
   const [now, setNow] = useState(Date.now());
   useEffect(() => { if (!running) return; const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, [running]);
@@ -30,7 +30,7 @@ export function RunStatus({ workflow, running, pending }: { workflow: WorkflowEv
   const age = stamp ? Math.max(0, Math.floor((now - Date.parse(stamp)) / 1000)) : undefined;
   const elapsed = current?.at ? Math.max(0, Math.floor((now - Date.parse(current.at)) / 1000)) : undefined;
   const milestone = flat.filter(event => event.kind === 'milestone' && event.status === 'completed').at(-1);
-  if (!running && !images.length) return null;
+  if (!running && (!showImages || !images.length)) return null;
   return <section className="run-status" aria-label={t('Run status')}>
     {running && <><div className="run-status-heading"><LoaderCircle size={14} className="spin" /><strong>{current ? `${current.actor} · ${t(current.label)}` : t(pending ?? 'Working…')}</strong></div>
       <p className="run-status-detail" role="status" aria-live="polite">{generating && items.some(item => item.state) ? t('Creating your design images') : current?.output || current?.detail || t(pending ?? 'Waiting for an execution update…')}</p>
@@ -46,6 +46,6 @@ export function RunStatus({ workflow, running, pending }: { workflow: WorkflowEv
       {average !== undefined && <small className="image-average-note">{t('Based on saved new images; parallel generation and provider load affect the remaining wait.')}</small>}
     </div>}
     {batch && (!generating || !items.some(item => item.state)) && <div className="run-status-counts" role="status">{t('Saved')}: {success} · {t('Failed')}: {failed} · {t('Pending')}: {Math.max(0, batch.total - success - failed)} · {t('Total')}: {batch.total}</div>}
-    {images.length > 0 && <div className="run-status-images"><small>{t('Saved design images')}</small><div>{images.map(path => <a key={path} href={assetUrl(path)} target="_blank" rel="noreferrer"><img src={assetUrl(path)} alt={path.split('/').at(-1)} /><span>{path.split('/').at(-1)}</span></a>)}</div></div>}
+    {showImages && images.length > 0 && <div className="run-status-images"><small>{t('Saved design images')}</small><div>{images.map(path => <a key={path} href={assetUrl(path)} target="_blank" rel="noreferrer"><img src={assetUrl(path)} alt={path.split('/').at(-1)} /><span>{path.split('/').at(-1)}</span></a>)}</div></div>}
   </section>;
 }

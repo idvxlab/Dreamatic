@@ -18,7 +18,7 @@ v2.3.0 replaces the previous agent implementation with a smaller, four-stage des
 | Presentation ownership | Designer-authored presentation specifications executed by Builder | Builder generates all planned images, records an independent exhibition direction, and composes a static showcase |
 | Execution entry points | Web, desktop, and CLI | Web and desktop; CLI design execution is currently unavailable |
 
-This version also improves saved-output recovery, image reference validation, long-running image progress feedback, completion reporting, and historical log processing. It unifies the product name as **Dreamatic · Art**.
+This version also introduces a six-view workbench with resizable panels, a project overview, a media canvas, unified document and reference reading, and portfolio PDF export. It improves saved-output recovery, image reference validation, long-running image progress feedback, completion reporting, and historical log processing. The product name is unified as **Dreamatic · Art**.
 
 Some v2.2.0 configuration fields and historical project readers remain for compatibility. Their presence does not mean every previous execution feature is available in the new pipeline. In particular, the current pipeline does not implement the former review/approval loop, interactive application generation, or document/video input extraction.
 
@@ -39,14 +39,69 @@ Showcase composition uses text evidence rather than image inspection. Builder's 
 
 ## Working with projects
 
-- **Live conversation:** follow specialist output, stage milestones, questions, and tool activity inside the existing conversation interface.
-- **Project categories:** projects carry one primary discipline and optional secondary disciplines from a shared eight-category taxonomy. Designer confirms the final classification; header tags update live, and exports preserve compatible category metadata for DreamaticSite.
-- **Image progress:** see the total image count, saved and reused work, active images, elapsed generation time, and the observed average for successfully generated images. Generation may take several minutes; keep the application running until it finishes.
-- **Completion report:** see delivered outputs, total elapsed time, per-stage durations, and reported token usage. Retries and resumed work are included; unavailable usage is marked rather than counted as zero.
-- **Canvas and preview:** inspect project assets and the generated showcase, with saved thumbnails remaining available after generation.
-- **Local project management:** reopen, rename, revise, or move projects to recoverable local trash.
-- **Export and publication:** download a project ZIP or publish eligible image-based designs to the official Gallery from Preview. Replacing an existing publication requires confirmation. Pure HTML projects without delivered design images are not currently eligible for Gallery publication.
-- **English and Chinese UI:** switch interface languages without automatically translating project content.
+The interface separates project navigation on the left, a tool panel in the middle, and the content workspace on the right. New projects open in **Workbench**. The navigation and tool panels can be hidden independently; on desktop, drag the tool panel's right divider to resize it, with a minimum width of **320 px**. Narrow windows use drawers.
+
+| View | Tool panel | Content workspace |
+| --- | --- | --- |
+| **Workbench** | Talk to Agent conversation | Project Overview |
+| **Canvas** | Categorized project assets | Editable media canvas |
+| **Preview** | Hidden initially; reopen to talk to the agent | Showcase and floating export, publish, and share controls |
+| **Context** | Design-context file list | Selected document |
+| **Asset Library** | Uploaded files, generated works, and research materials | Selected asset |
+| **References** | Bibliography, research sources, and local references | Reader mode or original webpage |
+
+### Conversation and project overview
+
+**Talk to Agent** retains messages, specialist output, clarification questions, and expandable tool activity. The input area's action button sends a message when idle and stops the run while working; it is disabled while a stop request is pending. Stopping preserves unsent drafts and attachments. Enter sends a message; Shift+Enter inserts a new line.
+
+Live runtime status appears in **Project Overview**, rather than a duplicate panel above the conversation. It includes the current activity, elapsed time, image-generation counts, saved and reused work, and observed generation durations. Image generation may take several minutes; keep the application running until it finishes.
+
+Overview sections can be expanded or collapsed independently:
+
+- **Design Context:** compact, responsive cards with independently scrollable summaries and links to the full documents.
+- **References:** links to recorded bibliography entries and research materials.
+- **Generated Works:** generated design images and the Showcase page; click a card to open its asset or preview.
+- **Runtime Summary:** delivered outputs, elapsed time, per-stage durations, and reported token usage. Retries and resumed work are included; unavailable usage remains explicitly unknown.
+
+Projects carry one primary discipline and optional secondary disciplines from a shared eight-category taxonomy. Header tags update live, and exports preserve compatible category metadata for DreamaticSite. Projects can be reopened, renamed, revised, or moved to recoverable local trash. English and Chinese interface languages are available; switching languages does not translate project content.
+
+### Media canvas
+
+The Canvas begins empty: project assets are listed in the tool panel rather than automatically placed on the board. Historical automatic asset inventories and informational labels are filtered out; manually added elements remain available.
+
+- Drag a project image or video from the asset list onto the canvas, or use its **Add to canvas** button. Each addition creates an independent instance, including repeated uses of the same file.
+- Select and move elements, resize media proportionally with the corner handle, and remove selected elements with the toolbar or Delete/Backspace. Removing an element does not delete its source file.
+- Play, pause, seek, and adjust volume using native video controls. Supported containers include MP4, WebM, and MOV; actual playback depends on the browser's codec support. Videos pause when leaving Canvas.
+- Pan, zoom, fit the current contents, or reflow the existing elements. Reflow preserves media instances and custom content.
+- Toggle **Positioning dots** and **Grid lines** independently in the bottom toolbar. Both follow camera movement and zoom; visibility preferences are remembered locally.
+
+Element positions, dimensions, and the camera are saved per project. Restore and save failures show retry controls. Canvas editing currently means composition and media playback, not pixel editing, image filters, or video trimming.
+
+### Documents and reference reading
+
+Context, Asset Library, and References share one document viewer. File lists show image thumbnails when available, otherwise type-specific icons and format labels. The viewer supports Markdown, text, JSON/CSV, HTML, PDF, images, and video. Other cataloged formats, including Office documents and 3D models, provide an original-file opening or download fallback.
+
+Context reading supports current Markdown handoffs and historical structured Context files. New projects no longer generate the obsolete `design-context.json` index; existing copies remain readable for compatibility.
+
+Web references default to **Reader mode**, which extracts readable text, images, and links from a registered public source without executing its scripts. **Original page** attempts embedded viewing with script support for external sites. **Open original** is always available. Some websites prohibit embedding; sign-in, paywalls, anti-bot protection, JavaScript-only content, and network failures can also prevent extraction. The reader reports failures and offers retry and alternate opening options.
+
+Viewing a file in the library or placing it on Canvas does not make it an input to the design agents. The current pipeline accepts image attachments; document and video input extraction remain unavailable.
+
+### Preview, export, and publication
+
+Preview displays the generated Showcase and floating controls for opening the page, downloading a project ZIP, creating a **Portfolio PDF**, publishing, and sharing. It initially hides the tool panel to make room for the work; reopen the panel to continue the agent conversation alongside the preview.
+
+Eligible image-based designs can be published to the official Gallery. Replacing an existing publication requires confirmation. Share becomes available after successful publication. Pure HTML projects without delivered design images are not currently eligible for Gallery publication. Compatible historical interactive HTML presentations can still be previewed; the active generation pipeline produces static showcases.
+
+Portfolio PDF export uses existing project images and the saved exhibition direction, with representative selection, duplicate suppression, and page layouts adapted to the works. PDF curation can omit repetitive works; the HTML Showcase retains its all-planned-images policy. PDF export does not start another design or image-generation run.
+
+For a completed project, PDF export is also available from the repository root:
+
+```sh
+npm run portfolio -- <completed-run-id>
+```
+
+The command uses `DREAMATIC_WORKSPACE` or `./workspace` and prints the generated file path and export details. PDF rendering requires an available Chromium executable; set `DREAMATIC_HTML_BROWSER_EXECUTABLE` if automatic discovery fails. Font coverage must include the project's language; optionally set `DREAMATIC_PDF_FONT` to a licensed embeddable TTF, OTF, WOFF, or WOFF2 file.
 
 ### Recovery and output integrity
 
@@ -99,7 +154,7 @@ Image size information can come from model metadata, explicitly verified setting
 
 Research uses DuckDuckGo by default or Serper when configured with `DREAMATIC_SEARCH_PROVIDER=serper`. Serper uses `DREAMATIC_SEARCH_API_KEY`, falling back to the legacy `SERPER_API_KEY` when the primary key is empty.
 
-Settings and `.env.example` expose current execution controls. Retired settings already present in `.env` are preserved when saving, but cannot be edited through the settings API. Reviewer overrides, image editing, research caching, old agent retry budgets, visual preview limits and browser approval controls are not active runtime settings. Browser executable overrides remain available to development tests. `DREAMATIC_PROVIDER_NAME` is an optional connection label; it does not switch profiles. A model name alone does not establish support for reasoning controls or tool schemas.
+Settings and `.env.example` expose current execution controls. Retired settings already present in `.env` are preserved when saving, but cannot be edited through the settings API. Reviewer overrides, image editing, research caching, old agent retry budgets, visual preview limits and browser approval controls are not active runtime settings. Browser executable overrides remain available to development tests and portfolio PDF rendering. `DREAMATIC_PROVIDER_NAME` is an optional connection label; it does not switch profiles. A model name alone does not establish support for reasoning controls or tool schemas.
 
 Model timeouts apply per response and exclude tool execution: `DREAMATIC_MODEL_TURN_TIMEOUT_MS` bounds first-output wait (Researcher uses its own override), `DREAMATIC_MODEL_GENERATION_TIMEOUT_MS` bounds generation after output begins, and `DREAMATIC_MODEL_IDLE_TIMEOUT_MS` bounds silence between nonempty streamed outputs. `DREAMATIC_MODEL_TOTAL_TIMEOUT_MS` optionally caps the whole response.
 
@@ -156,11 +211,12 @@ Browser UI tests use an available Chromium executable. Set `DREAMATIC_HTML_BROWS
 
 | Directory | Responsibility |
 | --- | --- |
-| `apps/web` | React interface, conversation, Canvas, Settings, and preview |
-| `apps/server` | Transport, session registry, application design policy, assets, recovery, and delivery |
+| `apps/web` | React workbench, conversation, project overview, media canvas, document/reference readers, Settings, and preview |
+| `apps/server` | Transport, session registry, application design policy, project files, reference extraction, media delivery, recovery, and PDF export |
 | `apps/server/prompts` | Instructions for the four active design roles |
 | `apps/desktop` | Electron application shell |
 | `apps/cli` | Compatibility entry point; design execution is unavailable |
+| `scripts/portfolio.mjs` | Export an existing completed project as a portfolio PDF |
 | `packages/project-data` | Shared configuration validation and historical project display/export helpers |
 | `.pi/skills` | Reusable professional design knowledge |
 | `workspace` | Local runtime records and generated output; do not commit runs |
@@ -170,7 +226,9 @@ Pi **1.4.0** provides model sessions, providers, resource discovery, Skills, too
 ## Current scope and limitations
 
 - The active pipeline produces **design images and static showcase pages**, rather than production applications or interactive UX/UI implementations.
-- Image attachments can enter the workflow. Document and video input extraction are not implemented in the current pipeline.
+- Image attachments can enter the workflow. Document and video input extraction are not implemented; document viewing and video playback on Canvas are separate UI capabilities.
+- Embedded webpages and reference extraction depend on source-site access policies. Reader mode does not bypass authentication or paywalls.
+- Canvas supports media placement, proportional resizing, and playback; image pixel editing and video timeline editing are not implemented.
 - There is no separate Reviewer or formal approval gate in the four-stage pipeline.
 - CAD, engineering-grade 3D, video production, and game-engine delivery are not implemented.
 - Showcase checks verify structural constraints, image references, and coverage; they do not certify aesthetic quality. Composition is based on documented intent rather than visual inspection of generated images.

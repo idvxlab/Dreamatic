@@ -1,3 +1,6 @@
+import { mediaRange } from "./media-range.js";
+import { readProjectReference } from "./reference-reader.js";
+import { projectFiles, projectFileContent } from "./project-files.js";
 import { publicWorkflowData } from './workflow-data.js';
 import { openProjectAssets, localFolderRequest } from "./open-assets.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -15,6 +18,7 @@ import { streamWriter } from "./stream-writer.js";
 import { SessionRegistry } from "./session-registry.js";
 import { PreviewService } from "./preview-service.js";
 import { readRuntimeConfig, saveRuntimeConfig } from "./config-store.js";
+import { generatePortfolio, portfolioInProgress } from './portfolio-pdf.js';
 import { prepareProjectExport } from "./project-export.js";
 import { DEFAULT_SITE_URL, publicationStatus, publicationInProgress, publishProject } from "./project-publish.js";
 import { pipeline } from "node:stream/promises";
@@ -46,6 +50,15 @@ const CONTENT_TYPES = new Map([
   [".css", "text/css; charset=utf-8"],
   [".json", "application/json; charset=utf-8"],
   [".png", "image/png"],
+  [".md", "text/plain; charset=utf-8"],
+  [".txt", "text/plain; charset=utf-8"],
+  [".csv", "text/plain; charset=utf-8"],
+  [".htm", "text/html; charset=utf-8"],
+  [".gif", "image/gif"],
+  [".mp4", "video/mp4"],
+  [".webm", "video/webm"],
+  [".mov", "video/quicktime"],
+  [".pdf", "application/pdf"],
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
   [".webp", "image/webp"],
@@ -213,7 +226,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
     if (request.method === "PUT" && url.pathname === "/api/config") {
-      if (registry.busy || publicationInProgress()) { json(response, 409, { error: "Wait for the current task or publication to finish before saving configuration." }); return; }
+      if (registry.busy || publicationInProgress() || portfolioInProgress()) { json(response, 409, { error: "Wait for the current task, export or publication to finish before saving configuration." }); return; }
       applyingConfiguration = true;
       let replacement: ReturnType<typeof createServer> | undefined;
       const envPath = join(configRoot, ".env");
@@ -346,6 +359,11 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       json(response, 201, await publishProject(workspaceDir, decodeURIComponent(publishMatch[1]), await body(request), process.env.DREAMATIC_SITE_URL ?? DEFAULT_SITE_URL, { ...process.env }));
       return;
     }
+    const portfolioMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/portfolio$/);
+    if (request.method === "POST" && portfolioMatch?.[1]) {
+      json(response, 201, await generatePortfolio(workspaceDir, decodeURIComponent(portfolioMatch[1])));
+      return;
+    }
     const exportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
     if (request.method === "GET" && exportMatch?.[1]) {
       const archive = await prepareProjectExport(workspaceDir, decodeURIComponent(exportMatch[1]));
@@ -378,6 +396,31 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(runId)) throw new Error("Invalid run id");
       const run = (await runInventory(workspaceDir, { runId }))[0];
       if (run) conditionalJson(request, response, run); else json(response, 404, { error: "Run not found" });
+      return;
+    }
+    const referenceMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/references\/read$/);
+    if (request.method === "GET" && referenceMatch?.[1]) {
+      response.setHeader("Cache-Control", "private, no-store");
+      json(response, 200, await readProjectReference(workspaceDir, decodeURIComponent(referenceMatch[1]), url.searchParams.get("id") ?? "", url.searchParams.get("refresh") === "1"));
+      return;
+    }
+    const filesMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/files(?:\/(content))?$/);
+    if (request.method === "GET" && filesMatch?.[1]) {
+      const runId = decodeURIComponent(filesMatch[1]);
+      if (!filesMatch[2]) conditionalJson(request, response, await projectFiles(workspaceDir, runId));
+      else {
+        const file = await projectFileContent(workspaceDir, runId, url.searchParams.get("id") ?? "");
+        const video = ["mp4", "webm", "mov"].includes(file.kind);
+        const range = video && request.headers.range ? mediaRange(request.headers.range, file.data.length) : undefined;
+        if (video && request.headers.range && !range) {
+          response.writeHead(416, { "Content-Range": `bytes */${file.data.length}` }); response.end(); return;
+        }
+        const data = range ? file.data.subarray(range.start, range.end + 1) : file.data;
+        response.writeHead(range ? 206 : 200, { "Content-Type": CONTENT_TYPES.get(`.${file.kind}`) ?? "application/octet-stream", "Content-Length": data.length,
+          ...(video ? { "Accept-Ranges": "bytes" } : {}), ...(range ? { "Content-Range": `bytes ${range.start}-${range.end}/${file.data.length}` } : {}),
+          "Content-Security-Policy": `${["html", "htm", "svg"].includes(file.kind) ? "sandbox; " : ""}script-src 'none'; object-src 'none'; form-action 'none'`, "X-Content-Type-Options": "nosniff", "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(file.filename)}` });
+        response.end(data);
+      }
       return;
     }
     const runAssetsMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/assets$/);

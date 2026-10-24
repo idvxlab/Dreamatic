@@ -127,12 +127,13 @@ export interface WorkflowEvent {
 
 export interface CanvasElementState {
   id: string;
-  kind: "image" | "html" | "text" | "group";
+  kind: "image" | "video" | "html" | "text" | "group";
   x: number;
   y: number;
   width: number;
   height: number;
   assetPath?: string;
+  fileId?: string;
   text?: string;
   role?: string;
 }
@@ -143,4 +144,36 @@ export interface CanvasState {
   updatedAt: string;
   camera: { x: number; y: number; zoom: number };
   elements: CanvasElementState[];
+}
+
+export type WorkbenchView = 'overview' | 'canvas' | 'preview' | 'context' | 'assets' | 'references';
+export interface ProjectFile {
+  thumbnailUrl?: string;
+  id: string;
+  title: string;
+  kind: string;
+  category: 'context' | 'assets' | 'references';
+  group: string;
+  path?: string;
+  url?: string;
+  size?: number;
+  modifiedAt?: string;
+  metadata?: string;
+}
+
+export interface ReferenceReaderNode {
+  tag: string;
+  text?: string;
+  href?: string;
+  src?: string;
+  alt?: string;
+  children?: ReferenceReaderNode[];
+}
+export interface ReferenceArticle {
+  title: string;
+  url: string;
+  byline?: string;
+  excerpt?: string;
+  nodes: ReferenceReaderNode[];
+  embeddingBlocked: boolean;
 }

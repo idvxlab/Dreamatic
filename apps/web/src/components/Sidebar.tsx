@@ -1,12 +1,14 @@
 import { useI18n } from "../i18n";
-import { Archive, Info, Github, Check, ChevronDown, Layers3, MoreHorizontal, Pencil, Plus, Search, Settings2, Sparkles, Trash2, X } from "lucide-react";
+import { BookOpen, FileText, Images, LayoutDashboard, FileImage, Info, Github, Check, ChevronDown, Layers3, MoreHorizontal, Pencil, Plus, Search, Settings2, Sparkles, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { VERSION_REPOSITORY_URL } from "../app-info";
 import { AboutModal } from "./AboutModal";
-import type { RunView } from "../types";
+import type { RunView, WorkbenchView } from "../types";
 
 interface SidebarProps {
   runs: RunView[];
+  view: WorkbenchView;
+  onChangeView: (view: WorkbenchView) => void;
   activeRunId?: string;
   onCreate: () => void;
   onSelectRun: (id: string) => void;
@@ -16,7 +18,7 @@ interface SidebarProps {
   creating?: boolean;
 }
 
-export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun, onDeleteRun, onSettings, creating = false }: SidebarProps) {
+export function Sidebar({ view, onChangeView, runs, activeRunId, onCreate, onSelectRun, onRenameRun, onDeleteRun, onSettings, creating = false }: SidebarProps) {
   const { t } = useI18n();
   const [brandMenuOpen, setBrandMenuOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -105,8 +107,10 @@ export function Sidebar({ runs, activeRunId, onCreate, onSelectRun, onRenameRun,
       <button className="new-project" onClick={onCreate} disabled={creating}><Plus size={16} /> {creating ? t("Creating…") : t("New project")}</button>
       <div className="search-box"><Search size={15} /><input aria-label={t("Search projects")} placeholder={t("Search projects")} value={query} onChange={(event) => setQuery(event.target.value)} /></div>
       <div className="nav-label">{t("Workspace")}</div>
-      <button className="nav-item active"><Layers3 size={16} /> {t("All projects")} <span>{runs.length}</span></button>
-      <button className="nav-item" disabled title={t("Archiving is not enabled in the local runtime yet")}><Archive size={16} /> {t("Archived")} <small>{t("Soon")}</small></button>
+      <nav aria-label={t("Workspace")}>{([
+        ["overview", "Workbench", LayoutDashboard], ["canvas", "Canvas", Layers3], ["preview", "Preview", FileImage],
+        ["context", "Context", FileText], ["assets", "Asset library", Images], ["references", "References", BookOpen],
+      ] as const).map(([id, label, Icon]) => <button key={id} className={`nav-item${view === id ? " active" : ""}`} aria-current={view === id ? "page" : undefined} onClick={() => onChangeView(id)}><Icon size={16} />{t(label)}</button>)}</nav>
       <div className="nav-label project-label">{t("Recent projects")}</div>
       <div className="project-list">
         {visibleRuns.map((run) => (

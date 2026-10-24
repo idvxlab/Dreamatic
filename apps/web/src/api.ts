@@ -258,3 +258,29 @@ export async function publishProject(runId: string, creator: PublishCreator, ove
 export async function openProjectAssets(runId: string): Promise<void> {
   await parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/assets/open`, { method: "POST" }));
 }
+
+export interface PortfolioResult { path: string; filename: string; pages: number; bytes: number; selected: number; warnings: string[]; sha256: string }
+export async function downloadPortfolio(runId: string): Promise<PortfolioResult> {
+  const result: PortfolioResult = await parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/portfolio`, { method: "POST" }));
+  const response = await fetch(`/assets/${result.path.split("/").map(encodeURIComponent).join("/")}`);
+  if (!response.ok || !response.headers.get("content-type")?.startsWith("application/pdf")) throw new Error("PDF download failed");
+  const bytes = await response.arrayBuffer();
+  const digest = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map(value => value.toString(16).padStart(2, "0")).join("");
+  if (bytes.byteLength !== result.bytes || digest !== result.sha256) throw new Error("PDF download is incomplete or changed. Please retry.");
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const link = document.createElement("a"); link.href = url; link.download = result.filename; link.hidden = true;
+  document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return result;
+}
+
+export async function listProjectFiles(runId: string): Promise<import('./types').ProjectFile[]> {
+  return conditionalGet(`/api/runs/${encodeURIComponent(runId)}/files`);
+}
+export function projectFileUrl(runId: string, fileId: string): string {
+  return `/api/runs/${encodeURIComponent(runId)}/files/content?id=${encodeURIComponent(fileId)}`;
+}
+
+export async function getReferenceArticle(runId: string, fileId: string, signal: AbortSignal, refresh = false): Promise<import('./types').ReferenceArticle> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/references/read?id=${encodeURIComponent(fileId)}${refresh ? '&refresh=1' : ''}`, { signal, cache: 'no-store' }));
+}

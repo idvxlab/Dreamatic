@@ -1,14 +1,20 @@
 import { PROJECT_CATEGORIES, projectClassification } from '@dreamatic/project-data/project-classification';
 import { usePublication } from "./publication-state";
 import { useI18n, LanguageToggle } from "./i18n";
-import { Upload, Grid2X2, Menu, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Upload, Grid2X2, PanelLeftClose, PanelLeftOpen, PanelLeft, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { abortSession, createSession, deleteRun, getHealth, getRuntimeConfig, openProjectAssets, getWorkflow, getRun, listRunAssets, listAssets, listRuns, listSessions, renameRun, saveRuntimeConfig, streamPrompt, streamWorkflow, type HealthView, type PromptEvent, type RuntimeConfig } from "./api";
 import { AgentPanel, type PendingImage } from "./components/AgentPanel";
 import { Canvas } from "./components/Canvas";
+import { Showcase } from "./components/Showcase";
+import { ProjectOverview } from "./components/ProjectOverview";
+import { DocumentViewer } from "./components/DocumentViewer";
+import { WorkspaceFileList } from "./components/WorkspaceFileList";
+import { useToolPanelWidth } from "./use-tool-panel-width";
+import { useProjectFiles } from "./project-files";
 import { Sidebar } from "./components/Sidebar";
 import { SettingsModal } from "./components/SettingsModal";
-import type { Asset, ClarificationRequest, RunView, SessionView, TimelineItem, WorkflowEvent } from "./types";
+import type { Asset, ClarificationRequest, RunView, SessionView, TimelineItem, WorkflowEvent, ProjectFile, WorkbenchView } from "./types";
 import { applyWorkflowStreamEvent } from "./workflow-live";
 import { clarificationFromToolResult } from "../../../packages/project-data/src/clarification";
 
@@ -53,7 +59,6 @@ export function App() {
   const [runs, setRuns] = useState<RunView[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [workflow, setWorkflow] = useState<WorkflowEvent[]>([]);
-  const [selectedAsset, setSelectedAsset] = useState<string>();
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [streamingText, setStreamingText] = useState("");
   const textBuffer = useRef("");
@@ -75,8 +80,25 @@ export function App() {
   const [connectionError, setConnectionError] = useState<string>();
   const [health, setHealth] = useState<HealthView>();
   const [panelOpen, setPanelOpen] = useState(true);
+  const [previewPanelOpen, setPreviewPanelOpen] = useState(false);
+  const shellRef = useRef<HTMLDivElement>(null);
+  const [view, setView] = useState<WorkbenchView>('overview');
+  const [previewEntry, setPreviewEntry] = useState<string>();
+  const [fileSelection, setFileSelection] = useState<{ runId?: string; items: Partial<Record<WorkbenchView, string>> }>({ items: {} });
+  const toolVisible = view === 'preview' ? previewPanelOpen : panelOpen;
+  const setToolOpen = (open: boolean) => view === 'preview' ? setPreviewPanelOpen(open) : setPanelOpen(open);
+  const conversationView = view === 'overview' || view === 'preview';
   const [projectPanelOpen, setProjectPanelOpen] = useState(true);
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const toolPanel = useToolPanelWidth(shellRef, projectPanelOpen);
+  const navigationVisible = toolPanel.viewportWidth >= 1280 ? projectPanelOpen : navigationOpen;
+  function toggleNavigation() {
+    if (toolPanel.viewportWidth >= 1280) setProjectPanelOpen(open => !open);
+    else {
+      setNavigationOpen(open => !open);
+      if (toolPanel.viewportWidth <= 900) setToolOpen(false);
+    }
+  }
   const [openingAssets, setOpeningAssets] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig>();
@@ -87,6 +109,18 @@ export function App() {
   const publication = usePublication(activeRun?.id);
   const publicationLabel = !activeRun ? "No project" : publication.error ? "Publication status unavailable" : !publication.status ? "Checking publication…" : publication.status.inProgress ? "Publishing…" : publication.status.published ? "Published" : publication.status.mayExist ? "Publication unconfirmed" : "Not published";
   const agentRunning = Boolean(activeId && runningSessions.has(activeId)) || Boolean(active?.running);
+  const projectFiles = useProjectFiles(activeRunId, agentRunning);
+  const sectionFiles = projectFiles.files.filter(file => file.category === (view === 'canvas' ? 'assets' : view));
+  const [canvasAdd, setCanvasAdd] = useState<{ runId: string; fileId: string; nonce: string }>();
+  useEffect(() => setCanvasAdd(undefined), [activeRunId]);
+  const selectedFileId = fileSelection.runId === activeRunId ? fileSelection.items[view] : undefined;
+  const documentFile = sectionFiles.find(file => file.id === selectedFileId) ?? sectionFiles[0];
+  function navigate(next: WorkbenchView, file?: ProjectFile) {
+    setView(next); setNavigationOpen(false);
+    if (next === 'preview') { setPreviewEntry(undefined); if (view !== 'preview') setPreviewPanelOpen(false); }
+    if (window.matchMedia('(max-width: 900px)').matches && file) setPanelOpen(false);
+    if (file) setFileSelection(current => ({ runId: activeRunId, items: { ...(current.runId === activeRunId ? current.items : {}), [next]: file.id } }));
+  }
   const pendingClarification = liveClarification && liveClarification.sessionId === activeId ? liveClarification.request : active?.pendingClarification;
   const visibleClarification = pendingClarification?.id === answeredClarificationId ? undefined : pendingClarification;
   const visibleAssets = useMemo(
@@ -217,6 +251,7 @@ export function App() {
       if (epoch !== selectionEpoch.current) return;
       selectionEpoch.current += 1;
       activateSelection({ runId: session.projectId, sessionId: session.id });
+      setView("overview"); setPanelOpen(true); setPreviewEntry(undefined); setFileSelection({ items: {} });
       setWorkflow([]);
       setTimeline([]);
       resetStreamingText();
@@ -247,6 +282,7 @@ export function App() {
       setNavigationOpen(false);
       return;
     }
+    setPreviewEntry(undefined); setFileSelection({ items: {} });
     const epoch = ++selectionEpoch.current;
     setWorkflow([]);
     setTimeline([]);
@@ -254,7 +290,6 @@ export function App() {
     setPendingAgentStatus(undefined);
     setLiveClarification(undefined);
     setAnsweredClarificationId(undefined);
-    setSelectedAsset(undefined);
     const project = runs.find((run) => run.id === runId);
     const linked = project?.sessionId ? sessions.find((session) => session.id === project.sessionId) : undefined;
     activateSelection({ runId, sessionId: linked?.id });
@@ -463,8 +498,10 @@ export function App() {
   }
 
   return (
-    <div className={`app-shell ${panelOpen ? "panel-open" : "panel-collapsed"} ${projectPanelOpen ? "sidebar-open" : "sidebar-collapsed"} ${navigationOpen ? "navigation-open" : ""}`}>
+    <div ref={shellRef} style={{ "--tool-width": `${toolPanel.width}px` } as CSSProperties} className={`app-shell ${toolPanel.dragging ? "resizing-tools" : ""} ${toolVisible ? "panel-open" : "panel-collapsed"} workbench-layout ${projectPanelOpen ? "sidebar-open" : "sidebar-collapsed"} ${navigationOpen ? "navigation-open" : ""}`}>
       <Sidebar
+        view={view}
+        onChangeView={navigate}
         runs={runs}
         activeRunId={activeRunId}
         onCreate={() => void addSession()}
@@ -476,15 +513,31 @@ export function App() {
       />
       <section className="workspace">
         <header className="workspace-header">
-          <div><button className="navigation-trigger" aria-label={t("Open project navigation")} aria-controls="project-panel" onClick={() => setNavigationOpen(true)}><Menu size={17} /></button><button className="sidebar-toggle" aria-label={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} aria-controls="project-panel" aria-expanded={projectPanelOpen} title={projectPanelOpen ? t("Hide project panel") : t("Show project panel")} onClick={() => setProjectPanelOpen((open) => !open)}>{projectPanelOpen ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button><span className="project-kicker">{t("Project")}</span><div className="project-heading"><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2>{activeRun?.classification && <span className="project-category-tags" aria-label={t("Project categories")}>{[activeRun.classification.primary, ...activeRun.classification.secondary].map(id => <span key={id}>{t(PROJECT_CATEGORIES.find(c => c.id === id)?.en ?? id)}</span> )}</span>}</div></div>
-          <div className="header-actions"><span className="saved publication-status" role="status" title={t(publicationLabel)}><Upload size={14} /> {t(publicationLabel)}</span><button disabled={!activeRunId || openingAssets} title={t("Open project assets folder")} onClick={() => void openAssetsFolder()}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><LanguageToggle /><button className="icon-button" title={panelOpen ? t("Hide agent panel") : t("Show agent panel")} onClick={() => setPanelOpen((open) => !open)}>{panelOpen ? <PanelRightClose size={16} /> : <PanelRightOpen size={16} />}</button></div>
+          <div><div className="panel-controls" role="group" aria-label={t("Panel visibility")}>
+            <button className="icon-button project-panel-toggle" aria-label={t(navigationVisible ? "Hide project panel" : "Show project panel")} title={t(navigationVisible ? "Hide project panel" : "Show project panel")} aria-controls="project-panel" aria-expanded={navigationVisible} onClick={toggleNavigation}>{navigationVisible ? <PanelLeftClose size={17} /> : <PanelLeftOpen size={17} />}</button>
+            <button className="icon-button tool-panel-toggle" aria-label={t(toolVisible ? "Hide tool panel" : "Show tool panel")} title={t(toolVisible ? "Hide tool panel" : "Show tool panel")} aria-controls="workbench-tools" aria-expanded={toolVisible} onClick={() => setToolOpen(!toolVisible)}><PanelLeft size={17} /></button>
+          </div><span className="project-kicker">{t("Project")}</span><div className="project-heading"><h2>{activeRun?.title ?? active?.title ?? (loading ? t("Connecting…") : t("Design workspace"))}</h2>{activeRun?.classification && <span className="project-category-tags" aria-label={t("Project categories")}>{[activeRun.classification.primary, ...activeRun.classification.secondary].map(id => <span key={id}>{t(PROJECT_CATEGORIES.find(c => c.id === id)?.en ?? id)}</span> )}</span>}</div></div>
+          <div className="header-actions"><span className="saved publication-status" role="status" title={t(publicationLabel)}><Upload size={14} /> {t(publicationLabel)}</span><button disabled={!activeRunId || openingAssets} title={t("Open project assets folder")} onClick={() => void openAssetsFolder()}><Grid2X2 size={15} /> {t("Assets")} <em>{visibleAssets.length}</em></button><LanguageToggle /></div>
         </header>
-        <Canvas assets={visibleAssets} selected={selectedAsset} onSelect={setSelectedAsset} run={activeRun} />
+        <div className="workspace-content">
+          {view === "overview" && <ProjectOverview run={activeRun} workflow={workflow} assets={visibleAssets} files={projectFiles.files} running={agentRunning} pending={pendingAgentStatus} onNavigate={navigate} />}
+          <div className="canvas-container" hidden={view !== "canvas"}><Canvas key={activeRunId ?? "empty"} files={projectFiles.files} run={activeRun} visible={view === "canvas"} addRequest={canvasAdd?.runId === activeRunId ? canvasAdd : undefined} onSelectFile={file => { setCanvasAdd(undefined); setFileSelection(current => ({ runId: activeRunId, items: { ...(current.runId === activeRunId ? current.items : {}), canvas: file.id } })); }} onOpenPreview={path => { setPreviewEntry(path); setPreviewPanelOpen(false); setView("preview"); }} /></div>
+          {view === "preview" && <Showcase key={activeRunId ?? "empty"} run={activeRun} entry={previewEntry} />}
+          {!conversationView && view !== "canvas" && <DocumentViewer runId={activeRunId} file={documentFile} />}
+        </div>
 
       </section>
-      {panelOpen && <AgentPanel canResume={["interrupted", "waiting_for_images"].includes(activeRun?.status ?? "")} connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} />}
+      <aside className="workbench-tools" id="workbench-tools" hidden={!toolVisible} aria-label={t("Workbench tools")}>
+      <div className="conversation-container" hidden={!conversationView}><AgentPanel canResume={["interrupted", "waiting_for_images"].includes(activeRun?.status ?? "")} connected={Boolean(health?.ok && !connectionError)} disabled={!activeRun || !activeId || loading || creating} timeline={activeRun?.activity ?? timeline} workflow={activeRun ? workflow : []} streamingText={streamingText} running={agentRunning} stopping={stopping} pendingAgentStatus={pendingAgentStatus} clarification={visibleClarification} onSend={send} onStop={() => void stopAgent()} onAnswerClarification={answerClarification} onDismissClarification={() => { if (visibleClarification) setAnsweredClarificationId(visibleClarification.id); setLiveClarification(undefined); }} /></div>
+      {!conversationView && <WorkspaceFileList runId={activeRunId} files={sectionFiles} selected={documentFile?.id} title={view === 'context' ? 'Context' : (view === 'assets' || view === 'canvas') ? 'Asset library' : 'References'} loading={projectFiles.loading} error={projectFiles.error} canvasMode={view === 'canvas'} onAdd={file => { if (activeRunId) { setCanvasAdd({ runId: activeRunId, fileId: file.id, nonce: crypto.randomUUID() }); if (toolPanel.viewportWidth <= 900) setPanelOpen(false); } }} onSelect={file => { if (view === 'canvas') setFileSelection(current => ({ runId: activeRunId, items: { ...(current.runId === activeRunId ? current.items : {}), canvas: file.id } })); else navigate(view, file); }} onRetry={projectFiles.refresh} />}
+      <div className="tool-panel-resizer" role="separator" tabIndex={0} aria-label={t("Resize tool panel")} aria-orientation="vertical" aria-controls="workbench-tools" aria-valuemin={toolPanel.minWidth} aria-valuemax={Math.round(toolPanel.maxWidth)} aria-valuenow={Math.round(toolPanel.width)} onPointerDown={toolPanel.onPointerDown} onPointerMove={toolPanel.onPointerMove} onPointerUp={toolPanel.stop} onPointerCancel={toolPanel.stop} onLostPointerCapture={toolPanel.stop} onDoubleClick={toolPanel.reset} onKeyDown={event => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        toolPanel.resize(event.key === "Home" ? toolPanel.minWidth : event.key === "End" ? toolPanel.maxWidth : toolPanel.width + (event.key === "ArrowLeft" ? -20 : 20));
+      }} />
+      </aside>
       {navigationOpen && <button className="navigation-scrim" aria-label={t("Close project navigation")} onClick={() => setNavigationOpen(false)} />}
-      {panelOpen && <button className="agent-scrim" aria-label={t("Close agent panel")} onClick={() => setPanelOpen(false)} />}
+      {toolVisible && <button className="agent-scrim" aria-label={t("Close tool panel")} onClick={() => setToolOpen(false)} />}
       {connectionError && <div className="connection-banner"><span><strong>{t("Server unavailable")}</strong><small>{t(connectionError)}</small></span><button onClick={() => void loadWorkspace()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={14} /> {loading ? t("Connecting…") : t("Reconnect")}</button></div>}
       {notice && <div className="toast">{t(notice)}</div>}
       {settingsOpen && runtimeConfig && <SettingsModal initial={runtimeConfig} onClose={() => setSettingsOpen(false)} onSave={saveSettings} />}
