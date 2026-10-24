@@ -7,7 +7,7 @@ module.exports = {
   appId: 'design.dreamatic.desktop',
   productName: 'DreamaticArt',
   directories: { app: 'apps/desktop', output: 'release' },
-  files: ['main.mjs', 'lifecycle.mjs', 'preload.cjs', 'package.json'],
+  files: ['main.mjs', 'lifecycle.mjs', 'power-state.mjs', 'preload.cjs', 'package.json'],
   asar: true,
   electronDist: resolve('node_modules/electron/dist'),
   extraResources: [{

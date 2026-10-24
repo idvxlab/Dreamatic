@@ -14,8 +14,8 @@ test('configuration reads .env afresh, covers documented keys and never returns 
 });
 test('save preserves unrelated .env settings/comments, blank secrets and optional URLs, and round-trips quoted values',async(t)=>{
  const root=await fixture(t,'# Keep this comment\nUNRELATED_OPTION=keep\nDREAMATIC_API_KEY=original-key\nexport DREAMATIC_MODEL = first\nDREAMATIC_MODEL=duplicate\n');const env={};
- const saved=await saveRuntimeConfig(root,{values:{DREAMATIC_MODEL:'new-model',DREAMATIC_PROVIDER_NAME:'Design # lab',DREAMATIC_IMAGE_EDIT_ENDPOINT:'',DREAMATIC_IMAGE_GENERATION_ENDPOINT:'',DREAMATIC_SEARCH_PROVIDER:'serper',PORT:'4311'},secrets:{DREAMATIC_API_KEY:'',DREAMATIC_SEARCH_API_KEY:'search#key'}},env);
- const text=await readFile(join(root,'.env'),'utf8'),disk=parseEnv(text);assert.match(text,/# Keep this comment/);assert.equal(disk.UNRELATED_OPTION,'keep');assert.equal(disk.DREAMATIC_API_KEY,'original-key');assert.equal(disk.DREAMATIC_SEARCH_API_KEY,'search#key');assert.equal(disk.DREAMATIC_PROVIDER_NAME,'Design # lab');assert.equal(disk.DREAMATIC_MODEL,'new-model');assert.equal(text.match(/^DREAMATIC_MODEL=/gm).length,1);assert.equal(disk.DREAMATIC_IMAGE_EDIT_ENDPOINT,'');assert.equal(env.DREAMATIC_MODEL,'new-model');assert.equal(saved.values.PORT,'4311');
+ const saved=await saveRuntimeConfig(root,{values:{DREAMATIC_MODEL:'new-model',DREAMATIC_PROVIDER_NAME:'Design # lab',DREAMATIC_IMAGE_GENERATION_ENDPOINT:'',DREAMATIC_SEARCH_PROVIDER:'serper',PORT:'4311'},secrets:{DREAMATIC_API_KEY:'',DREAMATIC_SEARCH_API_KEY:'search#key'}},env);
+ const text=await readFile(join(root,'.env'),'utf8'),disk=parseEnv(text);assert.match(text,/# Keep this comment/);assert.equal(disk.UNRELATED_OPTION,'keep');assert.equal(disk.DREAMATIC_API_KEY,'original-key');assert.equal(disk.DREAMATIC_SEARCH_API_KEY,'search#key');assert.equal(disk.DREAMATIC_PROVIDER_NAME,'Design # lab');assert.equal(disk.DREAMATIC_MODEL,'new-model');assert.equal(text.match(/^DREAMATIC_MODEL=/gm).length,1);assert.equal(env.DREAMATIC_MODEL,'new-model');assert.equal(saved.values.PORT,'4311');
 });
 test('invalid updates cannot partially modify disk/process or inject arbitrary environment variables',async(t)=>{
  const original='DREAMATIC_MODEL=approved-model\n';const root=await fixture(t,original),env={DREAMATIC_MODEL:'approved-model'};
@@ -70,4 +70,42 @@ test('a valid ephemeral startup port remains applicable when saving another sett
  const root=await fixture(t,'PORT=0\nDREAMATIC_MODEL=running-model\n'),env={PORT:'0',DREAMATIC_MODEL:'running-model'};
  await saveRuntimeConfig(root,{values:{DREAMATIC_MODEL:'updated-model'}},env);
  assert.equal(env.PORT,'0');assert.equal(env.DREAMATIC_MODEL,'updated-model');
+});
+
+test('retired settings are hidden and rejected without deleting legacy disk values', async t => {
+ const retired=['DREAMATIC_ACTIVE_PROFILE','DREAMATIC_MODEL_REVIEWER','DREAMATIC_THINKING_LEVEL_REVIEWER','DREAMATIC_IMAGE_EDIT_ENDPOINT','DREAMATIC_TOOL_PATH','DREAMATIC_AGENT_RETRY_ATTEMPTS','DREAMATIC_OPERATION_ATTEMPT_BUDGET','DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS','DREAMATIC_IMAGE_EDIT_TIMEOUT_MS','DREAMATIC_VISUAL_PREVIEW_MAX_EDGE','DREAMATIC_VISUAL_PREVIEW_MAX_BYTES','DREAMATIC_RESEARCH_CACHE_TTL_MS','DREAMATIC_STOP_AFTER_COMMIT','DREAMATIC_HTML_REQUIRE_BROWSER','DREAMATIC_HTML_BROWSER','DREAMATIC_HTML_BROWSER_EXECUTABLE'];
+ const legacy=retired.map(key=>`${key}=legacy-value`).join('\n')+'\n';
+ const root=await fixture(t,legacy),env={};
+ const config=await readRuntimeConfig(root,env);
+ for(const key of retired){assert.ok(!CONFIG_FIELDS.some(f=>f.key===key),key);assert.ok(!(key in config.values),key);await assert.rejects(saveRuntimeConfig(root,{values:{[key]:'new-value'}},env),/Unsupported/);}
+ const saved=await saveRuntimeConfig(root,{values:{DREAMATIC_MODEL:'updated'}},env);
+ assert.ok((await readFile(join(root,'.env'),'utf8')).startsWith(legacy));
+ assert.equal(saved.values.DREAMATIC_MODEL,'updated');
+ for(const key of retired)assert.equal(env[key],undefined);
+ assert.equal(config.fields.some(f=>f.key==='DREAMATIC_PREVENT_IDLE_SLEEP'),false);
+ const desktop=await readRuntimeConfig(root,{DREAMATIC_DESKTOP:'1'});
+ for(const key of ['activeProfile','imageEditEndpoint'])await assert.rejects(saveRuntimeConfig(root,{[key]:'retired'},env),/Unsupported/);
+ assert.equal(desktop.fields.some(f=>f.key==='DREAMATIC_PREVENT_IDLE_SLEEP'),true);
+ assert.equal(desktop.fields.find(f=>f.key==='DREAMATIC_PROVIDER_NAME').label,'Connection name');
+});
+
+test('Serper legacy key fallback is shared by diagnostics and execution without exposing credentials', async t => {
+ const {searchApiKey}=await import('../dist/config-store.js');
+ const root=await fixture(t,'SERPER_API_KEY=legacy-secret\n');
+ const env={SERPER_API_KEY:'legacy-secret',DREAMATIC_SEARCH_API_KEY:'  '};
+ assert.equal(searchApiKey(env),'legacy-secret');
+ assert.equal(searchApiKey({...env,DREAMATIC_SEARCH_API_KEY:' current-secret '}),'current-secret');
+ const config=await readRuntimeConfig(root,env);
+ assert.equal(config.searchApiKeyConfigured,true);assert.doesNotMatch(JSON.stringify(config),/legacy-secret/);
+});
+
+test('new runtime controls persist and invalid limits cannot partially apply', async t => {
+ const root=await fixture(t),env={};
+ const values={DREAMATIC_MODEL_IDLE_TIMEOUT_MS:'2000',DREAMATIC_IMAGE_RESPONSE_MAX_BYTES:'1024',DREAMATIC_PREVENT_IDLE_SLEEP:'false'};
+ const saved=await saveRuntimeConfig(root,{values},env);
+ for(const [key,value] of Object.entries(values)){assert.equal(env[key],value);assert.equal(saved.values[key],value);}
+ const original=await readFile(join(root,'.env'),'utf8');
+ for(const invalid of [{DREAMATIC_MODEL_IDLE_TIMEOUT_MS:'0'},{DREAMATIC_IMAGE_RESPONSE_MAX_BYTES:'1023'},{DREAMATIC_PREVENT_IDLE_SLEEP:'yes'}]){
+  await assert.rejects(saveRuntimeConfig(root,{values:invalid},env));assert.equal(await readFile(join(root,'.env'),'utf8'),original);assert.deepEqual(env,values);
+ }
 });

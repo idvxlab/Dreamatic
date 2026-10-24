@@ -97,9 +97,15 @@ Settings supports compatible Chat Completions and Responses endpoints, with opti
 
 Image size information can come from model metadata, explicitly verified settings, or observed successful generations. When capabilities are unknown, requests within the configured ceiling are validated by actual generation; the ceiling itself is not treated as supported-size metadata. Capability discovery does not make a separate paid generation probe.
 
-Research uses DuckDuckGo by default or Serper when configured with `DREAMATIC_SEARCH_PROVIDER=serper` and `DREAMATIC_SEARCH_API_KEY`.
+Research uses DuckDuckGo by default or Serper when configured with `DREAMATIC_SEARCH_PROVIDER=serper`. Serper uses `DREAMATIC_SEARCH_API_KEY`, falling back to the legacy `SERPER_API_KEY` when the primary key is empty.
 
-The `.env.example` template retains historical compatibility fields and comments. Use Settings and the [pipeline documentation](apps/server/DESIGN-PIPELINE.md) to distinguish current execution controls from retained legacy values. A model name alone does not establish support for reasoning controls or tool schemas.
+Settings and `.env.example` expose current execution controls. Retired settings already present in `.env` are preserved when saving, but cannot be edited through the settings API. Reviewer overrides, image editing, research caching, old agent retry budgets, visual preview limits and browser approval controls are not active runtime settings. Browser executable overrides remain available to development tests. `DREAMATIC_PROVIDER_NAME` is an optional connection label; it does not switch profiles. A model name alone does not establish support for reasoning controls or tool schemas.
+
+Model timeouts apply per response and exclude tool execution: `DREAMATIC_MODEL_TURN_TIMEOUT_MS` bounds first-output wait (Researcher uses its own override), `DREAMATIC_MODEL_GENERATION_TIMEOUT_MS` bounds generation after output begins, and `DREAMATIC_MODEL_IDLE_TIMEOUT_MS` bounds silence between nonempty streamed outputs. `DREAMATIC_MODEL_TOTAL_TIMEOUT_MS` optionally caps the whole response.
+
+`DREAMATIC_IMAGE_RESPONSE_MAX_BYTES` limits each image API response, including base64 JSON, and each image download. Responses are read incrementally; exceeding the limit produces a nonretryable failure. Adjust the limit before explicitly retrying oversized images.
+
+In the macOS and Windows desktop app, `DREAMATIC_PREVENT_IDLE_SLEEP` prevents idle system sleep while any task is running, then releases the wake lock when tasks finish, fail, stop or pause for input or image retry. It does not prevent display sleep or explicit system sleep. This setting is hidden in the web app. `PORT` controls the web server; the desktop app assigns its own port.
 
 ### Desktop application
 

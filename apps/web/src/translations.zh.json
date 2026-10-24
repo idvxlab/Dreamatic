@@ -387,5 +387,16 @@
   "Classifying project": "正在识别项目分类",
   "Classified project": "已识别项目分类",
   "Waiting for image retry": "等待重试图片",
-  "waiting_for_images": "等待重试图片"
+  "waiting_for_images": "等待重试图片",
+  "Connection name": "连接名称",
+  "Optional display label for this connection; does not switch providers or profiles.": "此连接的可选显示名称，不用于切换服务商或配置方案。",
+  "Generation endpoint, model and image settings": "生图接口、模型与图片设置",
+  "Workspace, concurrency, response limits and retries": "工作区、并发数、响应限制与重试",
+  "Desktop only (macOS and Windows). Prevents idle system sleep while tasks run; releases while waiting or after completion. Does not keep the display awake.": "仅桌面版（macOS 和 Windows）有效。任务运行时阻止系统闲置休眠，等待用户或任务结束后释放；允许屏幕正常休眠。",
+  "Maximum silence after the first model output. Resets on nonempty text, thinking or tool-call output; excludes tool execution.": "首次输出后允许的最长无输出时间。收到有效文本、思考或工具调用输出时重新计时；工具执行不计时。",
+  "Maximum bytes per image API response (including base64 JSON) and per image download. Exceeding the limit is not retried automatically.": "每次图片接口响应（含 Base64 JSON）及每次图片下载的最大字节数。超限后不会自动重试。",
+  "Wait for the first model output. Researcher has a separate override; tool execution is excluded.": "等待模型首次输出的时限。Researcher 使用单独设置；工具执行不计时。",
+  "Researcher first-output wait, independent of the general first-output timeout.": "Researcher 等待首次输出的时限，独立于通用首次输出时限。",
+  "Web server port. Desktop uses an automatically assigned port.": "网页服务端口；桌面版自动分配端口。",
+  "Used by Serper; falls back to legacy SERPER_API_KEY. Leave blank to keep the current key.": "Serper 使用此密钥，未配置时回退到旧 SERPER_API_KEY。留空保留已有密钥。"
 }

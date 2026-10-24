@@ -16,6 +16,7 @@ test('configuration and project records survive execution failures, saves and wo
     child.stderr.resume(); child.stdout.resume();
     const [ready] = await Promise.race([once(child, 'message'), once(child, 'exit').then(() => { throw new Error('Server exited before ready'); }), new Promise((_, reject) => setTimeout(() => reject(new Error('Server startup timeout')), 10000).unref())]);
     const origin = `http://127.0.0.1:${ready.port}`;
+    const powerStates=[]; child.on('message', message=>{if(message.type==='dreamatic-power-state')powerStates.push(message.active);});
     const request = (path, method = 'GET', data) => fetch(origin + path, { signal: AbortSignal.timeout(10000), method, ...(data ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) } : {}) });
     const session = await (await request('/api/sessions', 'POST', { title: 'Retained project' })).json();
     const saved = await (await request('/api/config', 'PUT', { values: { DREAMATIC_MODEL: 'new-model', DREAMATIC_IMAGE_CONCURRENCY: '3', PORT: '4321' }, secrets: { DREAMATIC_API_KEY: 'new-key' } })).json();
@@ -24,10 +25,19 @@ test('configuration and project records survive execution failures, saves and wo
     assert.equal((await (await request(`/api/sessions/${session.id}`)).json()).projectId, session.projectId);
     const briefPath = join(root, 'workspace/runs', session.projectId, 'brief.json');
     const before = await readFile(briefPath, 'utf8');
+    await request('/api/config', 'PUT', { values: { DREAMATIC_PREVENT_IDLE_SLEEP:'true' } });
     const prompt = await request(`/api/sessions/${session.id}/messages`, 'POST', { text: 'Design a page', projectId: session.projectId });
     assert.equal(prompt.status, 200); assert.match(await prompt.text(), /Configure reasoning provider/);
-    assert.equal(JSON.parse(await readFile(briefPath, 'utf8')).brief, 'Design a page');
-    assert.equal((await (await request(`/api/sessions/${session.id}`)).json()).messages.length, 1);
+    // Even a failed run must acquire then release the task wake lock.
+    await new Promise(resolve=>setTimeout(resolve,25));
+    assert.ok(powerStates.includes(true));assert.equal(powerStates.at(-1),false);
+    await request('/api/config', 'PUT', { values: { DREAMATIC_PREVENT_IDLE_SLEEP:'false' } });
+    powerStates.length=0;
+    const disabledPrompt=await request(`/api/sessions/${session.id}/messages`, 'POST', { text:'Retry design',projectId:session.projectId });
+    await disabledPrompt.text();await new Promise(resolve=>setTimeout(resolve,25));
+    assert.ok(powerStates.length>=2);assert.ok(powerStates.every(value=>value===false));
+    assert.equal(JSON.parse(await readFile(briefPath, 'utf8')).brief, 'Design a page\n\nUser revision:\nRetry design');
+    assert.equal((await (await request(`/api/sessions/${session.id}`)).json()).messages.length, 2);
     await request('/api/config', 'PUT', { secrets: { DREAMATIC_API_KEY: '' } });
     assert.match(await readFile(join(root, '.env'), 'utf8'), /DREAMATIC_API_KEY=new-key/);
     const activeDisk = await readFile(join(root, '.env'), 'utf8');

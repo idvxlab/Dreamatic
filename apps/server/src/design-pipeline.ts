@@ -18,7 +18,7 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import { Type } from 'typebox';
 import { clarificationFromToolResult, type DesignClarificationRequest } from '@dreamatic/project-data';
 import { modelCapabilities } from '@dreamatic/project-data';
-import { CONFIG_FIELDS } from './config-store.js';
+import { CONFIG_FIELDS, searchApiKey } from './config-store.js';
 
 export const STAGES = ['orchestrator', 'researcher', 'designer', 'builder'] as const;
 type Stage = typeof STAGES[number];
@@ -417,7 +417,7 @@ export async function runDesign(options: PipelineOptions) {
       });
       if (stage === 'researcher') tools.push({ name: 'search', label: 'Research references', description: 'Search for relevant source material.', parameters: Type.Object({ query: Type.String() }), async execute(_id, params) {
         const serper = setting('DREAMATIC_SEARCH_PROVIDER') === 'serper';
-        const response = await fetch(serper ? 'https://google.serper.dev/search' : `https://html.duckduckgo.com/html/?q=${encodeURIComponent((params as { query: string }).query)}`, { ...(serper ? { method: 'POST', headers: { 'X-API-KEY': setting('DREAMATIC_SEARCH_API_KEY'), 'Content-Type': 'application/json' }, body: JSON.stringify({ q: (params as { query: string }).query }) } : {}), signal });
+        const response = await fetch(serper ? 'https://google.serper.dev/search' : `https://html.duckduckgo.com/html/?q=${encodeURIComponent((params as { query: string }).query)}`, { ...(serper ? { method: 'POST', headers: { 'X-API-KEY': searchApiKey(), 'Content-Type': 'application/json' }, body: JSON.stringify({ q: (params as { query: string }).query }) } : {}), signal });
         if (!response.ok) throw new Error(`Search failed: ${response.status}`);
         return { content: [{ type: 'text', text: await response.text() }], details: {} };
       } });
@@ -468,7 +468,8 @@ export async function runDesign(options: PipelineOptions) {
             model: setting('DREAMATIC_IMAGE_MODEL'), prompt: image.prompt, size: image.size,
             responseFormat: setting('DREAMATIC_IMAGE_RESPONSE_FORMAT'),
             timeoutMs: Number(setting('DREAMATIC_IMAGE_TIMEOUT_MS')),
-            bodyIdleTimeoutMs: Number(setting('DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS')), signal,
+            bodyIdleTimeoutMs: Number(setting('DREAMATIC_IMAGE_BODY_IDLE_TIMEOUT_MS')),
+            maxResponseBytes: Number(setting('DREAMATIC_IMAGE_RESPONSE_MAX_BYTES')), signal,
             onUsage: async usage => { await bus({ type: 'agent_progress', agent: stage, invocationId, toolCallId, output: 'Image generation progress',
               imageUsage: { imageId: image.id, startedAt: attemptStartedAt, tokens: imageUsageTokens(usage) } }); }
           });
@@ -529,6 +530,7 @@ export async function runDesign(options: PipelineOptions) {
       const responseTimer = createModelResponseTimer({
         firstOutputMs: Number(setting(`DREAMATIC_MODEL_TURN_TIMEOUT_MS_${stage.toUpperCase()}`) || setting('DREAMATIC_MODEL_TURN_TIMEOUT_MS')),
         generationMs: Number(setting('DREAMATIC_MODEL_GENERATION_TIMEOUT_MS')),
+        idleMs: Number(setting('DREAMATIC_MODEL_IDLE_TIMEOUT_MS')),
         ...(setting('DREAMATIC_MODEL_TOTAL_TIMEOUT_MS') ? { totalMs: Number(setting('DREAMATIC_MODEL_TOTAL_TIMEOUT_MS')) } : {}),
         onTimeout: () => { void session.abort(); },
       });

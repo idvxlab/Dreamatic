@@ -284,3 +284,26 @@ are ready. Continue workflow explicitly starts a fresh bounded Builder attempt;
 matching upstream checkpoints and verified generated images are reused. All-work
 curation, image coverage/digests and HTML safety gates remain mandatory, so a missing
 file is never published under a fabricated stable source.
+
+## Active configuration controls
+
+Settings expose only controls consumed by the current application. Saving preserves
+retired `.env` entries without validating or applying them through the settings API.
+The connection name (`DREAMATIC_PROVIDER_NAME`) is descriptive, not a profile switch.
+Serper execution and configuration diagnostics share the same key resolver: the
+primary search key, then legacy `SERPER_API_KEY`.
+
+After first output, the streaming idle timer resets on nonempty text, thinking and
+tool-call deltas. It is cleared for tool execution, retries and response/session end.
+The independent generation and optional total response limits still apply.
+
+Image JSON and downloads are streamed through `DREAMATIC_IMAGE_RESPONSE_MAX_BYTES`.
+Both advertised and observed sizes are checked; an oversized response is classified
+as `IMAGE_RESPONSE_TOO_LARGE`, not automatically retried. The existing partial-image
+receipt and explicit continuation flow retain successful images.
+
+In desktop mode the session registry reports aggregate task activity over its
+existing trusted parent IPC channel. Electron holds one `prevent-app-suspension`
+blocker while enabled and busy, and releases it when idle or on service/application
+exit. Waiting for answers or image retry returns the task to idle. Web mode does not
+expose the sleep setting. Renderer content cannot request wake locks.

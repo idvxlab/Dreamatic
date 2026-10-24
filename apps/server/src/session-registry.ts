@@ -68,7 +68,7 @@ export class SessionRegistry {
     if (!view || view.projectId !== projectId) throw new Error('Session does not belong to this project');
     if (this.#running.has(id) || [...this.#running.keys()].some(key => this.#sessions.get(key)?.projectId === projectId)) throw new Error('Project is already running');
     const active: { controller: AbortController; session?: AgentSession } = { controller: new AbortController() };
-    this.#running.set(id, active); view.running = true; delete view.pendingClarification;
+    this.#running.set(id, active); this.onBusyChanged?.(this.busy); view.running = true; delete view.pendingClarification;
     view.messages.push({ role: 'user', content: text, timestamp: Date.now() });
     try {
       await rm(join(this.#workspaceDir, 'runs', projectId, 'pending-clarification.json'), { force: true });
@@ -77,12 +77,12 @@ export class SessionRegistry {
         onQuestion: request => { view.pendingClarification = request; }
       });
     } finally {
-      this.#running.delete(id); view.running = false;
+      this.#running.delete(id); this.onBusyChanged?.(this.busy); view.running = false;
       await atomic(join(this.#workspaceDir, 'sessions/registry.json'), [...this.#sessions.values()]);
       emit({ type: 'snapshot', session: this.view(id) });
     }
   }
-  constructor(repoRoot: string, workspaceDir: string) { this.#repoRoot = repoRoot; this.#workspaceDir = workspaceDir; }
+  constructor(repoRoot: string, workspaceDir: string, private readonly onBusyChanged?: (busy: boolean) => void) { this.#repoRoot = repoRoot; this.#workspaceDir = workspaceDir; }
   async initialize(): Promise<void> {
     const directory = join(this.#workspaceDir, "sessions");
     await mkdir(directory, { recursive: true });

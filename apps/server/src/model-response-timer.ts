@@ -6,8 +6,9 @@ export interface ResponseTimerClock {
 export function createModelResponseTimer(options: {
   firstOutputMs: number;
   generationMs: number;
+  idleMs?: number;
   totalMs?: number;
-  onTimeout: (phase: 'first_output' | 'generation' | 'total') => void;
+  onTimeout: (phase: 'first_output' | 'generation' | 'total' | 'idle') => void;
   clock?: ResponseTimerClock;
 }) {
   const clock = options.clock ?? {
@@ -16,13 +17,15 @@ export function createModelResponseTimer(options: {
   };
   let phaseTimer: unknown;
   let totalTimer: unknown;
+  let idleTimer: unknown;
   let active = false;
   let hasOutput = false;
-  let failure: 'first_output' | 'generation' | 'total' | undefined;
+  let failure: 'first_output' | 'generation' | 'total' | 'idle' | undefined;
   const stop = () => {
     if (phaseTimer !== undefined) clock.clear(phaseTimer);
     if (totalTimer !== undefined) clock.clear(totalTimer);
-    phaseTimer = totalTimer = undefined;
+    if (idleTimer !== undefined) clock.clear(idleTimer);
+    phaseTimer = totalTimer = idleTimer = undefined;
     active = false;
   };
   const expire = (phase: NonNullable<typeof failure>) => {
@@ -45,12 +48,16 @@ export function createModelResponseTimer(options: {
       if (event.type === 'turn_start') start();
       // message_start may precede the first token. It must not reset the initial allowance.
       if (event.type === 'message_start' && event.message?.role === 'assistant' && !active && !failure) start();
-      if (event.type === 'message_update' && active && !hasOutput) {
+      if (event.type === 'message_update' && active) {
         const update = event.assistantMessageEvent;
         if (update && (update.type === 'toolcall_start' || (['text_delta', 'thinking_delta', 'toolcall_delta'].includes(update.type) && typeof update.delta === 'string' && update.delta.length > 0))) {
-          hasOutput = true;
-          if (phaseTimer !== undefined) clock.clear(phaseTimer);
-          phaseTimer = clock.set(() => expire('generation'), options.generationMs);
+          if (!hasOutput) {
+            hasOutput = true;
+            if (phaseTimer !== undefined) clock.clear(phaseTimer);
+            phaseTimer = clock.set(() => expire('generation'), options.generationMs);
+          }
+          if (idleTimer !== undefined) clock.clear(idleTimer);
+          if (options.idleMs) idleTimer = clock.set(() => expire('idle'), options.idleMs);
         }
       }
       if ((event.type === 'message_end' && event.message?.role === 'assistant') || ['tool_execution_start', 'turn_end', 'agent_end', 'auto_retry_start'].includes(event.type)) stop();

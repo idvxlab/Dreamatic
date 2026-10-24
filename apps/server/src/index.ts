@@ -33,7 +33,10 @@ const webDist = join(repoRoot, "apps", "web", "dist");
 const port = desktop ? 0 : Number(process.env.PORT ?? 4310);
 await mkdir(workspaceDir, { recursive: true });
 
-let registry = new SessionRegistry(repoRoot, workspaceDir);
+function notifyDesktopPower(busy: boolean): void {
+  if (desktop && process.connected) process.send?.({ type: 'dreamatic-power-state', active: busy && process.env.DREAMATIC_PREVENT_IDLE_SLEEP !== 'false' }, () => {});
+}
+let registry = new SessionRegistry(repoRoot, workspaceDir, notifyDesktopPower);
 let previews = new PreviewService(workspaceDir);
 await registry.initialize();
 
@@ -239,7 +242,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         }
         await mkdir(nextWorkspace, { recursive: true });
         if (workspaceChanged) {
-          const nextRegistry = new SessionRegistry(repoRoot, nextWorkspace);
+          const nextRegistry = new SessionRegistry(repoRoot, nextWorkspace, notifyDesktopPower);
           await nextRegistry.initialize();
           await previews.close();
           const previousRegistry = registry;
@@ -251,6 +254,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
           response.once("finish", () => { previousServer.close(); previousServer.closeIdleConnections(); setTimeout(() => previousServer.closeAllConnections(), 1000).unref(); });
         }
         applied = true;
+        notifyDesktopPower(registry.busy);
         json(response, 200, { ...saved, applied: { workspaceChanged, portChanged: nextPort !== previousPort, port: nextPort } });
       } catch (error) {
         if (savedConfiguration && !applied) {

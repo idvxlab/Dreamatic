@@ -35,6 +35,7 @@ function transportError(error: unknown, phase: ImageFailure['phase'], timedOut: 
 export interface ImageRequestOptions {
   url: string; apiKey: string; model: string; prompt: string; size: string; responseFormat: string;
   timeoutMs: number; bodyIdleTimeoutMs: number; signal: AbortSignal;
+  maxResponseBytes?: number;
   onUsage?: (usage: unknown) => Promise<void>;
 }
 /** Per-request dispatcher: never change Pi/provider/global HTTP behavior. Deadline also covers image downloads. */
@@ -44,6 +45,28 @@ export async function requestImage(options: ImageRequestOptions): Promise<{ byte
   const dispatcher = new Agent({ headersTimeout: options.timeoutMs, bodyTimeout: options.bodyIdleTimeoutMs,
     connect: { timeout: Math.min(30_000, options.timeoutMs) } });
   let phase: ImageFailure['phase'] = 'generation';
+  const limit = options.maxResponseBytes ?? 67_108_864;
+  if (!Number.isSafeInteger(limit) || limit < 1) { await dispatcher.destroy(); throw new Error('Invalid image response byte limit'); }
+  const tooLarge = () => new ImageRequestError({ message: `Image ${phase} exceeds response byte limit (${limit})`, code: 'IMAGE_RESPONSE_TOO_LARGE', phase, retryable: false });
+  const readBounded = async (response: Awaited<ReturnType<typeof fetch>>): Promise<Buffer> => {
+    const length = response.headers.get('content-length');
+    if (length && Number(length) > limit) { await response.body?.cancel(); throw tooLarge(); }
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    if (response.body) {
+      const reader = response.body.getReader();
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > limit) { await reader.cancel(); throw tooLarge(); }
+          chunks.push(value);
+        }
+      } finally { reader.releaseLock(); }
+    }
+    return Buffer.concat(chunks, total);
+  };
   try {
     const response = await fetch(options.url, { dispatcher, signal, method: 'POST',
       headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
@@ -52,7 +75,7 @@ export async function requestImage(options: ImageRequestOptions): Promise<{ byte
       await response.body?.cancel();
       throw httpError(response.status, phase, response.headers.get('retry-after'));
     }
-    const payload = await response.json() as { data?: { b64_json?: string; url?: string }[]; usage?: unknown };
+    const payload = JSON.parse((await readBounded(response)).toString('utf8')) as { data?: { b64_json?: string; url?: string }[]; usage?: unknown };
     if (options.onUsage) {
       try { await options.onUsage(payload.usage); }
       catch (error) { throw new ImageUsageError(error); }
@@ -67,7 +90,7 @@ export async function requestImage(options: ImageRequestOptions): Promise<{ byte
         await download.body?.cancel();
         throw httpError(download.status, phase, download.headers.get('retry-after'));
       }
-      bytes = Buffer.from(await download.arrayBuffer());
+      bytes = await readBounded(download);
     } else throw new ImageRequestError({ message: 'Image response has no image', code: 'IMAGE_EMPTY_RESPONSE', phase, retryable: true });
     if (!bytes.length) throw new ImageRequestError({ message: 'Empty image result', code: 'IMAGE_EMPTY_RESPONSE', phase, retryable: true });
     return { bytes, usage: payload.usage };

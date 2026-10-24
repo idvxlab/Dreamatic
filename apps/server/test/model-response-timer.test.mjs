@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createModelResponseTimer} from '../dist/model-response-timer.js';
-function fixture(totalMs) {
+function fixture(totalMs, idleMs) {
  let now=0, next=0;const pending=new Map(), failures=[];
  const clock={set(callback,ms){const id=++next;pending.set(id,{callback,at:now+ms});return id;},clear(id){pending.delete(id);}};
- const timer=createModelResponseTimer({firstOutputMs:100,generationMs:200,...(totalMs?{totalMs}:{}),clock,onTimeout:phase=>failures.push(phase)});
+ const timer=createModelResponseTimer({firstOutputMs:100,generationMs:200,...(idleMs?{idleMs}:{}),...(totalMs?{totalMs}:{}),clock,onTimeout:phase=>failures.push(phase)});
  const advance=ms=>{const end=now+ms;while(true){const due=[...pending.entries()].filter(([,v])=>v.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!due)break;now=due[1].at;pending.delete(due[0]);due[1].callback();}now=end;};
  return {timer,advance,failures,pending};
 }
@@ -38,4 +38,23 @@ test('abort/cleanup and retries cancel timers without late timeout notifications
  const f=fixture(150);f.timer.handle(event('turn_start'));f.advance(30);f.timer.dispose();f.advance(1000);assert.deepEqual(f.failures,[]);
  f.timer.handle(event('turn_start'));f.advance(20);f.timer.handle(event('auto_retry_start'));f.advance(1000);assert.deepEqual(f.failures,[]);
  f.timer.handle(event('turn_start'));f.timer.handle(token());f.timer.handle(end);f.timer.handle(event('agent_end'));f.advance(1000);assert.deepEqual(f.failures,[]);
+});
+
+test('idle timer starts only on real output, resets on deltas, and ignores empty events',()=>{
+ const f=fixture(undefined,40);f.timer.handle(event('turn_start'));f.advance(90);assert.deepEqual(f.failures,[]);
+ f.timer.handle(token());f.advance(30);f.timer.handle(token('thinking_delta'));f.advance(30);f.timer.handle(token('toolcall_delta'));f.advance(39);assert.deepEqual(f.failures,[]);
+ f.timer.handle(token('text_delta',''));f.advance(1);assert.deepEqual(f.failures,['idle']);assert.equal(f.pending.size,0);
+});
+test('idle budget excludes tool execution, resets per response and does not extend generation cap',()=>{
+ const f=fixture(undefined,40);f.timer.handle(event('turn_start'));f.timer.handle(token());f.advance(20);f.timer.handle(event('tool_execution_start'));f.advance(900000);assert.deepEqual(f.failures,[]);
+ f.timer.handle(event('turn_start'));f.advance(90);f.timer.handle(token());
+ for(let i=0;i<6;i++){f.advance(30);f.timer.handle(token());}
+ f.advance(20);assert.deepEqual(f.failures,['generation']);assert.equal(f.pending.size,0);
+});
+test('disposing or retrying clears streaming idle timers',()=>{
+ for(const stop of ['dispose','auto_retry_start','message_end','agent_end']){
+  const f=fixture(undefined,40);f.timer.handle(event('turn_start'));f.timer.handle(token());
+  if(stop==='dispose')f.timer.dispose();else f.timer.handle(stop==='message_end'?end:event(stop));
+  f.advance(10000);assert.deepEqual(f.failures,[]);assert.equal(f.pending.size,0);
+ }
 });

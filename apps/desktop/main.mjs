@@ -1,4 +1,5 @@
-import { app, BrowserWindow, Menu, dialog, shell, session, clipboard, ipcMain } from 'electron';
+import { app, BrowserWindow, Menu, dialog, shell, session, clipboard, ipcMain, powerSaveBlocker } from 'electron';
+import { createTaskPowerState } from './power-state.mjs';
 import { createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve, basename } from 'node:path';
@@ -8,10 +9,12 @@ app.setName('DreamaticArt');
 const smoke = process.env.DREAMATIC_DESKTOP_SMOKE === '1';
 app.setPath('userData', process.env.DREAMATIC_DESKTOP_TEST_DATA || join(app.getPath('appData'), 'Dreamatic'));
 let service, mainWindow, log, quitting = false;
+const taskPower = createTaskPowerState(powerSaveBlocker);
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance', () => { if (mainWindow) { if (mainWindow.isMinimized()) mainWindow.restore(); mainWindow.show(); mainWindow.focus(); } });
   app.on('before-quit', event => {
+    taskPower.dispose();
     if (service && !quitting) { event.preventDefault(); quitting = true; void service.stop().finally(() => { log?.end(); app.quit(); }); }
   });
   app.on('window-all-closed', () => app.quit());
@@ -23,6 +26,8 @@ else {
     const developmentRuntime = process.platform === 'win32' ? '../../.desktop-runtime-win-x64' : '../../.desktop-runtime';
     const runtime = app.isPackaged ? join(process.resourcesPath, 'runtime') : resolve(fileURLToPath(new URL(developmentRuntime, import.meta.url)));
     service = await startRuntime({ runtime, dataDir, log });
+    service.child.on('message', taskPower.handle);
+    service.child.once('exit', taskPower.dispose);
     service.child.once('exit', () => { if (!quitting) { dialog.showErrorBox('DreamaticArt', 'The local service stopped. Restart DreamaticArt. Details are in desktop.log.'); app.quit(); } });
     const origin = service.url;
     session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));

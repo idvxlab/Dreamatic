@@ -35,27 +35,18 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "label": "Search API key",
     "module": "search",
     "example": "your-serper-api-key",
-    "description": "Used by Serper. Leave blank to keep the current key.",
+    "description": "Used by Serper; falls back to legacy SERPER_API_KEY. Leave blank to keep the current key.",
     "type": "secret",
     "defaultValue": ""
   },
   {
-    "key": "DREAMATIC_ACTIVE_PROFILE",
-    "label": "Profile name",
-    "module": "reasoning",
-    "example": "local-design",
-    "description": "Identifies the current configuration.",
-    "type": "text",
-    "defaultValue": "default"
-  },
-  {
     "key": "DREAMATIC_PROVIDER_NAME",
-    "label": "Provider name",
+    "label": "Connection name",
     "module": "reasoning",
-    "example": "Dreamatic · Art profile",
-    "description": "",
+    "example": "Design studio",
+    "description": "Optional display label for this connection; does not switch providers or profiles.",
     "type": "text",
-    "defaultValue": "Dreamatic · Art profile"
+    "defaultValue": ""
   },
   {
     "key": "DREAMATIC_PROVIDER_TYPE",
@@ -182,34 +173,6 @@ export const CONFIG_FIELDS: ConfigField[] = [
     ]
   },
   {
-    "key": "DREAMATIC_MODEL_REVIEWER",
-    "label": "Reviewer model",
-    "module": "reasoning",
-    "example": "your-text-model",
-    "description": "Optional. Leave blank to use the default reasoning model.",
-    "type": "text",
-    "defaultValue": ""
-  },
-  {
-    "key": "DREAMATIC_THINKING_LEVEL_REVIEWER",
-    "label": "Reviewer thinking level",
-    "module": "reasoning",
-    "example": "high",
-    "description": "Optional. Applies only to models that support thinking levels.",
-    "type": "select",
-    "defaultValue": "",
-    "options": [
-      "",
-      "off",
-      "minimal",
-      "low",
-      "medium",
-      "high",
-      "xhigh",
-      "max"
-    ]
-  },
-  {
     "key": "DREAMATIC_MODEL_BUILDER",
     "label": "Builder model",
     "module": "reasoning",
@@ -283,15 +246,6 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "defaultValue": ""
   },
   {
-    "key": "DREAMATIC_IMAGE_EDIT_ENDPOINT",
-    "label": "Edit endpoint",
-    "module": "image",
-    "example": "https://api.example.com/v1/images/edits",
-    "description": "Optional. Leave blank to use /images/edits under the image API base URL.",
-    "type": "url",
-    "defaultValue": ""
-  },
-  {
     "key": "DREAMATIC_IMAGE_RESPONSE_FORMAT",
     "label": "Image response format",
     "module": "image",
@@ -309,7 +263,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "label": "Server port",
     "module": "system",
     "example": "4310",
-    "description": "Applied automatically after saving. The desktop app manages its local service port.",
+    "description": "Web server port. Desktop uses an automatically assigned port.",
     "type": "number",
     "defaultValue": "4310",
     "min": 0,
@@ -327,26 +281,6 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "restartRequired": false
   },
   {
-    "key": "DREAMATIC_TOOL_PATH",
-    "label": "Local tool paths",
-    "module": "system",
-    "example": "/opt/homebrew/bin",
-    "description": "Optional. Separate directories with your operating system’s path delimiter.",
-    "type": "text",
-    "defaultValue": ""
-  },
-  {
-    "key": "DREAMATIC_AGENT_RETRY_ATTEMPTS",
-    "label": "Agent retry attempts",
-    "module": "system",
-    "example": "3",
-    "description": "",
-    "type": "number",
-    "defaultValue": "3",
-    "min": 1,
-    "max": 20
-  },
-  {
     "key": "DREAMATIC_IMAGE_RETRY_ATTEMPTS",
     "label": "Image generation retry attempts",
     "module": "system",
@@ -356,17 +290,6 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "defaultValue": "3",
     "min": 1,
     "max": 20
-  },
-  {
-    "key": "DREAMATIC_OPERATION_ATTEMPT_BUDGET",
-    "label": "Operation attempt budget",
-    "module": "system",
-    "example": "5",
-    "description": "",
-    "type": "number",
-    "defaultValue": "5",
-    "min": 1,
-    "max": 100
   },
   {
     "key": "DREAMATIC_IMAGE_TIMEOUT_MS",
@@ -413,33 +336,11 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "max": 32
   },
   {
-    "key": "DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS",
-    "label": "Image editing retry attempts",
-    "module": "system",
-    "example": "2",
-    "description": "",
-    "type": "number",
-    "defaultValue": "2",
-    "min": 1,
-    "max": 20
-  },
-  {
-    "key": "DREAMATIC_IMAGE_EDIT_TIMEOUT_MS",
-    "label": "Image editing timeout (ms)",
-    "module": "system",
-    "example": "180000",
-    "description": "",
-    "type": "number",
-    "defaultValue": "180000",
-    "min": 1000,
-    "max": 86400000
-  },
-  {
     "key": "DREAMATIC_MODEL_TURN_TIMEOUT_MS",
     "label": "Model first output timeout (ms)",
     "module": "system",
     "example": "300000",
-    "description": "",
+    "description": "Wait for the first model output. Researcher has a separate override; tool execution is excluded.",
     "type": "number",
     "defaultValue": "300000",
     "min": 1000,
@@ -450,7 +351,7 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "label": "Researcher first output timeout (ms)",
     "module": "system",
     "example": "180000",
-    "description": "",
+    "description": "Researcher first-output wait, independent of the general first-output timeout.",
     "type": "number",
     "defaultValue": "180000",
     "min": 1000,
@@ -461,62 +362,29 @@ export const CONFIG_FIELDS: ConfigField[] = [
     "label": "Model streaming idle timeout (ms)",
     "module": "system",
     "example": "120000",
-    "description": "",
+    "description": "Maximum silence after the first model output. Resets on nonempty text, thinking or tool-call output; excludes tool execution.",
     "type": "number",
     "defaultValue": "120000",
     "min": 1000,
     "max": 86400000
   },
   {
-    "key": "DREAMATIC_VISUAL_PREVIEW_MAX_EDGE",
-    "label": "Model image preview maximum edge",
-    "module": "system",
-    "example": "1400",
-    "description": "",
-    "type": "number",
-    "defaultValue": "1400",
-    "min": 64,
-    "max": 8192
-  },
-  {
-    "key": "DREAMATIC_VISUAL_PREVIEW_MAX_BYTES",
-    "label": "Model image preview byte limit",
-    "module": "system",
-    "example": "1200000",
-    "description": "",
-    "type": "number",
-    "defaultValue": "1200000",
-    "min": 1024,
-    "max": 134217728
-  },
-  {
     "key": "DREAMATIC_IMAGE_RESPONSE_MAX_BYTES",
     "label": "Image response byte limit",
     "module": "system",
     "example": "67108864",
-    "description": "",
+    "description": "Maximum bytes per image API response (including base64 JSON) and per image download. Exceeding the limit is not retried automatically.",
     "type": "number",
     "defaultValue": "67108864",
     "min": 1024,
     "max": 1073741824
   },
   {
-    "key": "DREAMATIC_RESEARCH_CACHE_TTL_MS",
-    "label": "Research cache lifetime (ms)",
-    "module": "system",
-    "example": "86400000",
-    "description": "Set to 0 to disable caching.",
-    "type": "number",
-    "defaultValue": "86400000",
-    "min": 0,
-    "max": 2592000000
-  },
-  {
     "key": "DREAMATIC_PREVENT_IDLE_SLEEP",
     "label": "Prevent idle sleep during tasks",
     "module": "system",
     "example": "true",
-    "description": "macOS only. Does not change display or system settings.",
+    "description": "Desktop only (macOS and Windows). Prevents idle system sleep while tasks run; releases while waiting or after completion. Does not keep the display awake.",
     "type": "select",
     "defaultValue": "true",
     "options": [
@@ -524,63 +392,16 @@ export const CONFIG_FIELDS: ConfigField[] = [
       "false"
     ]
   },
-  {
-    "key": "DREAMATIC_STOP_AFTER_COMMIT",
-    "label": "Stop Agent after committing results",
-    "module": "system",
-    "example": "true",
-    "description": "Avoids additional calls after results have been committed.",
-    "type": "select",
-    "defaultValue": "true",
-    "options": [
-      "true",
-      "false"
-    ]
-  },
-  {
-    "key": "DREAMATIC_HTML_REQUIRE_BROWSER",
-    "label": "Require browser validation for approval",
-    "module": "system",
-    "example": "false",
-    "description": "When enabled, HTML plans cannot be approved without an available Chromium browser.",
-    "type": "select",
-    "defaultValue": "false",
-    "options": [
-      "true",
-      "false"
-    ]
-  },
-  {
-    "key": "DREAMATIC_HTML_BROWSER",
-    "label": "HTML browser validation mode",
-    "module": "system",
-    "example": "off",
-    "description": "Leave blank to detect Chromium automatically. Choose off for static checks only.",
-    "type": "select",
-    "defaultValue": "",
-    "options": [
-      "",
-      "off"
-    ]
-  },
-  {
-    "key": "DREAMATIC_HTML_BROWSER_EXECUTABLE",
-    "label": "Chromium executable path",
-    "module": "system",
-    "example": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "description": "Optional. Leave blank to detect an installed Chromium browser.",
-    "type": "text",
-    "defaultValue": ""
-  }
 ];
 export const CONFIG_MODULES = [
   { id: "search", title: "Search engine", description: "Search services and API keys" },
   { id: "reasoning", title: "Reasoning models", description: "Default models, Agent overrides and thinking levels" },
-  { id: "image", title: "Image model", description: "Generation and editing endpoints, models and image settings" },
-  { id: "system", title: "System parameters", description: "Workspace, concurrency, timeouts, retries and HTML validation" },
+  { id: "image", title: "Image model", description: "Generation endpoint, model and image settings" },
+  { id: "system", title: "System parameters", description: "Workspace, concurrency, response limits and retries" },
 ];
-const LEGACY_KEYS = { activeProfile: "DREAMATIC_ACTIVE_PROFILE", providerName: "DREAMATIC_PROVIDER_NAME", providerType: "DREAMATIC_PROVIDER_TYPE", baseUrl: "DREAMATIC_BASE_URL", model: "DREAMATIC_MODEL", searchProvider: "DREAMATIC_SEARCH_PROVIDER", imageBaseUrl: "DREAMATIC_IMAGE_BASE_URL", imageModel: "DREAMATIC_IMAGE_MODEL", imageGenerationEndpoint: "DREAMATIC_IMAGE_GENERATION_ENDPOINT", imageEditEndpoint: "DREAMATIC_IMAGE_EDIT_ENDPOINT", imageDefaultSize: "DREAMATIC_IMAGE_DEFAULT_SIZE", imageResponseFormat: "DREAMATIC_IMAGE_RESPONSE_FORMAT" };
+const LEGACY_KEYS = { providerName: "DREAMATIC_PROVIDER_NAME", providerType: "DREAMATIC_PROVIDER_TYPE", baseUrl: "DREAMATIC_BASE_URL", model: "DREAMATIC_MODEL", searchProvider: "DREAMATIC_SEARCH_PROVIDER", imageBaseUrl: "DREAMATIC_IMAGE_BASE_URL", imageModel: "DREAMATIC_IMAGE_MODEL", imageGenerationEndpoint: "DREAMATIC_IMAGE_GENERATION_ENDPOINT", imageDefaultSize: "DREAMATIC_IMAGE_DEFAULT_SIZE", imageResponseFormat: "DREAMATIC_IMAGE_RESPONSE_FORMAT" };
 async function source(path: string) { return readFile(path, "utf8").catch((error) => { if (error.code === "ENOENT") return ""; throw error; }); }
+export function searchApiKey(env: NodeJS.ProcessEnv = process.env): string { return env.DREAMATIC_SEARCH_API_KEY?.trim() || env.SERPER_API_KEY?.trim() || ""; }
 export async function readRuntimeConfig(repoRoot: string, env: NodeJS.ProcessEnv = process.env) {
   const envPath = join(repoRoot, ".env"), disk = parseEnv(await source(envPath));
   // Explicit .env values win, including intentional blanks. Do not expose secret values.
@@ -588,9 +409,9 @@ export async function readRuntimeConfig(repoRoot: string, env: NodeJS.ProcessEnv
   const secretConfigured = Object.fromEntries(CONFIG_FIELDS.filter((field) => field.type === "secret").map((field) => [field.key, Boolean((disk[field.key] ?? env[field.key])?.trim())]));
   const merged = { ...env, ...disk };
   const pendingApply = CONFIG_FIELDS.some(field => Object.hasOwn(disk, field.key) && disk[field.key] !== (env[field.key] ?? field.defaultValue));
-  return { ...Object.fromEntries(Object.entries(LEGACY_KEYS).map(([field, key]) => [field, values[key] ?? ""])), envPath, pendingApply, modules: CONFIG_MODULES, fields: CONFIG_FIELDS, values, secretConfigured,
+  return { ...Object.fromEntries(Object.entries(LEGACY_KEYS).map(([field, key]) => [field, values[key] ?? ""])), envPath, pendingApply, modules: CONFIG_MODULES, fields: CONFIG_FIELDS.filter(field => field.key !== "DREAMATIC_PREVENT_IDLE_SLEEP" || env.DREAMATIC_DESKTOP === "1"), values, secretConfigured,
     textApiKeyConfigured: secretConfigured.DREAMATIC_API_KEY,
-    searchApiKeyConfigured: secretConfigured.DREAMATIC_SEARCH_API_KEY || Boolean(merged.SERPER_API_KEY),
+    searchApiKeyConfigured: Boolean(searchApiKey(merged)),
     imageApiKeyConfigured: secretConfigured.DREAMATIC_IMAGE_API_KEY || secretConfigured.DREAMATIC_API_KEY,
   };
 }
@@ -622,6 +443,7 @@ function encode(value: string): string {
 }
 const queues = new Map<string, Promise<unknown>>();
 export async function saveRuntimeConfig(repoRoot: string, input: Record<string, unknown>, env: NodeJS.ProcessEnv = process.env) {
+  for (const key of ['activeProfile', 'imageEditEndpoint']) if (Object.hasOwn(input, key)) throw new Error(`Unsupported configuration field: ${key}`);
   const path = join(repoRoot, ".env");
   const operation = (queues.get(path) ?? Promise.resolve()).catch(() => undefined).then(async () => {
     const updates = new Map<string, string>();

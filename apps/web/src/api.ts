@@ -142,7 +142,6 @@ export interface RuntimeConfig {
   values: Record<string, string>;
   secretConfigured: Record<string, boolean>;
   secrets?: Record<string, string>;
-  activeProfile: string;
   providerName: string;
   providerType: string;
   baseUrl: string;
@@ -151,7 +150,6 @@ export interface RuntimeConfig {
   imageBaseUrl: string;
   imageModel: string;
   imageGenerationEndpoint: string;
-  imageEditEndpoint: string;
   imageDefaultSize: string;
   imageResponseFormat: string;
   textApiKeyConfigured: boolean;
