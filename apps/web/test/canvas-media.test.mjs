@@ -12,7 +12,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   const canvas=fileURLToPath(new URL('../src/components/Canvas.tsx',import.meta.url));
   const list=fileURLToPath(new URL('../src/components/WorkspaceFileList.tsx',import.meta.url));
   const entry='virtual:canvas-media';
-  const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return entry},load(id){if(id===entry)return `import React from 'react';import{createRoot}from'react-dom/client';import{Canvas}from ${JSON.stringify(canvas)};import{WorkspaceFileList}from ${JSON.stringify(list)};function Fixture(){const[runId,setRunId]=React.useState('A'),[selected,setSelected]=React.useState(),[request,setRequest]=React.useState(),[visible,setVisible]=React.useState(true);window.selectProject=setRunId;window.hideCanvas=()=>setVisible(false);window.showCanvas=()=>setVisible(true);const files=window.fixtureFiles;return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'320px 1fr',height:'100vh'}},React.createElement(WorkspaceFileList,{runId,files,selected: selected?.id,title:'Asset library',loading:false,canvasMode:true,onSelect:setSelected,onAdd:file=>setRequest({runId,fileId:file.id,nonce:crypto.randomUUID()}),onRetry(){}}),React.createElement('div',{className:'canvas-container',hidden:!visible},React.createElement(Canvas,{key:runId,run:{id:runId,title:'Project '+runId},files,visible,addRequest:request?.runId===runId?request:undefined,onSelectFile:setSelected})));}createRoot(document.getElementById('root')).render(React.createElement(Fixture));`}}],build:{write:false,minify:false,rollupOptions:{input:entry}}});
+  const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return entry},load(id){if(id===entry)return `import React from 'react';import{createRoot}from'react-dom/client';import{Canvas}from ${JSON.stringify(canvas)};import{WorkspaceFileList}from ${JSON.stringify(list)};function Fixture(){const[runId,setRunId]=React.useState('A'),[selected,setSelected]=React.useState(),[request,setRequest]=React.useState(),[visible,setVisible]=React.useState(true);window.selectProject=setRunId;window.hideCanvas=()=>setVisible(false);window.showCanvas=()=>setVisible(true);const[files,setFiles]=React.useState(window.fixtureFiles);const refresh=async()=>{const response=await fetch('/fixture-files');setFiles(await response.json());}; return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'320px 1fr',height:'100vh'}},React.createElement(WorkspaceFileList,{runId,files,selected: selected?.id,title:'Asset library',loading:false,canvasMode:true,onSelect:setSelected,onRetry:refresh}),React.createElement('div',{className:'canvas-container',hidden:!visible},React.createElement(Canvas,{key:runId,run:{id:runId,title:'Project '+runId},files,visible,onRenamed:refresh,addRequest:request?.runId===runId?request:undefined,onSelectFile:setSelected})));}createRoot(document.getElementById('root')).render(React.createElement(Fixture));`}}],build:{write:false,minify:false,rollupOptions:{input:entry}}});
   const js=bundle.output.find(item=>item.type==='chunk').code;
   const css=await readFile(new URL('../src/styles.css',import.meta.url),'utf8');
   const files=[
@@ -31,6 +31,12 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   let clip;
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url,'http://fixture');
+    if(url.pathname.endsWith('/media/name')) {
+      let body='';for await(const part of req)body+=part;
+      const {id,title}=JSON.parse(body);files.find(file=>file.id===id).title=title;
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify({id,title}));return;
+    }
+    if(url.pathname==='/fixture-files'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(files));return;}
     if(url.pathname==='/bundle.js'){res.setHeader('Content-Type','text/javascript');res.end(js);return;}
     if(url.pathname==='/style.css'){res.setHeader('Content-Type','text/css');res.end(css);return;}
     const match=url.pathname.match(/^\/api\/runs\/([^/]+)\/canvas$/);
@@ -54,7 +60,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   assert.match(await area.evaluate(node=>getComputedStyle(node).backgroundImage),/rgb\(184, 188, 180\)/);
   assert.equal(await page.locator('.canvas-artboard').count(),0); assert.equal(writes.length,0,'loading a new board must not automatically add or save assets');
   const row=name=>page.locator('.workspace-file-item').filter({has:page.getByText(name,{exact:true})});
-  assert.equal(await row('Paper').getAttribute('draggable'),'false');assert.equal(await row('Photo').getAttribute('draggable'),'true');
+  assert.equal(await page.locator('.canvas-media-add').count(),0);assert.equal(await row('Paper').count(),0);assert.equal(await row('Photo').getAttribute('draggable'),'true');
   const box=await area.boundingBox();
   await row('Photo').dragTo(area,{targetPosition:{x:190,y:150}});
   await page.locator('.canvas-artboard').waitFor();
@@ -65,7 +71,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   await row('Photo').dragTo(area,{targetPosition:{x:530,y:150}});
   assert.equal(await page.locator('.canvas-artboard').count(),2);assert.notEqual(await page.locator('.canvas-artboard').last().getAttribute('data-element-id'),firstId);
   assert.equal(await page.locator('.canvas-artboard.selected').count(),1);
-  await page.getByRole('button',{name:'Add to canvas: Original upload',exact:true}).click();
+  await row('Original upload').dragTo(area,{targetPosition:{x:220,y:200}});
   await page.waitForFunction(()=>document.querySelectorAll('.canvas-artboard').length===3);assert.equal(await page.locator('.canvas-artboard').count(),3);assert.match(await page.locator('.canvas-artboard.selected img').getAttribute('src'),/attachment%3A0/);
   await page.getByRole('button',{name:'Reflow project cards'}).click();await page.getByRole('button',{name:'Fit project'}).click();
   await page.waitForFunction(()=>document.querySelectorAll('.canvas-artboard').length===3);assert.equal(await page.locator('.canvas-artboard').count(),3);
@@ -75,7 +81,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   const grip=page.getByRole('button',{name:'Resize selected media'});const oldSize=await card.evaluate(node=>({w:parseFloat(node.style.width),h:parseFloat(node.style.height)}));const handle=await grip.boundingBox();
   await page.mouse.move(handle.x+7,handle.y+7);await page.mouse.down();await page.mouse.move(handle.x+50,handle.y+45,{steps:5});await page.mouse.up();
   const newSize=await card.evaluate(node=>({w:parseFloat(node.style.width),h:parseFloat(node.style.height)}));assert.ok(newSize.w>oldSize.w);assert.ok(Math.abs(newSize.w/newSize.h-oldSize.w/oldSize.h)<.001);
-  await page.getByRole('button',{name:'Add to canvas: Clip',exact:true}).click();await page.locator('video').waitFor();await page.locator('video').evaluate(video=>video.readyState>=1?undefined:new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('Video fixture failed to load'));setTimeout(()=>reject(new Error('Video fixture metadata timeout')),5000)}));
+  await row('Clip').dragTo(area,{targetPosition:{x:220,y:200}});await page.locator('video').waitFor();await page.locator('video').evaluate(video=>video.readyState>=1?undefined:new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error('Video fixture failed to load'));setTimeout(()=>reject(new Error('Video fixture metadata timeout')),5000)}));
   assert.equal(await page.locator('video').getAttribute('controls'),'');
   await page.locator('video').evaluate(video=>video.play());assert.equal(await page.locator('video').evaluate(video=>video.paused),false);
   // Clicking native video controls must not initiate movement or panning.
@@ -95,12 +101,12 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   await row('Photo').dragTo(area,{targetPosition:{x:400,y:250}});const added=page.locator('.canvas-artboard.selected');assert.ok(Math.abs(parseFloat(await added.evaluate(node=>node.style.left))-(400-cameraX))<2);assert.ok(Math.abs(parseFloat(await added.evaluate(node=>node.style.top))-(250-cameraY))<2);
   await page.getByRole('button',{name:'Remove selected element'}).click();assert.equal(await page.locator('.canvas-artboard').count(),count);
   // Immediate project switches flush the latest board, and a fresh project stays empty.
-  await page.getByRole('button',{name:'Add to canvas: Photo',exact:true}).click();await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+1,count);await page.evaluate(()=>window.selectProject('B'));await page.waitForFunction(()=>!document.querySelector('[aria-label="Zoom in"]').disabled);
+  await row('Photo').dragTo(area,{targetPosition:{x:220,y:200}});await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+1,count);await page.evaluate(()=>window.selectProject('B'));await page.waitForFunction(()=>!document.querySelector('[aria-label="Zoom in"]').disabled);
   await page.waitForTimeout(150);assert.equal(saved.get('A').elements.length,count+1);
   assert.equal(await page.locator('.canvas-artboard').count(),0);
   failLoad=true;await page.evaluate(()=>window.selectProject('C'));await page.getByText('Could not restore the canvas. Retry before editing.').waitFor();await page.waitForTimeout(750);assert.equal(saved.has('C'),false);
   failLoad=false;await page.getByRole('button',{name:'Retry',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[aria-label="Zoom in"]').disabled);
-  failSave=true;await page.getByRole('button',{name:'Add to canvas: Photo',exact:true}).click();await page.getByText('Could not save the canvas. Please retry.').waitFor();failSave=false;await page.getByRole('button',{name:'Retry',exact:true}).click();await page.waitForTimeout(150);assert.ok(saved.has('C'));
+  failSave=true;await row('Photo').dragTo(area,{targetPosition:{x:220,y:200}});await page.getByText('Could not save the canvas. Please retry.').waitFor();failSave=false;await page.getByRole('button',{name:'Retry',exact:true}).click();await page.waitForTimeout(150);assert.ok(saved.has('C'));
   const dots=page.getByRole('button',{name:'Positioning dots',exact:true}),grid=page.getByRole('button',{name:'Grid lines',exact:true});
   assert.equal(await dots.getAttribute('aria-pressed'),'true');assert.equal(await grid.getAttribute('aria-pressed'),'false');
   const originalSpacing=await area.evaluate(node=>parseFloat(node.style.backgroundSize));
@@ -125,6 +131,21 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   await page.screenshot({path:'/tmp/dreamatic-canvas-guides.png',animations:'disabled'});
   await page.waitForTimeout(800);await page.reload();await page.locator('.canvas-artboard').first().waitFor();
   assert.equal(await dots.getAttribute('aria-pressed'),'true');assert.equal(await grid.getAttribute('aria-pressed'),'true');
+  await page.getByRole('button',{name:'Select and move elements',exact:true}).click();
+  const rename = page.locator('.workspace-file-row').filter({has:page.locator('strong',{hasText:'Photo'})}).getByRole('button',{name:'Rename media: Photo',exact:true});
+  await rename.click();
+  let dialog=page.locator('dialog[open]');await page.screenshot({path:'/tmp/dreamatic-media-rename.png',animations:'disabled'});await dialog.getByLabel('Display name').fill('Cancelled name');await page.keyboard.press('Escape');
+  assert.equal(await page.locator('dialog[open]').count(),0);
+  await rename.click();dialog=page.locator('dialog[open]');await dialog.getByLabel('Display name').fill('Hero image');await dialog.getByRole('button',{name:'Save',exact:true}).click();
+  await page.locator('.workspace-file-label strong').filter({hasText:'Hero image'}).waitFor();
+  const hero=page.locator('.canvas-artboard').filter({has:page.locator('figcaption strong',{hasText:'Hero image'})}).first();await hero.waitFor();
+  assert.match(await hero.locator('img').getAttribute('src'),/photo.png/);
+  await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();
+  await page.getByRole('button',{name:'Fit project',exact:true}).click();
+  await hero.getByRole('button',{name:'Rename media: Hero image',exact:true}).click();
+  dialog=page.locator('dialog[open]');await dialog.getByLabel('Display name').fill('Final image');await dialog.getByRole('button',{name:'Save',exact:true}).click();
+  await page.locator('.workspace-file-label strong').filter({hasText:'Final image'}).waitFor();
+  await page.reload();await page.locator('.canvas-artboard figcaption strong').filter({hasText:'Final image'}).first().waitFor();
   await page.setViewportSize({width:680,height:844});
   const toolbarBox=await page.locator('.canvas-toolbar').boundingBox();const areaBox=await area.boundingBox();assert.ok(toolbarBox.x>=areaBox.x&&toolbarBox.x+toolbarBox.width<=areaBox.x+areaBox.width);
   assert.deepEqual(errors,[]);

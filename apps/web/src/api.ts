@@ -284,3 +284,11 @@ export function projectFileUrl(runId: string, fileId: string): string {
 export async function getReferenceArticle(runId: string, fileId: string, signal: AbortSignal, refresh = false): Promise<import('./types').ReferenceArticle> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/references/read?id=${encodeURIComponent(fileId)}${refresh ? '&refresh=1' : ''}`, { signal, cache: 'no-store' }));
 }
+
+export async function uploadCanvasMedia(runId: string, file: File): Promise<void> {
+  await parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media?name=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file }));
+}
+
+export async function renameProjectMedia(runId: string, id: string, title: string): Promise<void> {
+  await parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, title }) }));
+}

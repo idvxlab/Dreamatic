@@ -2,6 +2,7 @@ import { ExternalLink, Grid3X3, Grip, Hand, LayoutGrid, Minus, MousePointer2, Pl
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
 import { getCanvasState, projectFileUrl } from '../api';
+import { MediaRename } from './MediaRename';
 import { assetUrl } from '../asset-url';
 import { CANVAS_MEDIA_MIME, creativeCanvasElements, draggedMedia, mediaKind } from '../canvas-media';
 import { useCanvasSave, waitForCanvasWrites } from '../use-canvas-save';
@@ -13,6 +14,7 @@ interface CanvasProps {
   visible: boolean;
   addRequest?: { fileId: string; nonce: string };
   onSelectFile: (file: ProjectFile) => void;
+  onRenamed?: () => void;
   onOpenPreview?: (path: string) => void;
 }
 type Camera = CanvasState['camera'];
@@ -27,7 +29,7 @@ function bounds(elements: CanvasElementState[]) {
   return { x, y, width: Math.max(1, ...elements.map(item => item.x + item.width - x)), height: Math.max(1, ...elements.map(item => item.y + item.height - y)) };
 }
 
-export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPreview }: CanvasProps) {
+export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPreview, onRenamed }: CanvasProps) {
   const { t } = useI18n();
   const viewport = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | undefined>(undefined);
@@ -157,7 +159,7 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
     if (!measured.current.has(item.id) || !width || !height) return;
     measured.current.delete(item.id);
     if (item.width !== 360 || item.height !== 280) return;
-    setElements(current => current.map(entry => entry.id === item.id ? { ...entry, height: Math.max(120, Math.min(1200, 342 * height / width + 66)) } : entry));
+    setElements(current => current.map(entry => entry.id === item.id ? { ...entry, height: Math.max(120, Math.min(1200, 342 * height / width + 90)) } : entry));
     setDirty(true);
   }
   const zoomAt = useCallback((nextZoom: number, clientX?: number, clientY?: number) => {
@@ -193,8 +195,8 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
       {!ready && run ? <section className="run-progress canvas-empty-state"><p className="canvas-loading-copy" role={loadError ? 'alert' : 'status'}>{t(loadError ? 'Could not restore the canvas. Retry before editing.' : 'Restoring canvas…')}</p>{loadError && <button onClick={() => setLoadAttempt(value => value + 1)}>{t('Retry')}</button>}</section> : elements.length > 0 ? <div className="canvas-world" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
         {elements.map(item => item.kind === 'group' ? <section key={item.id} className={`canvas-group-label role-${item.role ?? 'other'}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}><span>{t(item.text ?? '')}</span><small>{t('Run outputs')}</small></section>
           : (item.kind === 'image' || item.kind === 'video') && source(item) ? <figure key={item.id} data-element-id={item.id} className={`canvas-artboard canvas-media ${selectedId === item.id ? 'selected' : ''}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>
-            <div>{item.kind === 'video' ? <video src={source(item)} controls preload="metadata" onPointerDown={event => { event.stopPropagation(); choose(item); }} onLoadedMetadata={event => metadata(item, event.currentTarget.videoWidth, event.currentTarget.videoHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} /> : <img draggable={false} src={source(item)} alt={item.text ?? item.assetPath?.split('/').at(-1) ?? ''} onLoad={event => metadata(item, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} />}</div>
-            <figcaption><span><strong>{item.text ?? item.assetPath?.split('/').at(-1)}</strong><small>{t(item.kind === 'video' ? 'Video file' : 'Image file')}</small></span><a aria-label={t('Open asset')} href={source(item)} target="_blank" rel="noreferrer" onPointerDown={event => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
+            <div>{item.kind === 'video' ? <video src={source(item)} controls preload="metadata" onPointerDown={event => { event.stopPropagation(); choose(item); }} onLoadedMetadata={event => metadata(item, event.currentTarget.videoWidth, event.currentTarget.videoHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} /> : <img draggable={false} src={source(item)} alt={mediaFile(item)?.title ?? item.text ?? item.assetPath?.split('/').at(-1) ?? ''} onLoad={event => metadata(item, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} />}</div>
+            <figcaption><span><strong>{mediaFile(item)?.title ?? item.text ?? item.assetPath?.split('/').at(-1)}</strong><small>{t(item.kind === 'video' ? 'Video file' : 'Image file')}</small></span>{run && mediaFile(item) && <MediaRename runId={run.id} file={mediaFile(item)!} onRenamed={onRenamed} />}<a aria-label={t('Open asset')} href={source(item)} target="_blank" rel="noreferrer" onPointerDown={event => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
             {selectedId === item.id && <button className="canvas-resize-handle" aria-label={t('Resize selected media')} onPointerDown={event => beginElement(event, item, true)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); event.stopPropagation(); measured.current.delete(item.id); const factor = ['ArrowLeft', 'ArrowDown'].includes(event.key) ? .9 : 1.1; if (item.width * factor >= 120 && item.height * factor >= 100 && Math.max(item.width, item.height) * factor <= 2400) { setElements(current => current.map(entry => entry.id === item.id ? { ...entry, width: entry.width * factor, height: entry.height * factor } : entry)); setDirty(true); } }} />}
           </figure>
           : item.kind === 'html' ? <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}><strong>{item.text}</strong><p>{t('HTML interface')}</p><button onPointerDown={event => event.stopPropagation()} onClick={() => item.assetPath && onOpenPreview?.(item.assetPath)}>{t('Open prototype')} <ExternalLink size={13} /></button></article>

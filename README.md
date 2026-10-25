@@ -69,8 +69,10 @@ Projects carry one primary discipline and optional secondary disciplines from a 
 
 The Canvas begins empty: project assets are listed in the tool panel rather than automatically placed on the board. Historical automatic asset inventories and informational labels are filtered out; manually added elements remain available.
 
-- Drag a project image or video from the asset list onto the canvas, or use its **Add to canvas** button. Each addition creates an independent instance, including repeated uses of the same file.
+- Drag local files into the **upload area above the Canvas asset list**, or click that area to choose images or videos (up to **100 MB per file**). Files are stored in the project’s `inputs/user-assets` directory; uploading does not start an agent run. Canvas lists only supported image/video assets, while Asset Library retains other file types.
+- Drag a project image or video from the asset list onto the canvas. Each addition creates an independent instance, including repeated uses of the same file.
 - Select and move elements, resize media proportionally with the corner handle, and remove selected elements with the toolbar or Delete/Backspace. Removing an element does not delete its source file.
+- Rename media using the pencil icon in the Canvas asset list or on a canvas card. Display names synchronize across instances and persist in `media-names.json`, which is included in project ZIP exports. Source filenames, URLs, and existing Showcase pages remain unchanged.
 - Play, pause, seek, and adjust volume using native video controls. Supported containers include MP4, WebM, and MOV; actual playback depends on the browser's codec support. Videos pause when leaving Canvas.
 - Pan, zoom, fit the current contents, or reflow the existing elements. Reflow preserves media instances and custom content.
 - Toggle **Positioning dots** and **Grid lines** independently in the bottom toolbar. Both follow camera movement and zoom; visibility preferences are remembered locally.

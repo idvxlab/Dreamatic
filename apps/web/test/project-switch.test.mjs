@@ -24,6 +24,7 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     export async function getHealth(){return {ok:true}}
     export async function listAssets(){return []}
     export async function listProjectFiles(){return []}
+    export async function uploadCanvasMedia(){}
     export async function getReferenceArticle(){return {title:"Source",nodes:[],embeddingBlocked:false,url:"https://example.org"}}
     export function projectFileUrl(){return ""}
     export async function downloadPortfolio(){}
@@ -40,6 +41,7 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     export async function downloadProject(){}
     export async function publishProject(){}
     export async function renameRun(){}
+    export async function renameProjectMedia(){}
     export async function deleteRun(){}
     export async function getRuntimeConfig(){}
     export async function saveRuntimeConfig(){}

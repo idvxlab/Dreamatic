@@ -810,8 +810,6 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .workspace-file-row { position: relative; display: flex; align-items: center; gap: 5px; }
 .workspace-file-row > .workspace-file-item { min-width: 0; flex: 1; }
 .draggable-media { cursor: grab; }.draggable-media:active { cursor: grabbing; }
-.canvas-media-add { flex-shrink: 0; display: grid; place-items: center; width: 26px; height: 30px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: 7px; background: #fbfaf7; color: var(--muted); cursor: pointer; }
-.canvas-media-add:hover { color: var(--ink); border-color: var(--accent); }
 .canvas-media-hint { margin-top: 0; }
 .canvas-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .canvas-media { border: 1px solid var(--line); border-radius: 8px; }
@@ -824,7 +822,7 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .canvas-drop-indicator { position: absolute; pointer-events: none; left: 50%; top: 24px; transform: translateX(-50%); padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font-size: 12px; }
 .canvas-notice { position: absolute; z-index: 4; left: 16px; top: 16px; max-width: calc(100% - 32px); padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12px; line-height: 1.6; }
 .canvas-notice button, .canvas-empty-state button { margin-left: 8px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: #fffefb; cursor: pointer; }
-.canvas-media-add:focus-visible, .canvas-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.canvas-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .overview-showcase-cover { position: relative; height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; border-radius: 4px; background: var(--panel); color: var(--muted); }
 .overview-showcase-cover small { font-size: 10px; letter-spacing: .08em; }
@@ -832,3 +830,56 @@ button:disabled { cursor: not-allowed !important; opacity: .45; }
 .overview-showcase-cover { transition: background-color .18s ease; }
 .overview-showcase-card:hover .overview-showcase-cover { background: #e5e8dd; }
 .overview-showcase-card:hover .overview-showcase-cover > svg:last-child { color: var(--ink); }
+
+.canvas-upload-area { flex-shrink: 0; padding: 16px 16px 0; }
+.canvas-upload-zone { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; width: 100%; min-height: 144px; padding: 16px 12px; border: 1px dashed rgba(36,37,32,.25); border-radius: 9px; background: var(--workspace-bg); color: var(--muted); cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+.canvas-upload-zone strong { color: var(--ink); font-size: 12px; font-weight: 500; }
+.canvas-upload-zone span { font-size: 11px; }.canvas-upload-zone small { font-size: 9px; }
+.canvas-upload-zone:hover:not([aria-disabled="true"]), .canvas-upload-zone.drag-over { background: #e8eddf; border-color: #81916c; }
+.canvas-upload-zone:focus-visible { outline: 2px solid var(--muted); outline-offset: 2px; }
+.canvas-upload-zone[aria-disabled="true"] { opacity: .6; cursor: default; }
+.canvas-upload-zone[aria-busy="true"] { cursor: wait; }
+.canvas-upload-feedback { display: block; margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+@media (max-height: 600px) { .canvas-upload-zone { min-height: 110px; gap: 5px; padding-block: 10px; } }
+
+.media-rename { flex: 0 0 auto; display: inline-flex; }
+.media-rename-trigger { display: grid; place-items: center; width: 26px; height: 28px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: #fbfaf7; color: var(--muted); cursor: pointer; }
+.media-rename-trigger:hover { background: #e8eddf; color: var(--ink); }
+.media-rename-trigger:focus-visible { outline: 2px solid #81916c; outline-offset: 2px; }
+.canvas-artboard figcaption > span:first-child { flex: 1; }
+.media-rename-dialog { box-sizing: border-box; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); padding: 0; overflow: auto; border: 1px solid #ffffff90; border-radius: 16px; background: #f8f7f2; color: var(--ink); font: inherit; text-align: left; box-shadow: 0 24px 70px #191a1647; cursor: default; }
+.media-rename-dialog::backdrop { background: #16171457; backdrop-filter: blur(3px); }
+.media-rename-dialog form { margin: 0; }
+.media-rename-header { display: flex; align-items: center; gap: 11px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.media-rename-symbol { display: grid; place-items: center; flex: 0 0 auto; width: 34px; height: 34px; border: 1px solid #dce1d2; border-radius: 10px; background: #edf0e5; color: #59664a; }
+.media-rename-header h2 { flex: 1; margin: 0; color: var(--ink); font-size: 16px; line-height: 1.4; font-weight: 600; letter-spacing: -.2px; }
+.media-rename-dialog button { font: inherit; cursor: pointer; transition: background-color .15s, border-color .15s; }
+.media-rename-dialog .media-rename-close { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); }
+.media-rename-dialog .media-rename-close:hover:not(:disabled) { background: #e9ebe1; color: var(--ink); }
+.media-rename-body { display: grid; gap: 18px; padding: 22px; }
+.media-rename-source { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e3e4da; border-radius: 10px; background: #f1f2eb; }
+.media-rename-source > div { min-width: 0; }
+.media-rename-source span { color: var(--muted); font-size: 11px; }
+.media-rename-source p { margin: 5px 0 0; color: #4d5346; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.media-rename-dialog label { display: grid; gap: 9px; color: #41463a; font-size: 12px; font-weight: 500; }
+.media-rename-dialog input { box-sizing: border-box; width: 100%; height: 44px; padding: 0 12px; border: 1px solid #d4d8ca; border-radius: 8px; background: #fffefb; color: var(--ink); font: inherit; font-size: 14px; font-weight: 400; transition: border-color .15s, box-shadow .15s; }
+.media-rename-dialog input:focus { outline: none; border-color: #879673; box-shadow: 0 0 0 3px #8796731a; }
+.media-rename-description { margin: -7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.media-rename-error { margin: 0; padding: 10px 12px; border: 1px solid #ead5ce; border-radius: 8px; background: #fbf0eb; color: #9c4935; font-size: 12px; line-height: 1.6; }
+.media-rename-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 22px; border-top: 1px solid var(--line); background: #f1f2ea; }
+.media-rename-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-width: 76px; height: 38px; padding: 0 16px; border: 1px solid #d9dccf; border-radius: 8px; background: #fffefb; color: #484e40; font-size: 12px; font-weight: 500; }
+.media-rename-actions button:hover:not(:disabled) { background: #e9ece0; border-color: #bfc7b3; }
+.media-rename-actions button.primary { border-color: #34392b; background: #34392b; color: #fffefb; }
+.media-rename-actions button.primary:hover:not(:disabled) { border-color: #465039; background: #465039; }
+.media-rename-dialog button:focus-visible { outline: 2px solid #819342; outline-offset: 3px; }
+.media-rename-dialog button:disabled { opacity: .45; cursor: default; }
+
+/* Keep media captions legible at the default canvas zoom. */
+.canvas-artboard.canvas-media { grid-template-rows: minmax(0, 1fr) 72px; }
+.canvas-media figcaption { gap: 10px; padding: 10px 4px 2px; }
+.canvas-media figcaption > span:first-child > strong { color: #363a32; font-size: 20px; font-weight: 600; line-height: 1.35; }
+.canvas-media figcaption > span:first-child > small { margin-top: 4px; color: #656c60; font-size: 16px; line-height: 1.3; }
+.canvas-media figcaption .media-rename-trigger, .canvas-media figcaption > a { display: grid; place-items: center; flex: 0 0 auto; width: 48px; height: 48px; box-sizing: border-box; border: 1px solid #d4d9cd; border-radius: 9px; background: #fdfdfb; color: #535e49; cursor: pointer; }
+.canvas-media figcaption .media-rename-trigger svg, .canvas-media figcaption > a svg { width: 24px; height: 24px; }
+.canvas-media figcaption .media-rename-trigger:hover, .canvas-media figcaption > a:hover { background: #e8eddf; border-color: #a5b098; color: #303a27; }
+.canvas-media figcaption > a:focus-visible { outline: 2px solid #81916c; outline-offset: 2px; }

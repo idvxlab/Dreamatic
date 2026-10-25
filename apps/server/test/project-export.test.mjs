@@ -34,10 +34,11 @@ async function fixture(t, mode) {
 }
 for (const mode of ['html','gallery']) test(`${mode} download ZIP includes complete source/resources and keeps approved output intact`, async (t) => {
   const f = await fixture(t, mode);
+  await writeFile(join(f.run,'media-names.json'),JSON.stringify({'artifacts/home/image.jpg':'Hero'}));
   const archive = await prepareProjectExport(f.workspace,f.runId); t.after(archive.cleanup);
   assert.equal(archive.filename, `${f.runId}.zip`);
   const {stdout:list} = await exec('unzip',['-Z1',archive.path]);
-  for (const path of [f.entry,'artifacts/home/style.css','artifacts/home/app.js','artifacts/home/image.jpg','plan/html/home/index.html','context/design.json','research/findings.md','review/design-review.md','brief.json','index.html','package-manifest.json']) assert.ok(list.includes(`${f.runId}/${path}`),path);
+  for (const path of [f.entry,'artifacts/home/style.css','artifacts/home/app.js','artifacts/home/image.jpg','plan/html/home/index.html','context/design.json','research/findings.md','review/design-review.md','brief.json','media-names.json','index.html','package-manifest.json']) assert.ok(list.includes(`${f.runId}/${path}`),path);
   assert.doesNotMatch(list,/sessions|history|bus\.jsonl/);
   for (const [path,bytes] of Object.entries(f.outputs)) {
     assert.equal((await exec('unzip',['-p',archive.path,`${f.runId}/${path}`])).stdout,bytes);

@@ -54,6 +54,11 @@ test('six workbench views preserve conversation, canvas and project isolation an
     if (url.pathname === '/api/runs') { json(runs); return; }
     if (/^\/api\/runs\/[AB]$/.test(url.pathname)) { json(runs.find(run => run.id === url.pathname.split('/').at(-1))); return; }
     if (url.pathname.endsWith('/workflow/stream')) { res.setHeader('Content-Type', 'text/event-stream'); res.end('data: ' + JSON.stringify({ type: 'snapshot', workflow: url.pathname.includes('/A/') ? workflow : [] }) + '\n\n'); return; }
+    if (url.pathname.endsWith('/media') && req.method === 'POST') {
+      const name=url.searchParams.get('name');let bytes=0;for await(const chunk of req)bytes+=chunk.length;
+      if(name==='broken.png'){res.statusCode=400;json({error:'Media upload failed. Please try again.'});return;}
+      assert.ok(bytes>0);const path='inputs/user-assets/'+name;files.push({id:path,path,title:name,kind:name.split('.').at(-1),category:'assets',group:'Uploaded files'});json({id:path});return;
+    }
     if (url.pathname.endsWith('/references/read')) { json({ title: 'Reference article', url: 'https://example.org/source', embeddingBlocked: false, nodes: [{ tag: 'p', children: [{ tag: 'text', text: 'Readable reference content' }] }] }); return; }
     if (url.pathname.endsWith('/publish')) { json({ published: false, mayExist: false, inProgress: false }); return; }
     if (url.pathname.endsWith('/canvas')) {
@@ -160,6 +165,35 @@ test('six workbench views preserve conversation, canvas and project isolation an
   assert.equal(await page.locator('.workspace-files').isVisible(), true);
   assert.equal(await page.locator('.composer textarea').isVisible(), false);
   assert.equal(await page.locator('.document-viewer').count(), 0);
+  assert.equal(await page.locator('.workspace-file-item').filter({hasText:'file.html'}).count(),0);
+  assert.equal(await page.locator('.workspace-file-item').filter({hasText:'file.pdf'}).count(),0);
+  const upload=page.getByLabel('Upload media files');
+  const dropZone=page.getByRole('button',{name:'Upload media',exact:true});
+  assert.equal(await page.locator('.workspace-files > .agent-header').getByRole('button',{name:'Upload media'}).count(),0);
+  assert.ok((await dropZone.boundingBox()).y < (await page.locator('.workspace-file-group').first().boundingBox()).y);
+  const chooser=page.waitForEvent('filechooser');await dropZone.click();await (await chooser).setFiles({name:'chosen.png',mimeType:'image/png',buffer:Buffer.from('chosen-image')});
+  await page.locator('.workspace-file-item').filter({hasText:'chosen.png'}).waitFor();
+  await dropZone.evaluate(node=>{
+    const files=new DataTransfer();files.items.add(new File(['fixture'],'dropped.png',{type:'image/png'}));
+    node.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:files}));
+  });
+  await page.getByText('Drop files to upload',{exact:true}).waitFor();
+  await dropZone.evaluate(node=>{const files=new DataTransfer();files.items.add(new File(['fixture'],'dropped.png',{type:'image/png'}));node.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:files}));});
+  await page.locator('.workspace-file-item').filter({hasText:'dropped.png'}).waitFor();
+  await dropZone.evaluate(node=>{const data=new DataTransfer();data.setData('application/x-dreamatic-project-media',JSON.stringify({runId:'A',fileId:'artifacts/design.png'}));node.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:data}));});
+  assert.equal(await dropZone.evaluate(node=>node.classList.contains('drag-over')),false);
+  await upload.setInputFiles({name:'not-media.html',mimeType:'text/html',buffer:Buffer.from('no')});
+  await page.getByRole('alert').filter({hasText:'Only image and video files'}).waitFor();
+
+  await upload.setInputFiles({name:'new-media.png',mimeType:'image/png',buffer:Buffer.from('fixture-image')});
+  await page.locator('.workspace-file-item').filter({hasText:'new-media.png'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Upload media',exact:true}).getAttribute('aria-disabled'),'false');
+  await page.locator('.workspace-file-item').filter({hasText:'new-media.png'}).dragTo(page.locator('.canvas-viewport'),{targetPosition:{x:220,y:180}});
+  await page.locator('.canvas-artboard.selected strong').filter({hasText:'new-media.png'}).waitFor();
+  await page.getByRole('button',{name:'Remove selected element'}).click();
+  await upload.setInputFiles({name:'broken.png',mimeType:'image/png',buffer:Buffer.from('bad')});
+  await page.getByRole('alert').filter({hasText:'Media upload failed'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Upload media',exact:true}).getAttribute('aria-disabled'),'false');
   await page.getByRole('button', { name: 'Reset to 100%' }).click();
   assert.equal(await page.locator('.canvas-project-overview').count(), 0);
   assert.equal(await page.getByText('Old context', { exact: true }).count(), 0);
@@ -167,7 +201,7 @@ test('six workbench views preserve conversation, canvas and project isolation an
   for (let attempt = 0; !persisted && attempt < 30; attempt++) await new Promise(resolve => setTimeout(resolve, 50));
   assert.ok(persisted); assert.equal(persisted.camera.x, 22); assert.equal(persisted.elements.find(item => item.id === 'custom-note').y, 95);
   const initialMediaCount = await page.locator('.canvas-artboard').count();
-  await page.getByRole('button', { name: 'Add to canvas: Design image', exact: true }).click();
+  await page.locator('.workspace-file-item').filter({hasText:'Design image'}).dragTo(page.locator('.canvas-viewport'),{targetPosition:{x:220,y:180}});
   await page.waitForFunction(count => document.querySelectorAll('.canvas-artboard').length === count + 1, initialMediaCount);
   await nav('Workbench').click();
   assert.equal(await page.locator('.composer textarea').inputValue(), 'Unsent idea');

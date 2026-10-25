@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, utimes } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { projectFiles, projectFileContent, bibliography } from '../dist/project-files.js';
+import { projectFiles, projectFileContent, bibliography, renameProjectMedia } from '../dist/project-files.js';
 
 test('file catalog preserves full documents, attachments, source metadata and project boundaries', async t => {
   const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-files-'));
@@ -83,7 +83,20 @@ test('HTTP file routes serve full text, typed media and named originals without 
     await writeFile(join(runRoot, 'inputs/user-assets/source.pdf'), '%PDF-1.4');
     await writeFile(join(runRoot, 'inputs/user-assets/clip.webm'), '0123456789');
     const api = `${origin}/api/runs/${session.projectId}/files`;
-    const catalog = await fetch(api).then(response => response.json()); assert.ok(catalog.some(file => file.id === 'intent.md'));
+    const uploadUrl = `${origin}/api/runs/${session.projectId}/media?name=`;
+    const uploaded = await fetch(uploadUrl + encodeURIComponent('New image.png'), {method:'POST',headers:{'Content-Type':'image/png'},body:Buffer.from('png-fixture')});
+    assert.equal(uploaded.status,201); const receipt = await uploaded.json(); assert.match(receipt.id,/^inputs\/user-assets\/New-image-.+\.png$/);
+    assert.equal(await readFile(join(runRoot,receipt.id),'utf8'),'png-fixture');
+    const second = await fetch(uploadUrl + 'New%20image.png',{method:'POST',headers:{'Content-Type':'image/png'},body:'another'}).then(response=>response.json());assert.notEqual(second.id,receipt.id);
+    assert.equal((await fetch(uploadUrl+'page.html',{method:'POST',body:'<html>no</html>'})).status,400);
+    assert.equal((await fetch(uploadUrl+'empty.png',{method:'POST',headers:{'Content-Type':'image/png'},body:Buffer.alloc(0)})).status,400);
+    assert.equal((await fetch(uploadUrl+'bad.png',{method:'POST',headers:{'Content-Type':'video/mp4'},body:'bad'})).status,400);
+    const renamed = await fetch(`${origin}/api/runs/${session.projectId}/media/name`, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:receipt.id,title:'Hero image'})});
+    assert.equal(renamed.status,200);
+    assert.equal((await fetch(api+'/content?id='+encodeURIComponent(receipt.id))).status,200);
+    assert.equal(await readFile(join(runRoot,receipt.id),'utf8'),'png-fixture');
+    const catalog = await fetch(api).then(response => response.json());
+    assert.ok(catalog.some(file=>file.id===receipt.id&&file.group==='Uploaded files'&&file.title==='Hero image')); assert.ok(catalog.some(file => file.id === 'intent.md'));
     const text = await fetch(api + '/content?id=intent.md'); assert.equal(await text.text(), original); assert.match(text.headers.get('content-type'), /text\/plain/); assert.equal(text.headers.get('x-content-type-options'), 'nosniff');
     const pdf = await fetch(api + '/content?id=' + encodeURIComponent('inputs/user-assets/source.pdf')); assert.equal(pdf.headers.get('content-type'), 'application/pdf'); assert.match(pdf.headers.get('content-disposition'), /source.pdf/); assert.equal(await pdf.text(), '%PDF-1.4');
     assert.equal((await fetch(api + '/content?id=' + encodeURIComponent('../brief.json'))).status, 400);
@@ -102,4 +115,31 @@ test('HTTP file routes serve full text, typed media and named originals without 
     if (child && child.exitCode === null) { const timer = setTimeout(() => child.kill('SIGKILL'), 3000); child.kill('SIGTERM'); await once(child, 'exit'); clearTimeout(timer); }
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('media display names persist without changing paths, bytes or generated references', async t => {
+  const workspace = await mkdtemp(join(tmpdir(), 'dreamatic-names-'));
+  t.after(() => rm(workspace, { recursive: true, force: true }));
+  const root = join(workspace, 'runs', 'demo');
+  await mkdir(join(root, 'artifacts'), { recursive: true });
+  await writeFile(join(root, 'artifacts/photo.png'), 'original image');
+  await writeFile(join(root, 'artifacts/page.html'), '<img src="photo.png">');
+  await writeFile(join(root, 'attachments.json'), JSON.stringify([{ name: 'source.png', mimeType: 'image/png', data: Buffer.from('attached').toString('base64') }]));
+  await Promise.all([
+    renameProjectMedia(workspace, 'demo', 'artifacts/photo.png', '  主视觉  '),
+    renameProjectMedia(workspace, 'demo', 'attachment:0', '参考图'),
+  ]);
+  const files = await projectFiles(workspace, 'demo');
+  const photo = files.find(file => file.id === 'artifacts/photo.png');
+  assert.equal(photo.title, '主视觉'); assert.equal(photo.originalName, 'photo.png'); assert.equal(photo.path, 'artifacts/photo.png');
+  assert.equal(files.find(file => file.id === 'attachment:0').title, '参考图');
+  const content = await projectFileContent(workspace, 'demo', photo.id);
+  assert.equal(content.filename, 'photo.png'); assert.equal(content.data.toString(), 'original image');
+  assert.equal(await readFile(join(root, 'artifacts/page.html'), 'utf8'), '<img src="photo.png">');
+  await assert.rejects(renameProjectMedia(workspace, 'demo', photo.id, '  '));
+  await assert.rejects(renameProjectMedia(workspace, 'demo', photo.id, 'a'.repeat(121)));
+  await assert.rejects(renameProjectMedia(workspace, 'demo', 'artifacts/page.html', 'Page'));
+  await assert.rejects(renameProjectMedia(workspace, 'demo', '../outside.png', 'Outside'));
+  await renameProjectMedia(workspace, 'demo', photo.id, '参考图'); // Duplicate labels do not affect identity.
+  assert.equal((await projectFileContent(workspace, 'demo', photo.id)).data.toString(), 'original image');
 });

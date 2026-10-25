@@ -1,10 +1,12 @@
-import { readFile, readdir, realpath, stat } from 'node:fs/promises';
+import { readFile, readdir, realpath, stat, writeFile, rename, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { extname, join, relative, resolve, sep } from 'node:path';
 import { CONTEXT_FILES, CONTEXT_PROJECTIONS, hasUnifiedContext, readRunContext } from '@dreamatic/project-data';
 
 export interface ProjectFile {
   id: string;
   title: string;
+  originalName?: string;
   kind: string;
   category: 'context' | 'assets' | 'references';
   group: string;
@@ -129,6 +131,13 @@ export async function projectFiles(workspace: string, id: string): Promise<Proje
     const key = citation.url ?? citation.path ?? citation.metadata!;
     if (!seen.has(key)) { seen.add(key); files.push(citation); }
   }
+  const names = await readMediaNames(root);
+  for (const file of files) {
+    if (file.category === 'assets' && names[file.id]) {
+      file.originalName = file.title;
+      file.title = names[file.id]!;
+    }
+  }
   return files.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
 }
 export async function projectFileContent(workspace: string, id: string, fileId: string): Promise<{ data: Buffer; kind: string; filename: string }> {
@@ -138,9 +147,39 @@ export async function projectFileContent(workspace: string, id: string, fileId: 
   if (!file) throw new Error('Project file not found');
   if (fileId.startsWith('attachment:')) {
     const item = (await attachments(root))[Number(fileId.slice('attachment:'.length))]!;
-    return { data: Buffer.from(item.data.replace(/^data:[^,]+,/, ''), 'base64'), kind: file.kind, filename: file.title };
+    return { data: Buffer.from(item.data.replace(/^data:[^,]+,/, ''), 'base64'), kind: file.kind, filename: file.originalName ?? file.title };
   }
-  if (!file.path) return { data: Buffer.from(file.metadata ?? ''), kind: 'txt', filename: file.title };
-  if (file.category === 'context') return { data: Buffer.from(await readRunContext(root, file.path)), kind: file.kind, filename: file.title };
-  return { data: await readFile(await inside(root, file.path)), kind: file.kind, filename: file.title };
+  if (!file.path) return { data: Buffer.from(file.metadata ?? ''), kind: 'txt', filename: file.originalName ?? file.title };
+  if (file.category === 'context') return { data: Buffer.from(await readRunContext(root, file.path)), kind: file.kind, filename: file.originalName ?? file.title };
+  return { data: await readFile(await inside(root, file.path)), kind: file.kind, filename: file.originalName ?? file.title };
+}
+
+const nameWrites = new Map<string, Promise<unknown>>();
+async function readMediaNames(root: string): Promise<Record<string, string>> {
+  const source = await inside(root, 'media-names.json').then(path => readFile(path, 'utf8')).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return '{}';
+    throw error;
+  });
+  const parsed: unknown = JSON.parse(source);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid media names');
+  return Object.fromEntries(Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+}
+/** Display labels only: never change source files or generated document references. */
+export async function renameProjectMedia(workspace: string, runId: string, fileId: unknown, title: unknown) {
+  if (typeof fileId !== 'string' || typeof title !== 'string' || !title.trim() || title.trim().length > 120 || /[\x00-\x1f\x7f]/u.test(title)) throw new Error('Use a name between 1 and 120 characters without control characters.');
+  const name = title.trim();
+  const root = await rootPath(workspace, runId);
+  const operation = (nameWrites.get(root) ?? Promise.resolve()).catch(() => {}).then(async () => {
+    const file = (await projectFiles(workspace, runId)).find(file => file.id === fileId && file.category === 'assets' && /^(png|jpe?g|webp|gif|svg|mp4|webm|mov)$/u.test(file.kind));
+    if (!file) throw new Error('Project media not found');
+    const names = await readMediaNames(root);
+    const temporary = join(root, `media-names.${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, JSON.stringify({ ...names, [fileId]: name }, null, 2), { flag: 'wx', mode: 0o600 });
+      await rename(temporary, join(root, 'media-names.json'));
+    } finally { await rm(temporary, { force: true }); }
+    return { id: fileId, title: name };
+  });
+  nameWrites.set(root, operation);
+  try { return await operation; } finally { if (nameWrites.get(root) === operation) nameWrites.delete(root); }
 }

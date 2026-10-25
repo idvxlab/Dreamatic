@@ -148,6 +148,7 @@ export interface CanvasState {
 
 export type WorkbenchView = 'overview' | 'canvas' | 'preview' | 'context' | 'assets' | 'references';
 export interface ProjectFile {
+  originalName?: string;
   thumbnailUrl?: string;
   id: string;
   title: string;

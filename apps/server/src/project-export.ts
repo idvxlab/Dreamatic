@@ -70,7 +70,7 @@ export async function prepareProjectExport(workspaceDir: string, runId: string, 
       } else throw new Error(`Unsupported project file: ${path}`);
     }
     // Keep relative asset links intact, without sessions, caches or duplicate historical Runs.
-    for (const path of ["artifacts", "plan", "research", "review", "context", "references", "inputs", "intent.md", "research.md", "design.md", "showcase.md", "brief.json", "run-state.json", "completion-summary.json"]) {
+    for (const path of ["artifacts", "plan", "research", "review", "context", "references", "inputs", "intent.md", "research.md", "design.md", "showcase.md", "brief.json", "run-state.json", "completion-summary.json", "media-names.json"]) {
       const exists = await lstat(join(runDir, path)).then(() => true).catch((error: NodeJS.ErrnoException) => {
         if (error.code === "ENOENT") return false;
         throw error;

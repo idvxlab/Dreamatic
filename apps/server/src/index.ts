@@ -1,6 +1,7 @@
+import { uploadProjectMedia } from "./media-upload.js";
 import { mediaRange } from "./media-range.js";
 import { readProjectReference } from "./reference-reader.js";
-import { projectFiles, projectFileContent } from "./project-files.js";
+import { projectFiles, projectFileContent, renameProjectMedia } from "./project-files.js";
 import { publicWorkflowData } from './workflow-data.js';
 import { openProjectAssets, localFolderRequest } from "./open-assets.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -396,6 +397,17 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/u.test(runId)) throw new Error("Invalid run id");
       const run = (await runInventory(workspaceDir, { runId }))[0];
       if (run) conditionalJson(request, response, run); else json(response, 404, { error: "Run not found" });
+      return;
+    }
+    const uploadMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media$/);
+    if (request.method === "POST" && uploadMatch?.[1]) {
+      json(response, 201, await uploadProjectMedia(workspaceDir, decodeURIComponent(uploadMatch[1]), url.searchParams.get("name") ?? "", request));
+      return;
+    }
+    const mediaNameMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media\/name$/);
+    if (request.method === "PATCH" && mediaNameMatch?.[1]) {
+      const input = record(await body(request));
+      json(response, 200, await renameProjectMedia(workspaceDir, decodeURIComponent(mediaNameMatch[1]), input.id, input.title));
       return;
     }
     const referenceMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/references\/read$/);
