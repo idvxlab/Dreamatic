@@ -1,4 +1,4 @@
-import { Agent, fetch } from 'undici';
+import { Agent, fetch, FormData } from 'undici';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export interface ImageFailure {
@@ -35,6 +35,8 @@ function transportError(error: unknown, phase: ImageFailure['phase'], timedOut: 
 export interface ImageRequestOptions {
   url: string; apiKey: string; model: string; prompt: string; size: string; responseFormat: string;
   timeoutMs: number; bodyIdleTimeoutMs: number; signal: AbortSignal;
+  image?: { bytes: Buffer; filename: string; mimeType: string };
+  images?: Array<{ bytes: Buffer; filename: string; mimeType: string }>;
   maxResponseBytes?: number;
   onUsage?: (usage: unknown) => Promise<void>;
 }
@@ -68,9 +70,16 @@ export async function requestImage(options: ImageRequestOptions): Promise<{ byte
     return Buffer.concat(chunks, total);
   };
   try {
+    let body: string | FormData;
+    const inputs = options.images ?? (options.image ? [options.image] : []);
+    if (inputs.length) {
+      body = new FormData();
+      body.set('model', options.model); body.set('prompt', options.prompt); body.set('size', options.size);
+      if (options.responseFormat && options.responseFormat !== 'auto') body.set('response_format', options.responseFormat);
+      for (const image of inputs) body.append(inputs.length === 1 ? 'image' : 'image[]', new Blob([new Uint8Array(image.bytes)], { type: image.mimeType }), image.filename);
+    } else body = JSON.stringify({ model: options.model, prompt: options.prompt, size: options.size, response_format: options.responseFormat });
     const response = await fetch(options.url, { dispatcher, signal, method: 'POST',
-      headers: { Authorization: `Bearer ${options.apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: options.model, prompt: options.prompt, size: options.size, response_format: options.responseFormat }) });
+      headers: { Authorization: `Bearer ${options.apiKey}`, ...(inputs.length ? {} : { 'Content-Type': 'application/json' }) }, body });
     if (!response.ok) {
       await response.body?.cancel();
       throw httpError(response.status, phase, response.headers.get('retry-after'));

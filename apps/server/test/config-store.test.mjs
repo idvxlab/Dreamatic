@@ -73,7 +73,7 @@ test('a valid ephemeral startup port remains applicable when saving another sett
 });
 
 test('retired settings are hidden and rejected without deleting legacy disk values', async t => {
- const retired=['DREAMATIC_ACTIVE_PROFILE','DREAMATIC_MODEL_REVIEWER','DREAMATIC_THINKING_LEVEL_REVIEWER','DREAMATIC_IMAGE_EDIT_ENDPOINT','DREAMATIC_TOOL_PATH','DREAMATIC_AGENT_RETRY_ATTEMPTS','DREAMATIC_OPERATION_ATTEMPT_BUDGET','DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS','DREAMATIC_IMAGE_EDIT_TIMEOUT_MS','DREAMATIC_VISUAL_PREVIEW_MAX_EDGE','DREAMATIC_VISUAL_PREVIEW_MAX_BYTES','DREAMATIC_RESEARCH_CACHE_TTL_MS','DREAMATIC_STOP_AFTER_COMMIT','DREAMATIC_HTML_REQUIRE_BROWSER','DREAMATIC_HTML_BROWSER','DREAMATIC_HTML_BROWSER_EXECUTABLE'];
+ const retired=['DREAMATIC_ACTIVE_PROFILE','DREAMATIC_MODEL_REVIEWER','DREAMATIC_THINKING_LEVEL_REVIEWER','DREAMATIC_TOOL_PATH','DREAMATIC_AGENT_RETRY_ATTEMPTS','DREAMATIC_OPERATION_ATTEMPT_BUDGET','DREAMATIC_IMAGE_EDIT_RETRY_ATTEMPTS','DREAMATIC_IMAGE_EDIT_TIMEOUT_MS','DREAMATIC_VISUAL_PREVIEW_MAX_EDGE','DREAMATIC_VISUAL_PREVIEW_MAX_BYTES','DREAMATIC_RESEARCH_CACHE_TTL_MS','DREAMATIC_STOP_AFTER_COMMIT','DREAMATIC_HTML_REQUIRE_BROWSER','DREAMATIC_HTML_BROWSER','DREAMATIC_HTML_BROWSER_EXECUTABLE'];
  const legacy=retired.map(key=>`${key}=legacy-value`).join('\n')+'\n';
  const root=await fixture(t,legacy),env={};
  const config=await readRuntimeConfig(root,env);
@@ -108,4 +108,14 @@ test('new runtime controls persist and invalid limits cannot partially apply', a
  for(const invalid of [{DREAMATIC_MODEL_IDLE_TIMEOUT_MS:'0'},{DREAMATIC_IMAGE_RESPONSE_MAX_BYTES:'1023'},{DREAMATIC_PREVENT_IDLE_SLEEP:'yes'}]){
   await assert.rejects(saveRuntimeConfig(root,{values:invalid},env));assert.equal(await readFile(join(root,'.env'),'utf8'),original);assert.deepEqual(env,values);
  }
+});
+
+test('image edit settings persist and validate without exposing image credentials', async t => {
+ const root=await fixture(t,''),env={DREAMATIC_IMAGE_API_KEY:'private-edit-fixture-key'};
+ const saved=await saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_ENABLED:'true',DREAMATIC_IMAGE_EDIT_MODEL:'editing-model',DREAMATIC_IMAGE_EDIT_ENDPOINT:'https://example.org/v1/images/edits',DREAMATIC_IMAGE_EDIT_SIZE:'auto',DREAMATIC_IMAGE_EDIT_RESPONSE_FORMAT:'auto'}},env);
+ assert.equal(saved.values.DREAMATIC_IMAGE_EDIT_MODEL,'editing-model');assert.equal(env.DREAMATIC_IMAGE_EDIT_SIZE,'auto');
+ assert.ok(!JSON.stringify(saved).includes('private-edit-fixture-key'));
+ await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_SIZE:'wrong'}},env));
+ await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_ENABLED:'maybe'}},env));
+ await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_ENDPOINT:'file:///tmp/edit'}},env));
 });

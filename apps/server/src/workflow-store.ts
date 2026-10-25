@@ -63,6 +63,7 @@ const LIFECYCLE_TYPES = new Set([
 ]);
 
 const AGENT_TITLES: Record<string, string> = {
+  editor: "Editor",
   orchestrator: "Orchestrator",
   researcher: "Researcher",
   designer: "Designer",

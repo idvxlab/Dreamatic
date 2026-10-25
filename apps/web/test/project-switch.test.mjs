@@ -35,6 +35,9 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     export async function createSession(id){return new Promise(resolve=>creations.set(id,resolve))}
     export async function abortSession(id){stopped.push(id);sessions.find(s=>s.id===id).running=false;return {id,interrupted:true}}
     export async function getPublicationStatus(){return {site:'test',published:false,mayExist:false,inProgress:false}}
+    export async function listEditorTasks(){return []}
+    export async function submitEditorTask(){throw new Error('Not used in this fixture')}
+    export async function editorTaskAction(){throw new Error('Not used in this fixture')}
     export async function getCanvasState(){return null}
     export async function saveCanvasState(id,state){return state}
     export async function getHtmlPreview(){return {url:'',entries:[]}}
@@ -42,6 +45,8 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     export async function publishProject(){}
     export async function renameRun(){}
     export async function renameProjectMedia(){}
+    export async function getImageEditSettings(){return {enabled:true,configured:true,model:"fixture",size:"1024x1024"}}
+    export async function editProjectImage(){}
     export async function deleteRun(){}
     export async function getRuntimeConfig(){}
     export async function saveRuntimeConfig(){}

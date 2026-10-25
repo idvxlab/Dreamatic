@@ -292,3 +292,28 @@ export async function uploadCanvasMedia(runId: string, file: File): Promise<void
 export async function renameProjectMedia(runId: string, id: string, title: string): Promise<void> {
   await parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/name`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, title }) }));
 }
+
+export interface ImageEditSettings { enabled: boolean; configured: boolean; model: string; size: string }
+export async function getImageEditSettings(runId: string): Promise<ImageEditSettings> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit`, { cache: 'no-store' }));
+}
+export async function editProjectImage(runId: string, id: string, prompt: string, signal: AbortSignal): Promise<import('./types').ProjectFile> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, prompt }), signal }));
+}
+
+export interface EditorTask {
+  id: string; prompt: string; source: 'canvas' | 'natural-language'; inputIds: string[];
+  size?: string; sizeSource?: 'user' | 'base-image' | 'first-input'; baseImageId?: string;
+  promptNodeId?: string; upstream?: Array<{ nodeId: string; fileId: string; taskId?: string }>;
+  status: 'submitted' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'interrupted';
+  attempt: number; createdAt: string; completedAt?: string; output?: import('./types').ProjectFile; outputAvailable?: boolean; error?: string;
+}
+export async function listEditorTasks(runId: string): Promise<EditorTask[]> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/editor`));
+}
+export async function submitEditorTask(runId: string, task: Pick<EditorTask, 'id' | 'prompt' | 'source' | 'inputIds' | 'promptNodeId' | 'upstream'>): Promise<EditorTask> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/editor`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(task) }));
+}
+export async function editorTaskAction(runId: string, id: string, action: 'cancel' | 'retry'): Promise<EditorTask> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/editor/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
+}

@@ -6,6 +6,13 @@ import { parseEnv } from "node:util";
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export const CONFIG_FIELDS: ConfigField[] = [
+  { key: 'DREAMATIC_MODEL_EDITOR', label: 'Editor model', module: 'reasoning', example: 'your-text-model', description: 'Optional. Leave blank to use the default reasoning model.', type: 'text', defaultValue: '' },
+  { key: 'DREAMATIC_THINKING_LEVEL_EDITOR', label: 'Editor thinking level', module: 'reasoning', example: 'high', description: 'Optional. Applies only to models that support thinking levels.', type: 'select', defaultValue: '', options: ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
+  { key: 'DREAMATIC_IMAGE_EDIT_ENABLED', label: 'Image editing', module: 'image', example: 'true', description: 'Enable prompt-based edits using a source image. Requires an image model that supports editing.', type: 'select', defaultValue: 'true', options: ['true', 'false'] },
+  { key: 'DREAMATIC_IMAGE_EDIT_MODEL', label: 'Image edit model', module: 'image', example: 'your-image-edit-model', description: 'Optional. Leave blank to use the image generation model.', type: 'text', defaultValue: '' },
+  { key: 'DREAMATIC_IMAGE_EDIT_ENDPOINT', label: 'Edit endpoint', module: 'image', example: 'https://api.example.com/v1/images/edits', description: 'Optional. Leave blank to use /images/edits under the image API base URL.', type: 'url', defaultValue: '' },
+  { key: 'DREAMATIC_IMAGE_EDIT_SIZE', label: 'Image edit size', module: 'image', example: '1024x1024', description: 'Fallback only when the user explicitly requests resizing without exact dimensions. Otherwise edits preserve the intended base image dimensions (first input when unclear). Use auto or WIDTHxHEIGHT. Blank uses the image size ceiling.', type: 'text', defaultValue: '' },
+  { key: 'DREAMATIC_IMAGE_EDIT_RESPONSE_FORMAT', label: 'Image edit response format', module: 'image', example: 'auto', description: 'Auto omits response_format for GPT image models. Select b64_json or url only if required by your provider.', type: 'select', defaultValue: 'auto', options: ['auto', 'b64_json', 'url'] },
   { key: "DREAMATIC_CONTEXT_WINDOW", label: "Custom model context window", module: "reasoning", example: "32768", description: "Required for models absent from the Pi catalog unless supplied in model capabilities.", type: "number", defaultValue: "", min: 1 },
   { key: "DREAMATIC_MAX_TOKENS", label: "Custom model output limit", module: "reasoning", example: "8192", description: "Required for models absent from the Pi catalog unless supplied in model capabilities.", type: "number", defaultValue: "", min: 1 },
 
@@ -421,6 +428,7 @@ function validate(field: ConfigField, value: unknown): string {
   if (field.options && !field.options.includes(trimmed)) throw new Error(`${field.label}: Unsupported option`);
   if (field.type === "url" && trimmed) { let url; try { url = new URL(trimmed); } catch { throw new Error(`${field.label}: Enter a complete HTTP(S) URL`); } if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(`${field.label}: Enter an HTTP(S) URL without embedded credentials`); }
   const validSize = (size: unknown) => typeof size === "string" && /^([1-9]\d*)x([1-9]\d*)$/.test(size) && size.split("x").every(part => Number.isSafeInteger(Number(part)));
+  if (field.key === 'DREAMATIC_IMAGE_EDIT_SIZE' && trimmed && trimmed !== 'auto' && !validSize(trimmed)) throw new Error('Image edit size must use auto or WIDTHxHEIGHT');
   if (field.key === "DREAMATIC_IMAGE_DEFAULT_SIZE" && !validSize(trimmed)) throw new Error("Image ceiling must use WIDTHxHEIGHT with positive integer dimensions");
   if (field.key === "DREAMATIC_IMAGE_CAPABILITIES" && trimmed) {
     const data = JSON.parse(trimmed);

@@ -54,6 +54,12 @@ test('six workbench views preserve conversation, canvas and project isolation an
     if (url.pathname === '/api/runs') { json(runs); return; }
     if (/^\/api\/runs\/[AB]$/.test(url.pathname)) { json(runs.find(run => run.id === url.pathname.split('/').at(-1))); return; }
     if (url.pathname.endsWith('/workflow/stream')) { res.setHeader('Content-Type', 'text/event-stream'); res.end('data: ' + JSON.stringify({ type: 'snapshot', workflow: url.pathname.includes('/A/') ? workflow : [] }) + '\n\n'); return; }
+    if (url.pathname.endsWith('/media/edit')) {
+      if(req.method==='GET'){json({enabled:true,configured:true,model:'fixture-editor',size:'auto'});return;}
+      let body='';for await(const part of req)body+=part;const input=JSON.parse(body);assert.equal(input.id,'artifacts/design.png');assert.equal(input.prompt,'Use softer lighting');
+      const file={id:'inputs/user-assets/refined.png',path:'inputs/user-assets/refined.png',title:'Refined image',kind:'png',category:'assets',group:'Uploaded files'};
+      files.push(file);json(file);return;
+    }
     if (url.pathname.endsWith('/media') && req.method === 'POST') {
       const name=url.searchParams.get('name');let bytes=0;for await(const chunk of req)bytes+=chunk.length;
       if(name==='broken.png'){res.statusCode=400;json({error:'Media upload failed. Please try again.'});return;}
@@ -209,6 +215,14 @@ test('six workbench views preserve conversation, canvas and project isolation an
   assert.equal(await page.locator('.canvas-artboard').count(), initialMediaCount + 1);
   await page.locator('.workspace-file-item').filter({ hasText: 'Design image' }).click();
   assert.equal(await page.locator('.document-viewer').count(), 0);
+  await page.locator('.workspace-file-row').filter({has:page.locator('strong',{hasText:'Design image'})}).getByRole('button',{name:'Edit image: Design image',exact:true}).click();
+  const editDialog=page.locator('dialog[open]');await editDialog.getByRole('tab',{name:'Edit with prompt',exact:true}).click();await editDialog.getByText('fixture-editor',{exact:true}).waitFor();
+  await editDialog.getByLabel('Edit prompt',{exact:true}).fill('Use softer lighting');await editDialog.getByRole('button',{name:'Generate edit',exact:true}).click();
+  await editDialog.getByText('Edited image saved to the asset list.',{exact:true}).waitFor();
+  await page.locator('.workspace-file-label strong').filter({hasText:'Refined image'}).waitFor();
+  assert.equal(await editDialog.isVisible(),true,'catalog refresh must preserve the open result preview');
+  await editDialog.getByRole('button',{name:'Add result to canvas',exact:true}).click();
+  await page.locator('.canvas-artboard figcaption strong').filter({hasText:'Refined image'}).waitFor();
   await nav('Preview').click(); assert.equal(await page.locator('.workbench-tools').isVisible(), false);
   const expanded = await page.locator('.workspace').boundingBox(); assert.ok(expanded.width > right.width + 300);
   await page.frameLocator('.showcase-view iframe').getByRole('heading', { name: 'Showcase work' }).waitFor();
@@ -267,9 +281,9 @@ test('six workbench views preserve conversation, canvas and project isolation an
   await nav('Preview').click(); await page.getByRole('heading', { name: 'No works to preview yet' }).waitFor();
   await page.locator('.project-select').filter({ hasText: 'Project A' }).click();
   await nav('Canvas').click();
-  await page.waitForFunction(count => document.querySelectorAll('.canvas-artboard').length === count + 1, initialMediaCount);
+  await page.waitForFunction(count => document.querySelectorAll('.canvas-artboard').length === count + 2, initialMediaCount);
   await page.waitForTimeout(150);
-  assert.equal(await page.locator('.canvas-artboard').count(), initialMediaCount + 1, 'old add requests cannot replay after revisiting the project');
+  assert.equal(await page.locator('.canvas-artboard').count(), initialMediaCount + 2, 'old add requests cannot replay after revisiting the project');
   // HTML-only deliveries must still appear in Generated Works without design images.
   assets.splice(0); files.splice(0); a.notes = []; a.documents = [];
   await page.reload();

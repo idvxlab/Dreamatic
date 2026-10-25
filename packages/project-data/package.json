@@ -19,6 +19,10 @@
     "./project-classification": {
       "types": "./dist/project-classification.d.ts",
       "import": "./dist/project-classification.js"
+    },
+    "./canvas-graph": {
+      "types": "./dist/canvas-graph.d.ts",
+      "import": "./dist/canvas-graph.js"
     }
   },
   "scripts": {

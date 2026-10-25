@@ -326,6 +326,7 @@ interface SessionFileIndex {
 const sessionFileCache = new Map<string, SessionFileIndex>();
 
 const AGENT_TITLES: Record<string, string> = {
+  editor: "Editor",
   researcher: "Researcher",
   designer: "Designer",
   reviewer: "Reviewer",

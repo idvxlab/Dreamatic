@@ -1,3 +1,4 @@
+import type { CanvasEdge } from '@dreamatic/project-data/canvas-graph';
 export interface SessionView {
   id: string;
   title: string;
@@ -127,7 +128,7 @@ export interface WorkflowEvent {
 
 export interface CanvasElementState {
   id: string;
-  kind: "image" | "video" | "html" | "text" | "group";
+  kind: "image" | "video" | "html" | "text" | "group" | "prompt";
   x: number;
   y: number;
   width: number;
@@ -136,6 +137,8 @@ export interface CanvasElementState {
   fileId?: string;
   text?: string;
   role?: string;
+  taskId?: string;
+  outputTaskId?: string;
 }
 
 export interface CanvasState {
@@ -144,6 +147,8 @@ export interface CanvasState {
   updatedAt: string;
   camera: { x: number; y: number; zoom: number };
   elements: CanvasElementState[];
+  edges?: CanvasEdge[];
+  handledTaskIds?: string[];
 }
 
 export type WorkbenchView = 'overview' | 'canvas' | 'preview' | 'context' | 'assets' | 'references';

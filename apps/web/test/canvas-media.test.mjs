@@ -12,7 +12,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   const canvas=fileURLToPath(new URL('../src/components/Canvas.tsx',import.meta.url));
   const list=fileURLToPath(new URL('../src/components/WorkspaceFileList.tsx',import.meta.url));
   const entry='virtual:canvas-media';
-  const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return entry},load(id){if(id===entry)return `import React from 'react';import{createRoot}from'react-dom/client';import{Canvas}from ${JSON.stringify(canvas)};import{WorkspaceFileList}from ${JSON.stringify(list)};function Fixture(){const[runId,setRunId]=React.useState('A'),[selected,setSelected]=React.useState(),[request,setRequest]=React.useState(),[visible,setVisible]=React.useState(true);window.selectProject=setRunId;window.hideCanvas=()=>setVisible(false);window.showCanvas=()=>setVisible(true);const[files,setFiles]=React.useState(window.fixtureFiles);const refresh=async()=>{const response=await fetch('/fixture-files');setFiles(await response.json());}; return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'320px 1fr',height:'100vh'}},React.createElement(WorkspaceFileList,{runId,files,selected: selected?.id,title:'Asset library',loading:false,canvasMode:true,onSelect:setSelected,onRetry:refresh}),React.createElement('div',{className:'canvas-container',hidden:!visible},React.createElement(Canvas,{key:runId,run:{id:runId,title:'Project '+runId},files,visible,onRenamed:refresh,addRequest:request?.runId===runId?request:undefined,onSelectFile:setSelected})));}createRoot(document.getElementById('root')).render(React.createElement(Fixture));`}}],build:{write:false,minify:false,rollupOptions:{input:entry}}});
+  const bundle=await build({root,configFile:false,logLevel:'silent',esbuild:{jsx:'automatic'},plugins:[{name:'fixture',resolveId(id){if(id===entry)return entry},load(id){if(id===entry)return `import React from 'react';import{createRoot}from'react-dom/client';import{Canvas}from ${JSON.stringify(canvas)};import{WorkspaceFileList}from ${JSON.stringify(list)};function Fixture(){const[runId,setRunId]=React.useState('A'),[selected,setSelected]=React.useState(),[request,setRequest]=React.useState(),[visible,setVisible]=React.useState(true);window.selectProject=setRunId;window.hideCanvas=()=>setVisible(false);window.showCanvas=()=>setVisible(true);const[files,setFiles]=React.useState(window.fixtureFiles);const refresh=async()=>{const response=await fetch('/fixture-files');setFiles(await response.json());}; return React.createElement('div',{style:{display:'grid',gridTemplateColumns:'320px 1fr',height:'100vh'}},React.createElement(WorkspaceFileList,{runId,files,selected: selected?.id,title:'Asset library',loading:false,canvasMode:true,onSelect:setSelected,onAddResult:file=>setRequest({runId,fileId:file.id,nonce:crypto.randomUUID()}),onRetry:refresh}),React.createElement('div',{className:'canvas-container',hidden:!visible},React.createElement(Canvas,{key:runId,run:{id:runId,title:'Project '+runId},files,visible,onRenamed:refresh,addRequest:request?.runId===runId?request:undefined,onSelectFile:setSelected})));}createRoot(document.getElementById('root')).render(React.createElement(Fixture));`}}],build:{write:false,minify:false,rollupOptions:{input:entry}}});
   const js=bundle.output.find(item=>item.type==='chunk').code;
   const css=await readFile(new URL('../src/styles.css',import.meta.url),'utf8');
   const files=[
@@ -27,10 +27,21 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
     {id:'asset-runs/A/inputs/user-assets/photo.png',kind:'image',assetPath:'runs/A/inputs/user-assets/photo.png',x:40,y:100,width:350,height:280},
     {id:'canvas-overview-v3',kind:'text',text:'Old project overview',x:40,y:40,width:1098,height:172},
   ]}]]); const writes=[]; let failLoad=false,failSave=false;
+  let editCalls=0;
   const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==','base64');
   let clip;
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url,'http://fixture');
+    if(url.pathname.endsWith('/media/edit')) {
+      res.setHeader('Content-Type','application/json');
+      if(req.method==='GET'){res.end(JSON.stringify({enabled:true,configured:true,model:'fixture-edit',size:'1024x1024'}));return;}
+      let body='';for await(const part of req)body+=part;const input=JSON.parse(body);
+      assert.equal(input.id,'inputs/user-assets/photo.png');assert.ok(input.prompt);editCalls++;
+      if(input.prompt==='Fail editing'){res.statusCode=400;res.end(JSON.stringify({error:'Image editing failed. Please try again.'}));return;}
+      if(input.prompt==='Wait for cancellation')return;
+      const id='inputs/user-assets/edit-'+editCalls+'.png';const file={id,path:id,title:'Edited result '+editCalls,kind:'png',category:'assets',group:'Uploaded files'};
+      files.push(file);res.end(JSON.stringify(file));return;
+    }
     if(url.pathname.endsWith('/media/name')) {
       let body='';for await(const part of req)body+=part;
       const {id,title}=JSON.parse(body);files.find(file=>file.id===id).title=title;
@@ -68,6 +79,8 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   const x=parseFloat(await card.evaluate(node=>node.style.left)),y=parseFloat(await card.evaluate(node=>node.style.top));
   assert.ok(Math.abs(x-(190-72)/.78)<2);assert.ok(Math.abs(y-(150-72)/.78)<2);
   const firstId=await card.getAttribute('data-element-id');
+  await page.getByRole('button',{name:'Undo',exact:true}).click();assert.equal(await page.locator('.canvas-artboard').count(),0,'image metadata must not add a separate undo step');
+  await page.getByRole('button',{name:'Redo',exact:true}).click();assert.equal(await page.locator('.canvas-artboard').count(),1);
   await row('Photo').dragTo(area,{targetPosition:{x:530,y:150}});
   assert.equal(await page.locator('.canvas-artboard').count(),2);assert.notEqual(await page.locator('.canvas-artboard').last().getAttribute('data-element-id'),firstId);
   assert.equal(await page.locator('.canvas-artboard.selected').count(),1);
@@ -132,20 +145,63 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   await page.waitForTimeout(800);await page.reload();await page.locator('.canvas-artboard').first().waitFor();
   assert.equal(await dots.getAttribute('aria-pressed'),'true');assert.equal(await grid.getAttribute('aria-pressed'),'true');
   await page.getByRole('button',{name:'Select and move elements',exact:true}).click();
-  const rename = page.locator('.workspace-file-row').filter({has:page.locator('strong',{hasText:'Photo'})}).getByRole('button',{name:'Rename media: Photo',exact:true});
+  const rename = page.locator('.workspace-file-row').filter({has:page.locator('strong',{hasText:'Photo'})}).getByRole('button',{name:'Edit image: Photo',exact:true});
   await rename.click();
-  let dialog=page.locator('dialog[open]');await page.screenshot({path:'/tmp/dreamatic-media-rename.png',animations:'disabled'});await dialog.getByLabel('Display name').fill('Cancelled name');await page.keyboard.press('Escape');
+  let dialog=page.locator('dialog[open]');await page.screenshot({path:'/tmp/dreamatic-media-rename.png',animations:'disabled'});await dialog.getByRole('textbox',{name:'Display name',exact:true}).fill('Cancelled name');await page.keyboard.press('Escape');
   assert.equal(await page.locator('dialog[open]').count(),0);
-  await rename.click();dialog=page.locator('dialog[open]');await dialog.getByLabel('Display name').fill('Hero image');await dialog.getByRole('button',{name:'Save',exact:true}).click();
+  await rename.click();dialog=page.locator('dialog[open]');await dialog.getByRole('textbox',{name:'Display name',exact:true}).fill('Hero image');await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await page.locator('.workspace-file-label strong').filter({hasText:'Hero image'}).waitFor();
   const hero=page.locator('.canvas-artboard').filter({has:page.locator('figcaption strong',{hasText:'Hero image'})}).first();await hero.waitFor();
   assert.match(await hero.locator('img').getAttribute('src'),/photo.png/);
   await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();
   await page.getByRole('button',{name:'Fit project',exact:true}).click();
-  await hero.getByRole('button',{name:'Rename media: Hero image',exact:true}).click();
-  dialog=page.locator('dialog[open]');await dialog.getByLabel('Display name').fill('Final image');await dialog.getByRole('button',{name:'Save',exact:true}).click();
+  await hero.getByRole('button',{name:'Edit image: Hero image',exact:true}).click();
+  dialog=page.locator('dialog[open]');await dialog.getByRole('textbox',{name:'Display name',exact:true}).fill('Final image');await dialog.getByRole('button',{name:'Save',exact:true}).click();
   await page.locator('.workspace-file-label strong').filter({hasText:'Final image'}).waitFor();
   await page.reload();await page.locator('.canvas-artboard figcaption strong').filter({hasText:'Final image'}).first().waitFor();
+  await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();
+  await page.getByRole('button',{name:'Fit project',exact:true}).click();
+  // Both edit entry points support source-based generation, preview, retry, cancellation and insertion.
+  const editSource=page.locator('.canvas-artboard').filter({has:page.locator('figcaption strong',{hasText:'Final image'})}).first();
+  await editSource.getByRole('button',{name:'Edit image: Final image',exact:true}).click();
+  dialog=page.locator('dialog[open]');await dialog.getByRole('tab',{name:'Edit with prompt',exact:true}).click();
+  await dialog.getByText('fixture-edit',{exact:true}).waitFor();
+  assert.match(await dialog.locator('.image-edit-previews img').getAttribute('src'),/photo.png/);
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('Keep the subject and change the background to blue');
+  await page.screenshot({path:'/tmp/dreamatic-image-edit-prompt.png',animations:'disabled'});
+  const countBeforeEdit=await page.locator('.canvas-artboard').count();
+  await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();
+  await dialog.getByText('Edited image saved to the asset list.',{exact:true}).waitFor();
+  assert.equal(await dialog.locator('.image-edit-previews img').count(),2);
+  assert.equal(await page.locator('.canvas-artboard').count(),countBeforeEdit);
+  await page.screenshot({path:'/tmp/dreamatic-image-edit-result.png',animations:'disabled'});
+  await dialog.getByRole('button',{name:'Add result to canvas',exact:true}).click();
+  await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+1,countBeforeEdit);
+  await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();await page.getByRole('button',{name:'Fit project',exact:true}).click();
+  await page.locator('.workspace-file-row').filter({has:page.locator('strong',{hasText:'Final image'})}).getByRole('button',{name:'Edit image: Final image',exact:true}).click();
+  dialog=page.locator('dialog[open]');await dialog.getByRole('tab',{name:'Edit with prompt',exact:true}).click();await dialog.getByText('fixture-edit',{exact:true}).waitFor();
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('Fail editing');await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();
+  await dialog.getByRole('alert').filter({hasText:'Image editing failed'}).waitFor();assert.equal(await dialog.getByLabel('Edit prompt',{exact:true}).inputValue(),'Fail editing');
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('Wait for cancellation');await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();
+  await dialog.getByRole('button',{name:'Cancel generation',exact:true}).click();await dialog.getByText('Image editing cancelled.',{exact:true}).waitFor();
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('Make a warmer version');await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();await dialog.getByText('Edited image saved to the asset list.',{exact:true}).waitFor();
+  await dialog.getByRole('button',{name:'Add result to canvas',exact:true}).click();await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+2,countBeforeEdit);
+  await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();await page.getByRole('button',{name:'Fit project',exact:true}).click();
+  const toRemove=page.locator('.canvas-artboard').filter({has:page.locator('figcaption strong',{hasText:'Final image'})}).first();
+  const removedId=await toRemove.getAttribute('data-element-id');
+  const beforeRemove=await page.locator('.canvas-artboard').count();
+  const sameSourceBefore=await page.locator('.canvas-artboard img[src*="photo.png"]').count();
+  const fileCount=await page.locator('.workspace-file-item').count();
+  assert.ok(sameSourceBefore>1);
+  assert.equal(await toRemove.locator('figcaption > :last-child').getAttribute('class'),'canvas-media-delete');
+  await toRemove.getByRole('button',{name:'Remove image from canvas',exact:true}).click();
+  assert.equal(await page.locator(`[data-element-id="${removedId}"]`).count(),0);
+  assert.equal(await page.locator('.canvas-artboard').count(),beforeRemove-1);
+  assert.equal(await page.locator('.canvas-artboard img[src*="photo.png"]').count(),sameSourceBefore-1);
+  assert.equal(await page.locator('.workspace-file-item').count(),fileCount);
+  assert.equal(await page.locator('.canvas-artboard').filter({has:page.locator('video')}).getByRole('button',{name:'Remove image from canvas',exact:true}).count(),0);
+  await page.waitForTimeout(800);await page.reload();await page.locator('.canvas-artboard').first().waitFor();
+  assert.equal(await page.locator('.canvas-artboard').count(),beforeRemove-1);
   await page.setViewportSize({width:680,height:844});
   const toolbarBox=await page.locator('.canvas-toolbar').boundingBox();const areaBox=await area.boundingBox();assert.ok(toolbarBox.x>=areaBox.x&&toolbarBox.x+toolbarBox.width<=areaBox.x+areaBox.width);
   assert.deepEqual(errors,[]);

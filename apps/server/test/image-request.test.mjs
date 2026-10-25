@@ -74,3 +74,16 @@ test('image download uses the same bound, including streaming bodies without Con
  await assert.rejects(requestImage({...base,url,maxResponseBytes:limit,signal:new AbortController().signal,onUsage:async v=>usage.push(v)}),error=>error.failure?.code==='IMAGE_RESPONSE_TOO_LARGE'&&error.failure.phase==='download'&&!error.failure.retryable);
  assert.deepEqual(usage,[{total_tokens:5}]);
 });
+
+test('edit transport supports explicit response formats, downloads and cancellation limits',async t=>{
+ let origin;
+ origin=await server(t,async(req,res)=>{
+  if(req.url==='/result'){assert.equal(req.headers.authorization,undefined);res.end('edited bytes');return;}
+  const parts=[];for await(const part of req)parts.push(part);
+  const form=await new Request('http://fixture',{method:'POST',headers:{'content-type':req.headers['content-type']},body:Buffer.concat(parts)}).formData();
+  assert.equal(form.get('response_format'),'url');assert.equal(form.get('image').type,'image/png');
+  res.end(JSON.stringify({data:[{url:origin+'/result'}]}));
+ });
+ const result=await requestImage({...base,url:origin,image:{bytes:Buffer.from('source'),filename:'source.png',mimeType:'image/png'},responseFormat:'url',signal:new AbortController().signal});
+ assert.equal(result.bytes.toString(),'edited bytes');
+});

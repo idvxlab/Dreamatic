@@ -21,7 +21,7 @@ export function SettingsModal({ initial, onClose, onSave }: SettingsModalProps) 
   const activeModule = initial.modules.find((item) => item.id === module)!;
   const basicKeysByModule: Record<string, string[]> = {
     reasoning: ["DREAMATIC_PROVIDER_TYPE", "DREAMATIC_BASE_URL", "DREAMATIC_API_KEY", "DREAMATIC_MODEL"],
-    image: ["DREAMATIC_IMAGE_BASE_URL", "DREAMATIC_IMAGE_API_KEY", "DREAMATIC_IMAGE_MODEL", "DREAMATIC_IMAGE_DEFAULT_SIZE"],
+    image: ["DREAMATIC_IMAGE_BASE_URL", "DREAMATIC_IMAGE_API_KEY", "DREAMATIC_IMAGE_MODEL", "DREAMATIC_IMAGE_DEFAULT_SIZE", "DREAMATIC_IMAGE_EDIT_ENABLED", "DREAMATIC_IMAGE_EDIT_MODEL"],
     system: ["DREAMATIC_SITE_URL", "DREAMATIC_WORKSPACE", "DREAMATIC_PREVENT_IDLE_SLEEP"],
   };
   const basicKeys = basicKeysByModule[module];

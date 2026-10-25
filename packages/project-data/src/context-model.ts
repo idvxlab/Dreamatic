@@ -2,6 +2,8 @@ import { readFile, realpath, writeFile, rename, rm } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolveInside } from "./paths.js";
 import { designTasks, designDeliverables } from "./design-views.js";
+/** Editor owns this append-only history projection; it is read through the standard context loader. */
+export const EDIT_HISTORY_FILE = "context/edit.md";
 export const CONTEXT_FILES = { project: "context/project.json", research: "context/research.json", design: "context/design.json", review: "context/review.json" } as const;
 export const CONTEXT_PROJECTIONS = {
   researcher: ["research/evidence.json", "research/research-findings.md", "research/brand_lock.md"],

@@ -1,3 +1,6 @@
+import { createDreamaticAgent } from './agent-session.js';
+import { editorTool, editorInventory, editorMaterials } from './editor-agent.js';
+import { imageSlot } from './image-slots.js';
 import { requestImage, retryImage, type ImageFailure } from './image-request.js';
 import { saveProjectClassification } from './project-classification.js';
 import { PROJECT_CATEGORIES, projectClassification, resolveProjectClassification, type ProjectClassification } from '@dreamatic/project-data';
@@ -14,28 +17,13 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, writeFile, rename, appendFile, stat, rm, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { type AgentSession, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { clarificationFromToolResult, type DesignClarificationRequest } from '@dreamatic/project-data';
-import { modelCapabilities } from '@dreamatic/project-data';
 import { CONFIG_FIELDS, searchApiKey } from './config-store.js';
 
 export const STAGES = ['orchestrator', 'researcher', 'designer', 'builder'] as const;
 type Stage = typeof STAGES[number];
-let globalImages = 0;
-const imageWaiters = new Set<() => void>();
-async function imageSlot(signal: AbortSignal) {
-  while (globalImages >= Number(setting('DREAMATIC_IMAGE_GLOBAL_CONCURRENCY'))) {
-    signal.throwIfAborted();
-    await new Promise<void>((resolve, reject) => {
-      const wake = () => { imageWaiters.delete(wake); signal.removeEventListener('abort', abort); resolve(); };
-      const abort = () => { imageWaiters.delete(wake); reject(signal.reason); };
-      imageWaiters.add(wake); signal.addEventListener('abort', abort, { once: true });
-    });
-  }
-  signal.throwIfAborted(); globalImages++;
-  return () => { globalImages--; for (const wake of imageWaiters) wake(); };
-}
 const DELIVERY_POLICY = 'Dreamatic saves your final response to the designated output file after validation. You do not have write/edit/bash tools. Never call unavailable tools to save files. Return the complete deliverable once as your final response, not a completion summary. Do not wrap it in a code fence or add apologies, save instructions, or claims that the user must save it. The ask_user waiting flow is the only exception: return no deliverable while awaiting answers.';
 const outputs = ['intent.md', 'research.md', 'design.md', 'final/00-index.html'];
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -187,9 +175,14 @@ export async function runDesign(options: PipelineOptions) {
   const root = join(workspaceDir, 'runs', runId);
   const statePath = join(root, 'pipeline-state.json');
   const attachmentPath = join(root, 'attachments.json');
-  if (options.images?.length) await atomic(attachmentPath, options.images);
   const attachments: Array<{ data: string; mimeType: string }> = JSON.parse(await source(attachmentPath) || '[]');
+  // Historical attachment:N references must keep identifying the same bytes across later messages.
+  if (options.images?.length) {
+    for (const image of options.images) if (!attachments.some(saved => saved.data === image.data && saved.mimeType === image.mimeType)) attachments.push(image);
+    await atomic(attachmentPath, attachments);
+  }
   const state: { request: string; completed: Record<string, string> } = JSON.parse(await source(statePath) || '{"request":"","completed":{}}');
+  const stateBeforeRequest = structuredClone(state);
   const resume = text === '继续完成' || text === 'Continue workflow';
   if (!resume && state.request !== text) { state.request = state.request ? `${state.request}\n\nUser revision:\n${text}` : text; state.completed = {}; }
   if (!state.request) throw new Error('No original request to resume');
@@ -197,6 +190,7 @@ export async function runDesign(options: PipelineOptions) {
   await mkdir(join(root, 'artifacts'), { recursive: true });
   const briefPath = join(root, 'brief.json');
   const brief = JSON.parse(await source(briefPath) || '{}');
+  const briefBeforeRequest = structuredClone(brief);
   brief.brief = state.request; await atomic(briefPath, brief);
   let busWrites = Promise.resolve();
   const bus = (event: Record<string, unknown>) => {
@@ -356,17 +350,6 @@ export async function runDesign(options: PipelineOptions) {
           continue;
         }
       }
-      const settings = SettingsManager.inMemory();
-      const loader = new DefaultResourceLoader({ cwd: root, agentDir: join(root, '.pi'), settingsManager: settings, noExtensions: true, noContextFiles: true, noPromptTemplates: true, additionalSkillPaths: stage === 'designer' ? [join(repoRoot, '.pi/skills')] : stage === 'builder' ? [join(repoRoot, '.pi/skills/concept-showcase-storytelling')] : [], noSkills: !['designer', 'builder'].includes(stage), systemPrompt: `${instruction}\n\n${DELIVERY_POLICY}\nDesignated output: ${outputs[index]}` });
-      await loader.reload();
-      const runtime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false });
-      const id = setting(`DREAMATIC_MODEL_${stage.toUpperCase()}`) || setting('DREAMATIC_MODEL');
-      if (!id || !setting('DREAMATIC_BASE_URL') || !setting('DREAMATIC_API_KEY')) throw new Error('Configure reasoning provider, model and API key in System Settings');
-      const caps = modelCapabilities(id);
-      // Provider protocol and model limits come from the existing configuration and Pi catalog.
-      const catalog = runtime.getModels().find(m => m.id === id);
-      if (!(caps.contextWindow || catalog?.contextWindow || Number(setting('DREAMATIC_CONTEXT_WINDOW'))) || !(caps.maxTokens || catalog?.maxTokens || Number(setting('DREAMATIC_MAX_TOKENS')))) throw new Error('Configure custom model context window and output limit in System Settings');
-      runtime.registerProvider('dreamatic', { baseUrl: setting('DREAMATIC_BASE_URL'), apiKey: setting('DREAMATIC_API_KEY'), api: setting('DREAMATIC_PROVIDER_TYPE') === 'openai-responses' ? 'openai-responses' : 'openai-completions', models: [{ id, name: id, input: stage === 'builder' ? ['text'] : ['text', 'image'], cost: catalog?.cost || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: caps.contextWindow || catalog?.contextWindow || Number(setting('DREAMATIC_CONTEXT_WINDOW')), maxTokens: caps.maxTokens || catalog?.maxTokens || Number(setting('DREAMATIC_MAX_TOKENS')), ...caps }] });
       const images = stage === 'builder' ? plannedImages(prior[2]!) : [];
       let generationWrites = Promise.resolve();
       const generated: Record<string, { signature: string; path: string; method: string; digest: string }> = JSON.parse(await source(join(root, 'artifacts/generated.json')) || '{}');
@@ -525,7 +508,15 @@ export async function runDesign(options: PipelineOptions) {
         return { content: [{ type: 'text', text: results.join('\n') + '\n' + JSON.stringify(receipt) + (failures.length ? '\nAutomatic retry budget reached. The workflow is pausing for user retry; do not call image_generate or plan_showcase again.' : '') }], details: receipt };
 
       } });
-      const { session } = await createAgentSession({ cwd: root, modelRuntime: runtime, model: runtime.getModel('dreamatic', id)!, thinkingLevel: (setting(`DREAMATIC_THINKING_LEVEL_${stage.toUpperCase()}`) || 'off') as AgentSession['thinkingLevel'], settingsManager: settings, resourceLoader: loader, sessionManager: SessionManager.create(root, join(root, 'sessions', stage)), tools: [...new Set(['read', ...tools.map(t => t.name)])], customTools: tools });
+      // Image 1/2 refer to this message's attachments first, then the existing project inventory.
+      const messageImageIds = (options.images ?? []).flatMap(image => { const index = attachments.findIndex(saved => saved.data === image.data && saved.mimeType === image.mimeType); return index >= 0 ? [`attachment:${index}`] : []; });
+      const materialInventory = stage === 'orchestrator' ? await editorMaterials(workspaceDir, runId, messageImageIds) : [];
+      let editorUsed = false;
+      if (stage === 'orchestrator') {
+        const delegate = editorTool({ repoRoot, inventory: materialInventory, originalRequest: text, workspaceDir, runId, signal, emit: event => { void bus((event as { event: Record<string, unknown> }).event); } });
+        tools.push({ ...delegate, async execute(...args) { editorUsed = true; return delegate.execute(...args); } });
+      }
+      const { session } = await createDreamaticAgent({ root, role: stage, systemPrompt: `${instruction}\n\n${DELIVERY_POLICY}\nDesignated output: ${outputs[index]}`, skills: stage === 'designer' ? [join(repoRoot, '.pi/skills')] : stage === 'builder' ? [join(repoRoot, '.pi/skills/concept-showcase-storytelling')] : [], textOnly: stage === 'builder', tools });
       options.onSession?.(session);
       const responseTimer = createModelResponseTimer({
         firstOutputMs: Number(setting(`DREAMATIC_MODEL_TURN_TIMEOUT_MS_${stage.toUpperCase()}`) || setting('DREAMATIC_MODEL_TURN_TIMEOUT_MS')),
@@ -560,12 +551,23 @@ export async function runDesign(options: PipelineOptions) {
       const abort = () => { void session.abort(); }; signal.addEventListener('abort', abort, { once: true });
       let result: string;
       try {
-        await session.prompt(`User request:\n${state.request}\n\n${prior.map((doc,i) => `--- ${outputs[i]} ---\n${doc}`).join('\n\n')}\n\n${allowed ? `${capability?.verified ? 'Verified supported sizes within current budget (not necessarily exhaustive)' : 'Model size capability is UNKNOWN. Choose WIDTHxHEIGHT within the configured ceiling, which is only a budget, not detected model support or a model maximum; Builder will validate through actual generation. Unverified ceiling'}: ${allowed.join(', ')}` : ''}${['designer', 'builder'].includes(stage) ? '\n\nReference verification report (advisory, never a reason to stop):\n' + await source(join(root, '.citation-report.json')) : ''}${exhibitionContext}${restoredDirection ? '\nA validated exhibition direction from the earlier attempt is restored. Preserve it; repair the saved .builder-output.json HTML instead of starting the exhibition over. Call plan_showcase only if you need to change the direction.' : ''}`, { images: (stage === 'builder' ? [] : attachments).map(image => ({ type: 'image' as const, data: image.data.replace(/^data:[^,]+,/, ''), mimeType: image.mimeType })) });
+        await session.prompt(`User request:\n${state.request}${stage === 'orchestrator' ? '\n\nEditable project materials (use edit_materials for image editing):\n' + await editorInventory(workspaceDir, runId, materialInventory) : ''}\n\n${prior.map((doc,i) => `--- ${outputs[i]} ---\n${doc}`).join('\n\n')}\n\n${allowed ? `${capability?.verified ? 'Verified supported sizes within current budget (not necessarily exhaustive)' : 'Model size capability is UNKNOWN. Choose WIDTHxHEIGHT within the configured ceiling, which is only a budget, not detected model support or a model maximum; Builder will validate through actual generation. Unverified ceiling'}: ${allowed.join(', ')}` : ''}${['designer', 'builder'].includes(stage) ? '\n\nReference verification report (advisory, never a reason to stop):\n' + await source(join(root, '.citation-report.json')) : ''}${exhibitionContext}${restoredDirection ? '\nA validated exhibition direction from the earlier attempt is restored. Preserve it; repair the saved .builder-output.json HTML instead of starting the exhibition over. Call plan_showcase only if you need to change the direction.' : ''}`, { images: (stage === 'builder' ? [] : attachments).map(image => ({ type: 'image' as const, data: image.data.replace(/^data:[^,]+,/, ''), mimeType: image.mimeType })) });
         signal.throwIfAborted();
         if (!pendingImages && responseTimer.failure) throw new Error(`Model response timeout (${responseTimer.failure}); tool execution time is excluded. Resume to retry this stage`);
         result = session.getLastAssistantText() || '';
         if (!question && !pendingImages && session.messages.some(m => m.role === 'assistant' && (m.stopReason === 'error' || m.stopReason === 'aborted'))) throw new Error('Model execution failed; resume to retry this stage');
-      } finally { flushProgress(); responseTimer.dispose(); signal.removeEventListener('abort', abort); session.dispose(); options.onSession?.(undefined); await busWrites; }
+      } finally {
+        flushProgress(); responseTimer.dispose(); signal.removeEventListener('abort', abort); session.dispose(); options.onSession?.(undefined); await busWrites;
+        if (editorUsed) {
+          state.request = stateBeforeRequest.request; state.completed = stateBeforeRequest.completed;
+          await atomic(statePath, stateBeforeRequest); await atomic(briefPath, briefBeforeRequest);
+        }
+      }
+      if (editorUsed) {
+        await bus({ type: 'agent_finished', agent: stage, invocationId, output: result || 'Editor handled the material editing request. See context/edit.md.' });
+        await status('completed');
+        return;
+      }
       if (pendingImages) {
         await atomic(statePath, state);
         await status('waiting_for_images');

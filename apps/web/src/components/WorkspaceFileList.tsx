@@ -6,7 +6,7 @@ import { CANVAS_MEDIA_MIME, mediaKind } from '../canvas-media';
 import { MediaRename } from './MediaRename';
 import { FileListPreview } from './FileListPreview';
 import type { ProjectFile } from '../types';
-export function WorkspaceFileList({ runId, files, selected, title, loading, error, onSelect, onRetry, canvasMode = false, onRenamed }: { runId?: string; files: ProjectFile[]; selected?: string; title: string; loading: boolean; error?: string; onSelect: (file: ProjectFile) => void; onRetry: () => void; canvasMode?: boolean; onRenamed?: () => void }) {
+export function WorkspaceFileList({ runId, files, selected, title, loading, error, onSelect, onRetry, canvasMode = false, onRenamed, onAddResult }: { runId?: string; files: ProjectFile[]; selected?: string; title: string; loading: boolean; error?: string; onSelect: (file: ProjectFile) => void; onRetry: () => void; canvasMode?: boolean; onRenamed?: () => void; onAddResult?: (file: ProjectFile) => void }) {
   const { t } = useI18n();
   const shownFiles = canvasMode ? files.filter(file => mediaKind(file)) : files;
   const groups = [...new Set(shownFiles.map(file => file.group))];
@@ -65,7 +65,7 @@ export function WorkspaceFileList({ runId, files, selected, title, loading, erro
         if (!draggable || !runId) { event.preventDefault(); return; }
         event.dataTransfer.setData(CANVAS_MEDIA_MIME, JSON.stringify({ runId, fileId: file.id }));
         event.dataTransfer.effectAllowed = 'copy';
-      }} aria-pressed={selected === file.id} onClick={() => onSelect(file)}><FileListPreview file={file} runId={runId} /><span className="workspace-file-label"><strong>{file.title}</strong><small>{file.path ?? file.url ?? file.kind.toUpperCase()}</small></span>{file.url && <ExternalLink size={12} />}</button>{draggable && runId && <MediaRename runId={runId} file={file} onRenamed={onRenamed ?? onRetry} />}</div>;
+      }} aria-pressed={selected === file.id} onClick={() => onSelect(file)}><FileListPreview file={file} runId={runId} /><span className="workspace-file-label"><strong>{file.title}</strong><small>{file.path ?? file.url ?? file.kind.toUpperCase()}</small></span>{file.url && <ExternalLink size={12} />}</button>{draggable && runId && <MediaRename runId={runId} file={file} onRenamed={onRenamed ?? onRetry} onAddResult={onAddResult} />}</div>;
     })}</section>)}
   </div></section>;
 }

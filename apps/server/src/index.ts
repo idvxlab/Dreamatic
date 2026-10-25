@@ -1,3 +1,6 @@
+import { submitEditorTask, listEditorTasks, cancelEditorTask, waitEditorTask, type EditorInput } from './editor.js';
+import { randomUUID as editorUUID } from 'node:crypto';
+import { imageEditSettings } from './image-edit.js';
 import { uploadProjectMedia } from "./media-upload.js";
 import { mediaRange } from "./media-range.js";
 import { readProjectReference } from "./reference-reader.js";
@@ -402,6 +405,43 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     const uploadMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media$/);
     if (request.method === "POST" && uploadMatch?.[1]) {
       json(response, 201, await uploadProjectMedia(workspaceDir, decodeURIComponent(uploadMatch[1]), url.searchParams.get("name") ?? "", request));
+      return;
+    }
+    const editorMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/editor(?:\/([^/]+)\/(cancel|retry))?$/);
+    if (editorMatch?.[1]) {
+      const runId = decodeURIComponent(editorMatch[1]);
+      if (request.method === 'GET' && !editorMatch[2]) { json(response, 200, await listEditorTasks(workspaceDir, runId)); return; }
+      if (request.method === 'POST') {
+        if (editorMatch[2]) {
+          const id = decodeURIComponent(editorMatch[2]);
+          if (editorMatch[3] === 'cancel') { json(response, 200, await cancelEditorTask(workspaceDir, runId, id)); return; }
+          const task = (await listEditorTasks(workspaceDir, runId)).find(task => task.id === id);
+          if (!task) throw new Error('Editor task not found');
+          json(response, 202, await submitEditorTask(workspaceDir, runId, task, true)); return;
+        }
+        json(response, 202, await submitEditorTask(workspaceDir, runId, record(await body(request)) as unknown as EditorInput)); return;
+      }
+    }
+    const mediaEditMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media\/edit$/);
+    if (request.method === 'GET' && mediaEditMatch?.[1]) {
+      json(response, 200, imageEditSettings()); return;
+    }
+    if (request.method === 'POST' && mediaEditMatch?.[1]) {
+      const input = record(await body(request));
+      const controller = new AbortController();
+      const cancel = () => controller.abort();
+      response.once('close', cancel);
+      try {
+        const runId = decodeURIComponent(mediaEditMatch[1]);
+        const task = await submitEditorTask(workspaceDir, runId, { id: editorUUID(), source: 'natural-language', inputIds: [input.id as string], prompt: input.prompt as string });
+        const abort = () => { void cancelEditorTask(workspaceDir, runId, task.id).catch(() => {}); };
+        controller.signal.addEventListener('abort', abort, { once: true });
+        if (controller.signal.aborted) abort();
+        const result = await waitEditorTask(workspaceDir, runId, task.id);
+        controller.signal.removeEventListener('abort', abort);
+        if (result.status !== 'succeeded' || !result.output) throw new Error(result.error || 'Image editing failed');
+        json(response, 201, result.output);
+      } finally { response.off('close', cancel); }
       return;
     }
     const mediaNameMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media\/name$/);

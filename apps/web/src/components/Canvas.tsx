@@ -1,7 +1,9 @@
-import { ExternalLink, Grid3X3, Grip, Hand, LayoutGrid, Minus, MousePointer2, Plus, Scan, Trash2 } from 'lucide-react';
+import { normalizeCanvasEdges, validCanvasConnection } from '@dreamatic/project-data/canvas-graph';
+import { useCanvasHistory } from '../use-canvas-history';
+import { ExternalLink, Grid3X3, Grip, Hand, LayoutGrid, Minus, MousePointer2, Plus, Scan, Trash2, MessageSquarePlus, Undo2, Redo2, Play, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../i18n';
-import { getCanvasState, projectFileUrl } from '../api';
+import { getCanvasState, projectFileUrl, listEditorTasks, submitEditorTask, editorTaskAction, type EditorTask } from '../api';
 import { MediaRename } from './MediaRename';
 import { assetUrl } from '../asset-url';
 import { CANVAS_MEDIA_MIME, creativeCanvasElements, draggedMedia, mediaKind } from '../canvas-media';
@@ -36,7 +38,19 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
   const handledAdd = useRef<string | undefined>(undefined);
   const measured = useRef(new Set<string>());
   const [tool, setTool] = useState<'select' | 'hand'>('select');
-  const [camera, setCamera] = useState<Camera>(DEFAULT_CAMERA);
+  const history = useCanvasHistory({ camera: DEFAULT_CAMERA, elements: [], edges: [] });
+  const { camera, elements, edges, setCamera, setElements, setEdges } = history;
+  const historyRef = useRef(history); historyRef.current = history;
+  const [handledTaskIds, setHandledTaskIds] = useState<string[]>([]);
+  const handledTasks = useRef(new Set<string>());
+  const [tasks, setTasks] = useState<EditorTask[]>([]);
+  const [resultFiles, setResultFiles] = useState<ProjectFile[]>([]);
+  const currentFiles = [...files, ...resultFiles.filter(file => !files.some(item => item.id === file.id))];
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [link, setLink] = useState<{ id: string; side: 'left' | 'right'; x: number; y: number; edgeId?: string }>();
+  const [selectedEdge, setSelectedEdge] = useState<string>();
+  const zoomTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const submitting = useRef(new Set<string>());
   const [guides, setGuides] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('dreamatic-canvas-guides') ?? 'null');
@@ -61,8 +75,7 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
     }
     return { backgroundImage: layers.join(', ') || 'none', backgroundSize: sizes.join(', ') || 'auto', backgroundPosition: positions.join(', ') || '0 0' };
   }, [camera, guides]);
-  const [elements, setElements] = useState<CanvasElementState[]>([]);
-  const [selectedId, setSelectedId] = useState<string>();
+  const [, setSelectedId] = useState<string>();
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -76,23 +89,27 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
     void waitForCanvasWrites(run.id).then(() => getCanvasState(run.id)).then(saved => {
       if (disposed) return;
       const restored = creativeCanvasElements(saved?.elements ?? []);
-      setElements(restored);
-      setCamera(restored.length ? saved?.camera ?? DEFAULT_CAMERA : DEFAULT_CAMERA);
+      measured.current = new Set(restored.filter(item => item.kind === 'image' && item.outputTaskId && item.width === 360 && item.height === 280).map(item => item.id));
+      historyRef.current.restore({ elements: restored, camera: saved?.elements.length && !restored.length ? DEFAULT_CAMERA : saved?.camera ?? DEFAULT_CAMERA, edges: normalizeCanvasEdges(restored, saved?.edges) });
+      handledTasks.current = new Set(saved?.handledTaskIds ?? []);
+      setHandledTaskIds([...handledTasks.current]);
+      setSelectedIds([]); setSelectedId(undefined); setTasks([]); setResultFiles([]); setDirty(false);
       setReady(true);
     }).catch(() => { if (!disposed) setLoadError(true); });
     return () => { disposed = true; };
   }, [run?.id, loadAttempt]);
   // A failed restore must never overwrite a historical board with an empty one.
-  const state = useMemo<CanvasState | undefined>(() => ready && run ? { version: 1, runId: run.id, updatedAt: new Date().toISOString(), camera, elements } : undefined, [camera, elements, ready, run?.id]);
+  const state = useMemo<CanvasState | undefined>(() => ready && run ? { version: 1, runId: run.id, updatedAt: new Date().toISOString(), camera, elements, edges, handledTaskIds } : undefined, [camera, elements, edges, handledTaskIds, ready, run?.id]);
   const persistence = useCanvasSave(state, dirty);
   useEffect(() => { if (!visible) { gesture.current = undefined; setDropActive(false); viewport.current?.querySelectorAll('video').forEach(video => video.pause()); } }, [visible]);
-  const selected = elements.find(item => item.id === selectedId);
-  const mediaFile = (item: CanvasElementState) => files.find(file => file.id === item.fileId || (file.path && item.assetPath === `runs/${run?.id}/${file.path}`));
+  const mediaFile = (item: CanvasElementState) => currentFiles.find(file => file.id === item.fileId || (file.path && item.assetPath === `runs/${run?.id}/${file.path}`));
   function source(item: CanvasElementState) {
     return item.fileId && run ? projectFileUrl(run.id, item.fileId) : item.assetPath ? assetUrl(item.assetPath) : undefined;
   }
-  function choose(item: CanvasElementState) {
+  function choose(item: CanvasElementState, multiple = false) {
+    setSelectedEdge(undefined);
     setSelectedId(item.id);
+    setSelectedIds(current => multiple ? current.includes(item.id) ? current.filter(id => id !== item.id) : [...current, item.id] : [item.id]);
     const file = mediaFile(item); if (file) onSelectFile(file);
   }
   function add(file: ProjectFile, clientX?: number, clientY?: number) {
@@ -111,9 +128,8 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
   }
   useEffect(() => {
     if (!addRequest || !ready || !visible || handledAdd.current === addRequest.nonce) return;
-    handledAdd.current = addRequest.nonce;
     const file = files.find(file => file.id === addRequest.fileId && file.category === 'assets');
-    if (file) add(file);
+    if (file) { handledAdd.current = addRequest.nonce; add(file); }
   }, [addRequest, ready, visible, files]);
   function drop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault(); setDropActive(false);
@@ -122,22 +138,27 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
     add(file, event.clientX, event.clientY);
   }
   function beginPan(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.target instanceof Element && event.target.closest('button, a, input, video')) return;
+    if (event.target instanceof Element && event.target.closest('button, a, input, textarea, video')) return;
     if (event.button !== 0 || (tool !== 'hand' && event.target !== event.currentTarget && !(event.target instanceof Element && event.target.closest('.canvas-empty-state')))) return;
     event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId);
-    if (tool !== 'hand') setSelectedId(undefined);
+    if (tool !== 'hand') { setSelectedId(undefined); setSelectedIds([]); setSelectedEdge(undefined); }
+    history.begin();
     gesture.current = { kind: 'pan', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, camera };
   }
   function beginElement(event: React.PointerEvent<HTMLElement>, item: CanvasElementState, resize = false) {
     if (event.button !== 0 || !ready) return;
-    choose(item); viewport.current?.focus();
+    if (event.target instanceof Element && event.target.closest('textarea, input, a, button:not(.canvas-resize-handle), video')) return;
+    choose(item, event.shiftKey); viewport.current?.focus();
+    if (event.shiftKey) { event.stopPropagation(); return; }
     if (tool === 'hand' && !resize) return;
     event.stopPropagation(); event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
+    history.begin();
     gesture.current = resize ? { kind: 'resize', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, id: item.id, width: item.width, height: item.height }
       : { kind: 'move', pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, id: item.id, x: item.x, y: item.y };
   }
   function move(event: React.PointerEvent<HTMLDivElement>) {
+    if (link) { const rect = viewport.current?.getBoundingClientRect(); if (rect) setLink({ ...link, x: (event.clientX - rect.left - camera.x) / camera.zoom, y: (event.clientY - rect.top - camera.y) / camera.zoom }); return; }
     const active = gesture.current;
     if (!active || active.pointerId !== event.pointerId) return;
     const dx = (event.clientX - active.startX) / camera.zoom, dy = (event.clientY - active.startY) / camera.zoom;
@@ -150,28 +171,54 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
     }
     setDirty(true);
   }
-  function endGesture(event: React.PointerEvent<HTMLElement>) { if (gesture.current?.pointerId === event.pointerId) gesture.current = undefined; }
-  function removeSelected() {
-    if (!selectedId) return;
-    setElements(current => current.filter(item => item.id !== selectedId)); setSelectedId(undefined); setDirty(true);
+  function endGesture(event: React.PointerEvent<HTMLElement>) {
+    if (link) { const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-port-node]'); if (target && target.dataset.portSide !== link.side) connect(link.side === 'right' ? link.id : target.dataset.portNode!, link.side === 'right' ? target.dataset.portNode! : link.id, link.edgeId); setLink(undefined); }
+    if (gesture.current?.pointerId === event.pointerId) { gesture.current = undefined; history.end(); }
   }
-  function metadata(item: CanvasElementState, width: number, height: number) {
+  function removeElement(id: string) {
+    history.begin();
+    setElements(current => current.filter(item => item.id !== id));
+    setEdges(current => current.filter(edge => edge.source !== id && edge.target !== id));
+    history.end();
+    setSelectedIds(current => current.filter(value => value !== id));
+    setSelectedId(current => current === id ? undefined : current);
+    setDirty(true);
+  }
+  function removeSelected() {
+    if (selectedEdge) { setEdges(current => current.filter(edge => edge.id !== selectedEdge)); setSelectedEdge(undefined); setDirty(true); return; }
+    history.begin();
+    for (const id of selectedIds) { setElements(current => current.filter(item => item.id !== id)); setEdges(current => current.filter(edge => edge.source !== id && edge.target !== id)); }
+    history.end(); setSelectedIds([]); setSelectedId(undefined); setDirty(true);
+  }
+  function metadata(item: CanvasElementState, width: number, height: number, media: HTMLImageElement | HTMLVideoElement) {
     if (!measured.current.has(item.id) || !width || !height) return;
     measured.current.delete(item.id);
     if (item.width !== 360 || item.height !== 280) return;
-    setElements(current => current.map(entry => entry.id === item.id ? { ...entry, height: Math.max(120, Math.min(1200, 342 * height / width + 90)) } : entry));
+    const card = media.closest<HTMLElement>('.canvas-media');
+    if (!card) return;
+    const style = getComputedStyle(card);
+    const horizontalInset = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    const verticalInset = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    const chromeHeight = verticalInset + (card.querySelector('figcaption')?.offsetHeight ?? 48);
+    const cardHeight = Math.max(120, Math.min(1200, (item.width - horizontalInset) * height / width + chromeHeight));
+    // Metadata refines the insertion snapshot rather than creating an extra undo operation.
+    history.amendElements(current => current.map(entry => entry.id === item.id && entry.width === 360 && entry.height === 280 ? { ...entry, height: cardHeight } : entry));
     setDirty(true);
   }
   const zoomAt = useCallback((nextZoom: number, clientX?: number, clientY?: number) => {
     const rect = viewport.current?.getBoundingClientRect(); if (!rect || !ready) return;
     const anchorX = (clientX ?? rect.left + rect.width / 2) - rect.left, anchorY = (clientY ?? rect.top + rect.height / 2) - rect.top;
+    historyRef.current.begin();
+    clearTimeout(zoomTimer.current);
+    zoomTimer.current = setTimeout(() => historyRef.current.end(), 220);
     setCamera(current => { const zoom = Math.max(.2, Math.min(2.4, nextZoom)); return { zoom, x: anchorX - (anchorX - current.x) / current.zoom * zoom, y: anchorY - (anchorY - current.y) / current.zoom * zoom }; });
     setDirty(true);
   }, [ready]);
   function fit() {
     const rect = viewport.current?.getBoundingClientRect(); if (!rect || !ready) return;
     const box = bounds(elements), zoom = Math.max(.2, Math.min(1.25, (rect.width - 84) / box.width, (rect.height - 84) / box.height));
-    setCamera({ zoom, x: (rect.width - box.width * zoom) / 2 - box.x * zoom, y: (rect.height - box.height * zoom) / 2 - box.y * zoom }); setDirty(true);
+    history.begin();
+    setCamera({ zoom, x: (rect.width - box.width * zoom) / 2 - box.x * zoom, y: (rect.height - box.height * zoom) / 2 - box.y * zoom }); history.end(); setDirty(true);
   }
   function reflow() {
     if (!ready) return;
@@ -184,21 +231,95 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
       row.forEach((item, col) => positions.set(item.id, { x: 40 + col * columnWidth, y }));
       y += Math.max(...row.map(item => item.height)) + 40;
     }
-    setElements(current => current.map(item => ({ ...item, ...positions.get(item.id)! }))); setCamera(DEFAULT_CAMERA); setDirty(true);
+    history.begin(); setElements(current => current.map(item => ({ ...item, ...positions.get(item.id)! }))); setCamera(DEFAULT_CAMERA); history.end(); setDirty(true);
   }
+  function connect(source: string, target: string, edgeId?: string) {
+    if (!validCanvasConnection(history.current.current.elements, history.current.current.edges.filter(edge => edge.id !== edgeId), source, target)) { setNotice('Connect an image and a prompt without duplicate links or cycles.'); return; }
+    setEdges(current => [...current.filter(edge => edge.id !== edgeId), { id: edgeId ?? crypto.randomUUID(), source, target }]); setDirty(true);
+  }
+  function ports(item: CanvasElementState) {
+    return (['left', 'right'] as const).map(side => <button key={side} className={`canvas-port port-${side}`} data-port-node={item.id} data-port-side={side} aria-label={`${t(side === 'left' ? 'Input port' : 'Output port')} ${item.text ?? item.id}`} onPointerDown={event => { event.preventDefault(); event.stopPropagation(); viewport.current?.setPointerCapture(event.pointerId); setLink({ id: item.id, side, x: item.x + (side === 'right' ? item.width : 0), y: item.y + item.height / 2 }); }} />);
+  }
+  function createPrompt() {
+    const inputs = elements.filter(node => selectedIds.includes(node.id) && node.kind === 'image');
+    const rect = viewport.current?.getBoundingClientRect(); if (!rect) return;
+    const item: CanvasElementState = { id: crypto.randomUUID(), kind: 'prompt', text: '', x: inputs.length ? Math.max(...inputs.map(node => node.x + node.width)) + 100 : (rect.width / 2 - camera.x) / camera.zoom, y: inputs.length ? Math.min(...inputs.map(node => node.y)) : (rect.height / 2 - camera.y) / camera.zoom, width: 340, height: 250 };
+    history.begin(); setElements(current => [...current, item]);
+    let next = edges;
+    for (const input of inputs) if (validCanvasConnection([...elements, item], next, input.id, item.id)) next = [...next, { id: crypto.randomUUID(), source: input.id, target: item.id }];
+    setEdges(next); history.end(); setSelectedIds([item.id]); setDirty(true); setTool('select');
+  }
+  async function submitPrompt(item: CanvasElementState) {
+    if (!run || submitting.current.has(item.id)) return;
+    const inputs = history.current.current.edges.filter(edge => edge.target === item.id).map(edge => elements.find(node => node.id === edge.source)).filter((node): node is CanvasElementState => Boolean(node?.kind === 'image')).map(node => ({ ...node, fileId: node.fileId ?? mediaFile(node)?.id })).filter(node => Boolean(node.fileId));
+    if (!inputs.length) { setNotice('Connect at least one project image to this prompt.'); return; }
+    const id = crypto.randomUUID(); submitting.current.add(item.id);
+    setElements(current => current.map(node => node.id === item.id ? { ...node, taskId: id } : node)); setDirty(true);
+    setTasks(current => [...current, { id, source: 'canvas', prompt: item.text ?? '', inputIds: inputs.map(node => node.fileId!), status: 'submitted', attempt: 1, createdAt: new Date().toISOString() }]);
+    try {
+      const task = await submitEditorTask(run.id, { id, source: 'canvas', prompt: item.text ?? '', inputIds: [...new Set(inputs.map(node => node.fileId!))], promptNodeId: item.id, upstream: inputs.map(node => ({ nodeId: node.id, fileId: node.fileId!, ...(node.outputTaskId ? { taskId: node.outputTaskId } : {}) })) });
+      setTasks(current => [...current.filter(value => value.id !== id), task]);
+    } catch (error) { setNotice(error instanceof Error ? error.message : 'Editor submission failed'); setTasks(current => current.map(task => task.id === id ? { ...task, status: 'failed', error: 'Submission failed. Refresh to check before retrying.' } : task)); }
+    finally { submitting.current.delete(item.id); }
+  }
+  async function taskAction(id: string, action: 'cancel' | 'retry') {
+    if (!run) return;
+    try { const task = await editorTaskAction(run.id, id, action); setTasks(current => [...current.filter(item => item.id !== id), task]); }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Editor request failed'); }
+  }
+  useEffect(() => {
+    if (!ready || !run) return;
+    let disposed = false, timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const received = await listEditorTasks(run.id); if (disposed) return;
+        setTasks(current => [...received, ...current.filter(task => !received.some(item => item.id === task.id) && submitting.current.size > 0)]);
+        for (const task of received) {
+          if (task.source !== 'canvas' || !task.promptNodeId || task.status !== 'succeeded' || !task.output || task.outputAvailable === false || handledTasks.current.has(task.id)) continue;
+          handledTasks.current.add(task.id); setHandledTaskIds([...handledTasks.current]); setDirty(true);
+          setResultFiles(current => [...current.filter(file => file.id !== task.output!.id), task.output!]);
+          onRenamed?.();
+          const h = historyRef.current, board = h.current.current;
+          const prompt = board.elements.find(node => node.id === task.promptNodeId && node.taskId === task.id);
+          if (!prompt || board.elements.some(node => node.outputTaskId === task.id)) continue;
+          const output: CanvasElementState = { id: `editor-output-${task.id}`, kind: 'image', fileId: task.output.id, outputTaskId: task.id, text: task.output.title, x: prompt.x + prompt.width + 100, y: prompt.y, width: 360, height: 280 };
+          if (!validCanvasConnection([...board.elements, output], board.edges, prompt.id, output.id)) continue;
+          measured.current.add(output.id);
+          h.begin(); h.setElements([...board.elements, output]); h.setEdges([...board.edges, { id: `editor-edge-${task.id}`, source: prompt.id, target: output.id }]); h.end();
+        }
+      } catch { /* Existing boards can still be edited while the task service is unavailable. */ }
+      if (!disposed) timer = setTimeout(() => void poll(), 1500);
+    };
+    void poll();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [ready, run?.id]);
+  useEffect(() => () => clearTimeout(zoomTimer.current), []);
+  function curve(x1: number, y1: number, x2: number, y2: number) { const bend = Math.max(60, Math.abs(x2 - x1) / 2); return `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`; }
   return <main className="canvas-shell">
     <div ref={viewport} tabIndex={0} role="region" aria-label={t('Canvas editing area')} style={guideBackground} className={`canvas-viewport tool-${tool}${dropActive ? ' canvas-drop-active' : ''}`} onPointerDown={beginPan} onPointerMove={move} onPointerUp={endGesture} onPointerCancel={endGesture} onLostPointerCapture={endGesture}
       onWheel={event => { if (event.target instanceof Element && event.target.closest('.canvas-note, video')) return; event.preventDefault(); zoomAt(camera.zoom * Math.exp(-event.deltaY * .0012), event.clientX, event.clientY); }}
       onDragOver={event => { if (!ready || !event.dataTransfer.types.includes(CANVAS_MEDIA_MIME)) return; event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; setDropActive(true); }}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropActive(false); }} onDrop={drop}
-      onKeyDown={event => { if (event.target instanceof Element && event.target.closest('button, a, input, textarea, video, [contenteditable="true"]')) return; if (['Delete', 'Backspace'].includes(event.key) && selectedId) { event.preventDefault(); removeSelected(); } }}>
+      onKeyDown={event => { if (event.target instanceof Element && event.target.closest('button, a, input, textarea, video, [contenteditable="true"]')) return; if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? history.redo() : history.undo(); setDirty(true); return; } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); history.redo(); setDirty(true); return; } if (['Delete', 'Backspace'].includes(event.key) && (selectedIds.length || selectedEdge)) { event.preventDefault(); removeSelected(); } }}>
       {!ready && run ? <section className="run-progress canvas-empty-state"><p className="canvas-loading-copy" role={loadError ? 'alert' : 'status'}>{t(loadError ? 'Could not restore the canvas. Retry before editing.' : 'Restoring canvas…')}</p>{loadError && <button onClick={() => setLoadAttempt(value => value + 1)}>{t('Retry')}</button>}</section> : elements.length > 0 ? <div className="canvas-world" style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}>
+        <svg className="canvas-connections" aria-label={t('Connections')}>
+          {edges.map(edge => { const from = elements.find(item => item.id === edge.source), to = elements.find(item => item.id === edge.target); if (!from || !to) return null; return <path key={edge.id} data-edge-id={edge.id} d={curve(from.x + from.width, from.y + from.height / 2, to.x, to.y + to.height / 2)} className={selectedEdge === edge.id ? 'selected' : ''} role="button" tabIndex={0} aria-label={`${t('Select connection')} ${edge.source} → ${edge.target}`} onPointerDown={event => { event.stopPropagation(); setSelectedEdge(edge.id); setSelectedIds([]); }} onKeyDown={event => { if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); event.stopPropagation(); setEdges(current => current.filter(item => item.id !== edge.id)); setDirty(true); } }} />; })}
+          {link && (() => { const node = elements.find(item => item.id === link.id); return node ? <path className="pending" d={curve(node.x + (link.side === 'right' ? node.width : 0), node.y + node.height / 2, link.x, link.y)} /> : null; })()}
+        </svg>
+        {selectedEdge && !link && (() => { const edge = edges.find(edge => edge.id === selectedEdge); if (!edge) return null; return (['source', 'target'] as const).map(end => { const node = elements.find(node => node.id === edge[end]); const fixed = elements.find(node => node.id === edge[end === 'source' ? 'target' : 'source']); if (!node || !fixed) return null; return <button key={end} className="canvas-edge-endpoint" aria-label={t(end === 'source' ? 'Reconnect source' : 'Reconnect target')} style={{ left: node.x + (end === 'source' ? node.width : 0) - 7, top: node.y + node.height / 2 - 7 }} onPointerDown={event => { event.preventDefault(); event.stopPropagation(); viewport.current?.setPointerCapture(event.pointerId); setLink({ id: fixed.id, side: end === 'source' ? 'left' : 'right', x: node.x, y: node.y, edgeId: edge.id }); }} />; }); })()}
         {elements.map(item => item.kind === 'group' ? <section key={item.id} className={`canvas-group-label role-${item.role ?? 'other'}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}><span>{t(item.text ?? '')}</span><small>{t('Run outputs')}</small></section>
-          : (item.kind === 'image' || item.kind === 'video') && source(item) ? <figure key={item.id} data-element-id={item.id} className={`canvas-artboard canvas-media ${selectedId === item.id ? 'selected' : ''}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>
-            <div>{item.kind === 'video' ? <video src={source(item)} controls preload="metadata" onPointerDown={event => { event.stopPropagation(); choose(item); }} onLoadedMetadata={event => metadata(item, event.currentTarget.videoWidth, event.currentTarget.videoHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} /> : <img draggable={false} src={source(item)} alt={mediaFile(item)?.title ?? item.text ?? item.assetPath?.split('/').at(-1) ?? ''} onLoad={event => metadata(item, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} />}</div>
-            <figcaption><span><strong>{mediaFile(item)?.title ?? item.text ?? item.assetPath?.split('/').at(-1)}</strong><small>{t(item.kind === 'video' ? 'Video file' : 'Image file')}</small></span>{run && mediaFile(item) && <MediaRename runId={run.id} file={mediaFile(item)!} onRenamed={onRenamed} />}<a aria-label={t('Open asset')} href={source(item)} target="_blank" rel="noreferrer" onPointerDown={event => event.stopPropagation()}><ExternalLink size={13} /></a></figcaption>
-            {selectedId === item.id && <button className="canvas-resize-handle" aria-label={t('Resize selected media')} onPointerDown={event => beginElement(event, item, true)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); event.stopPropagation(); measured.current.delete(item.id); const factor = ['ArrowLeft', 'ArrowDown'].includes(event.key) ? .9 : 1.1; if (item.width * factor >= 120 && item.height * factor >= 100 && Math.max(item.width, item.height) * factor <= 2400) { setElements(current => current.map(entry => entry.id === item.id ? { ...entry, width: entry.width * factor, height: entry.height * factor } : entry)); setDirty(true); } }} />}
+          : (item.kind === 'image' || item.kind === 'video') && source(item) ? <figure key={item.id} data-element-id={item.id} className={`canvas-artboard canvas-media ${selectedIds.includes(item.id) ? 'selected' : ''}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>
+            <div>{item.kind === 'video' ? <video src={source(item)} controls preload="metadata" onPointerDown={event => { event.stopPropagation(); choose(item); }} onLoadedMetadata={event => metadata(item, event.currentTarget.videoWidth, event.currentTarget.videoHeight, event.currentTarget)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} /> : <img draggable={false} src={source(item)} alt={mediaFile(item)?.title ?? item.text ?? item.assetPath?.split('/').at(-1) ?? ''} onLoad={event => metadata(item, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight, event.currentTarget)} onError={() => setNotice('This media could not be loaded. The original file may be missing or unsupported.')} />}</div>
+            {item.kind === 'image' && ports(item)}
+            <figcaption><span><strong>{mediaFile(item)?.title ?? item.text ?? item.assetPath?.split('/').at(-1)}</strong><small>{t(item.kind === 'video' ? 'Video file' : 'Image file')}</small></span>{run && mediaFile(item) && <MediaRename runId={run.id} file={mediaFile(item)!} onRenamed={onRenamed} onAddResult={file => add(file)} />}<a aria-label={t('Open asset')} href={source(item)} target="_blank" rel="noreferrer" onPointerDown={event => event.stopPropagation()}><ExternalLink size={13} /></a>{item.kind === 'image' && <button type="button" className="canvas-media-delete" aria-label={t('Remove image from canvas')} title={t('Remove image from canvas')} onPointerDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); removeElement(item.id); }}><Trash2 size={24} /></button>}</figcaption>
+            {selectedIds.includes(item.id) && <button className="canvas-resize-handle" aria-label={t('Resize selected media')} onPointerDown={event => beginElement(event, item, true)} onKeyDown={event => { if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return; event.preventDefault(); event.stopPropagation(); measured.current.delete(item.id); const factor = ['ArrowLeft', 'ArrowDown'].includes(event.key) ? .9 : 1.1; if (item.width * factor >= 120 && item.height * factor >= 100 && Math.max(item.width, item.height) * factor <= 2400) { setElements(current => current.map(entry => entry.id === item.id ? { ...entry, width: entry.width * factor, height: entry.height * factor } : entry)); setDirty(true); } }} />}
           </figure>
+          : item.kind === 'prompt' ? <article key={item.id} data-element-id={item.id} className={`canvas-artboard canvas-prompt ${selectedIds.includes(item.id) ? 'selected' : ''}`} style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>
+            {ports(item)}<header><strong>{t('Editor prompt')}</strong><button aria-label={t('Delete prompt')} onClick={() => removeElement(item.id)}><X size={15} /></button></header>
+            <textarea aria-label={t('Edit prompt')} value={item.text ?? ''} placeholder={t('Describe the edit or combine connected images…')} onFocus={() => history.begin()} onBlur={() => history.end()} onChange={event => { setElements(current => current.map(node => node.id === item.id ? { ...node, text: event.target.value } : node)); setDirty(true); }} />
+            <footer>{(() => { const task = tasks.find(task => task.id === item.taskId); const inputFiles = [...new Set(edges.filter(edge => edge.target === item.id).flatMap(edge => { const node = elements.find(node => node.id === edge.source); const id = node?.fileId ?? (node ? mediaFile(node)?.id : undefined); return id ? [id] : []; }))]; const busy = submitting.current.has(item.id) || task?.status === 'submitted' || task?.status === 'running'; return <>{inputFiles.length > 0 && <small className="canvas-prompt-inputs" aria-label={t('Input images')}>{inputFiles.map((id, index) => <span key={id}>{t('Image')} {index + 1}: {currentFiles.find(file => file.id === id)?.title ?? id}</span>)}</small>}{task?.size && <small>{t('Output size')}: {task.size}{task.baseImageId && task.sizeSource !== 'user' && <> · {t('Base image')}: {currentFiles.find(file => file.id === task.baseImageId)?.title ?? task.baseImageId}</>}</small>}<span role="status">{t(task?.status ?? 'Ready')}</span>{task?.error && <small role="alert">{t(task.error)}</small>}<button disabled={busy || !item.text?.trim()} onClick={() => void submitPrompt(item)}><Play size={13} />{t('Generate edit')}</button>{busy && item.taskId && <button onClick={() => void taskAction(item.taskId!, 'cancel')}>{t('Cancel')}</button>}{task && ['failed', 'cancelled', 'interrupted'].includes(task.status) && <button onClick={() => void taskAction(task.id, 'retry')}>{t('Retry')}</button>}</>; })()}</footer>
+            <button className="canvas-resize-handle" aria-label={t('Resize prompt')} onPointerDown={event => beginElement(event, item, true)} />
+          </article>
           : item.kind === 'html' ? <article key={item.id} className="canvas-note canvas-html-page" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}><strong>{item.text}</strong><p>{t('HTML interface')}</p><button onPointerDown={event => event.stopPropagation()} onClick={() => item.assetPath && onOpenPreview?.(item.assetPath)}>{t('Open prototype')} <ExternalLink size={13} /></button></article>
           : item.kind === 'text' ? <article key={item.id} className="canvas-note" style={{ left: item.x, top: item.y, width: item.width, height: item.height }} onPointerDown={event => beginElement(event, item)}>{item.text}</article> : null)}
       </div> : null}
@@ -215,7 +336,11 @@ export function Canvas({ files, run, visible, addRequest, onSelectFile, onOpenPr
       <span className="tool-separator" />
       <button className={guides.dots ? 'active' : ''} aria-label={t('Positioning dots')} aria-pressed={guides.dots} title={t(guides.dots ? 'Hide positioning dots' : 'Show positioning dots')} onClick={() => setGuides(current => ({ ...current, dots: !current.dots }))}><Grip size={16} /></button>
       <button className={guides.grid ? 'active' : ''} aria-label={t('Grid lines')} aria-pressed={guides.grid} title={t(guides.grid ? 'Hide grid lines' : 'Show grid lines')} onClick={() => setGuides(current => ({ ...current, grid: !current.grid }))}><Grid3X3 size={16} /></button>
-      <button disabled={!selected || !ready} aria-label={t('Remove selected element')} title={t('Remove selected element')} onClick={removeSelected}><Trash2 size={16} /></button>
+      <button disabled={(!selectedIds.length && !selectedEdge) || !ready} aria-label={t('Remove selected element')} title={t('Remove selected element')} onClick={removeSelected}><Trash2 size={16} /></button>
+      <span className="tool-separator" />
+      <button disabled={!ready} aria-label={t('Create prompt card')} title={t('Create prompt card')} onClick={createPrompt}><MessageSquarePlus size={16} /></button>
+      <button disabled={!history.canUndo || !ready} aria-label={t('Undo')} onClick={() => { history.undo(); setDirty(true); }}><Undo2 size={16} /></button>
+      <button disabled={!history.canRedo || !ready} aria-label={t('Redo')} onClick={() => { history.redo(); setDirty(true); }}><Redo2 size={16} /></button>
       {persistence.saving && <span className="canvas-saving">{t('Saving…')}</span>}
     </div>
     {(notice || persistence.error) && <div className="canvas-notice" role="alert">{t(persistence.error ?? notice!)}{persistence.error && <button onClick={persistence.retry}>{t('Retry')}</button>}</div>}

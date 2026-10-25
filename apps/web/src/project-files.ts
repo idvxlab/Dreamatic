@@ -9,7 +9,7 @@ export function useProjectFiles(runId?: string, running = false) {
     if (!runId) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
-    setState({ runId, files: [], loading: true });
+    setState(current => ({ runId, files: current.runId === runId ? current.files : [], loading: true }));
     async function load() {
       try {
         const files = await listProjectFiles(runId!);
