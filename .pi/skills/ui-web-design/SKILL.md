@@ -1,13 +1,14 @@
 ---
 name: ui-web-design
-description: "Design UI composition, responsive layouts, components and visual states for websites, dashboards and mobile-screen prototypes. Use when interface presentation is central; product value and task-flow choices require product and UX methods. Express inspectable screens in HTML without implying native-app implementation."
+description: "Design UI composition, responsive layouts, components and visual states for websites, dashboards and mobile-screen prototypes. Use when interface presentation is central; product value and task-flow choices require product and UX methods. Communicate screens in the host’s available medium and distinguish concepts from working interfaces."
 metadata:
-  audience: designer
-  domain_type: ui_web_design
-  design_categories: [ux]
-  module_type: discipline
-  capabilities: [ui-design, responsive-layout, component-design, interface-states]
-  supported_outputs: [html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "ui_web_design"
+  dreamatic-categories: "digital"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "ui-design responsive-layout component-design interface-states"
+  dreamatic-outputs: "image html"
+  version: "2.1"
 ---
 
 # UI and Web Design
@@ -19,8 +20,8 @@ Specify interface composition, responsive relationships and consequential states
 Choose as primary when the requested outcome is interface composition, responsive
 relationships and component/state presentation. If product value or task behavior
 is unresolved, use the appropriate product or UX method as primary and retain UI
-composition as supporting knowledge. Mobile screens are browser prototypes here;
-this module does not provide native-app production or backend integration.
+composition as supporting knowledge. The host determines whether mobile screens are concept views or implemented
+interfaces; this knowledge does not provide native-app production or backend integration.
 
 ## Establish structure
 
@@ -49,12 +50,12 @@ Choose pages and states from primary tasks, navigation, secondary journeys and
 consequential errors across device contexts. A home and detail screen are not
 automatically complete; avoid both missing flows and duplicate views.
 
-Deliver complete HTML page designs under `plan/html/<scope-id>/`, with CSS/JS as
-needed: realize layout, hierarchy, typography, exact copy, values and behavior.
-Preserve the specified design when implementing sources. Cover consequential scripted
-flows and responsive behavior with interaction checks; discover supporting HTML authoring knowledge
-from the installed Skill catalog. Image assets support rather than replace inspectable behavior.
-A local prototype does not prove backend integration or deployed services.
+For image-based concept delivery, specify complete screen compositions with exact
+copy and the consequential states. Keep intended interaction and responsive rules
+in the design specification; generated images do not implement those behaviors.
+When interactive authoring is available, realize and verify the requested flows
+and layouts through that host's delivery contract. A static exhibition does not
+establish a working prototype, backend integration or a deployed application.
 
 ## Knowledge source
 

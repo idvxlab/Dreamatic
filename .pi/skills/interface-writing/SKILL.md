@@ -2,13 +2,13 @@
 name: interface-writing
 description: "Write UX writing and microcopy for labels, actions, guidance, errors and recovery in HTML interfaces and showcases. Use when terminology or state messages affect comprehension; supports actual interface tasks rather than brand positioning or long-form publication writing."
 metadata:
-  audience: designer
-  domain_type: interface_writing
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [ux-writing, microcopy, error-messages, localization]
-  supported_outputs: [html]
-  version: "1.0"
+  dreamatic-roles: "designer builder"
+  dreamatic-domain: "interface_writing"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "ux-writing microcopy error-messages localization"
+  dreamatic-outputs: "html"
+  version: "2.0"
 ---
 
 # Interface Writing
@@ -45,7 +45,7 @@ Keep alternative text informative without duplicating the full caption.
 
 Use complete localizable messages, retaining units and variables as meaningful
 parts. Check longer translations and mixed-language terms in the layout. Carry
-exact final copy into authored sources; a list of copy suggestions is insufficient
+exact final copy into the host’s supported specification, image instructions or authored sources; a list of copy suggestions is insufficient
 when the page itself still contains generic filler.
 
 ## Method reference

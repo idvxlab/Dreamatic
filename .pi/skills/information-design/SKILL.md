@@ -1,13 +1,14 @@
 ---
 name: information-design
-description: "Design data visualization, infographics and explanatory diagrams through truthful encoding and reader questions. Use when information relationships or data-centered interfaces are the primary problem; supports media communication and focused UX, not unrelated application workflows. Express precise geometry in HTML/SVG or use concept imagery."
+description: "Design data visualizations, infographics and explanatory diagrams through truthful encoding and reader questions. Use when information relationships or data interpretation are central; distinguish concept imagery from verified quantitative geometry."
 metadata:
-  audience: designer
-  domain_type: information_design
-  design_categories: [media_communication, ux]
-  module_type: discipline
-  capabilities: [data-visualization, information-design, infographics, data-encoding, explanatory-diagrams]
-  supported_outputs: [image, html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "information_design"
+  dreamatic-categories: "visual digital"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "data-visualization information-design infographics data-encoding explanatory-diagrams"
+  dreamatic-outputs: "image html"
+  version: "2.1"
 ---
 
 # Information and Data Visualization Design
@@ -44,8 +45,9 @@ Simplify without deleting interpretive context; flag gaps instead of inventing v
 
 Keep exact data, copy, geometry and encoding rules in the specification. Relevant
 image prompts include literal titles, labels and legends; captions supplement these
-rather than replace them. For exact quantitative geometry use authored HTML/SVG/JS
-through the supported page contract. Generated illustrations do not establish verified
+rather than replace them. Where deterministic authoring is available, use it for exact quantitative geometry.
+Otherwise preserve exact data and encoding rules in the specification and treat
+generated views as concepts, not verified quantitative graphics. Generated illustrations do not establish verified
 data accuracy or exact lettering.
 
 Choose overviews, details and comparisons by distinct reader questions. Judge

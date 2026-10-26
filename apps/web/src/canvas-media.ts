@@ -1,3 +1,4 @@
+import { PROMPT_MIN_SIZE } from '@dreamatic/project-data/canvas-graph';
 import type { CanvasElementState, ProjectFile } from './types';
 export const CANVAS_MEDIA_MIME = 'application/x-dreamatic-project-media';
 export function mediaKind(file: ProjectFile): 'image' | 'video' | undefined {
@@ -18,5 +19,6 @@ export function draggedMedia(data: string, runId: string, files: ProjectFile[]):
 export function creativeCanvasElements(elements: CanvasElementState[]): CanvasElementState[] {
   const automatic = new Set(['canvas-overview-v3', 'group-overview', 'group-rationale', 'group-reference', 'group-generated', 'group-edited', 'group-other', 'group-interfaces', 'note-intent', 'note-research', 'note-plan', 'note-review']);
   return elements.filter(item => !automatic.has(item.id)
-    && !(!item.fileId && item.assetPath && item.id === `asset-${item.assetPath}`));
+    && !(!item.fileId && item.assetPath && item.id === `asset-${item.assetPath}`))
+    .map(item => item.kind === 'prompt' ? { ...item, width: Math.max(PROMPT_MIN_SIZE.width, item.width), height: Math.max(PROMPT_MIN_SIZE.height, item.height) } : item);
 }

@@ -2,12 +2,13 @@
 name: fashion-textile-design
 description: "Develop clothing, accessories and textile concepts through silhouette, fit, construction intent, fabric behavior and collection coherence. Use when body-material relationships are central; concept images do not establish sewing patterns, validated sizing or production repeats."
 metadata:
-  audience: designer
-  domain_type: fashion_textile_design
-  design_categories: [fashion]
-  module_type: discipline
-  capabilities: [fashion-design, textile-design, silhouette, fabric-behavior, collection-design]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "fashion_textile_design"
+  dreamatic-categories: "fashion"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "fashion-design textile-design silhouette fabric-behavior collection-design"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Fashion and Textile Design

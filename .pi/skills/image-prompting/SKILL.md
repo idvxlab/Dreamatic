@@ -3,12 +3,13 @@ name: image-prompting
 description: "Translate resolved design decisions into image generation or editing specifications, including references, visible features, exact copy and consistency. Use to express an existing design as executable image prompts; does not replace professional concept decisions or grant image-production tools."
 license: MIT
 metadata:
-  audience: designer
-  domain_type: image_execution_specification
-  design_categories: []
-  module_type: execution
-  capabilities: [image-prompting, visual-specification, image-editing, visual-consistency]
-  supported_outputs: [image]
+  dreamatic-roles: "designer editor"
+  dreamatic-domain: "image_execution_specification"
+  dreamatic-categories: ""
+  dreamatic-module: "expression"
+  dreamatic-capabilities: "image-prompting visual-specification image-editing visual-consistency"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Image Prompting
@@ -18,8 +19,8 @@ instructions. Specify the intended image and its acceptance criteria before gene
 
 ## Choose the operation and references
 
-Use `image_generate` for a new treatment expressible through visible features.
-Use `image_edit` when reference pixels are needed to preserve or transform a
+Choose new generation for a treatment expressible through visible features.
+Choose reference-conditioned editing when source pixels must preserve or transform a
 subject, identity or composition. Distinguish factual subject, inspiration,
 exact asset and consistency references. Provenance records do not upload pixels.
 Unchanged user-requested originals use verified import and HTML resource mappings,
@@ -73,23 +74,28 @@ geometry. For dependent edits:
 
 1. Identify the source deliverable and its exact local output.
 2. Record the source image and its relationship to the edited result.
-3. Provide self-contained `prompt_seed`, `negative_prompt_seed`, `diagnosis`, `changes`
-   and `preserve`, distinguishing retained features from additions or removals.
+3. Describe the intended change and retained features in a self-contained instruction,
+   separating additions, removals, preservation requirements and genuine uncertainty.
 4. Specify composition, copy, size and observable acceptance for that application.
 
-Diagnosis can explain a transformation, not only a defect. Create source images before dependent edits. Sibling edits may share an existing
-source; unrelated views need not be serialized merely for a shared style.
+Diagnosis can explain a transformation, not only a defect. Create source images
+before dependent edits. Sibling edits may share an existing source; unrelated views need not be serialized merely for a shared style.
 
 Sources may be appropriately authorized existing assets or newly generated outputs.
 Viewing does not establish pixel-use permission; future generated sources have not
-been visually inspected. Review edited results against the specified preservation rules. Editing
-cannot guarantee exact reproduction; disclose unsupported fidelity requirements.
+been visually inspected. Review results against preservation rules only when
+actual results can be inspected; otherwise record proposed checks. Editing cannot guarantee exact reproduction; disclose unsupported fidelity requirements.
 
 ## Describe the deliverable
 
 Record each image's purpose, exact output filename, dimensions, edit references,
 required content and observable acceptance criteria. Keep prompts self-contained.
-Choose the lowest adequate resolution for the view and respect the configured
-provider's supported sizes and formats. Provide access to requested images from
-the presentation, preserving proportions and distinguishing concept imagery from
+For new generation choose an adequate resolution within the host's capabilities.
+For edits retain the source or intended base image dimensions unless the user
+explicitly requests a size change. In fusion distinguish the retained composition
+or destination scene from style/color/texture references; unclear base intent
+requires the host's documented fallback rather than an invented reference. Keep
+input numbering and stable material IDs intact when instructions are rephrased.
+The host resolves actual dimensions, tool parameters, execution and persistence.
+Provide access to requested images from the presentation, preserving proportions and distinguishing concept imagery from
 verified technical claims.

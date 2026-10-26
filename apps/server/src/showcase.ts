@@ -16,7 +16,7 @@ export function createBuilderTextReadTool(root: string): ToolDefinition {
   return { name: native.name, label: native.label, parameters: native.parameters, description: 'Read textual design documents, prompts, skills, metadata or an existing HTML page. Do not read images; use their Introduction, Prompt and Size for art direction.',
     async execute(callId, params, signal, onUpdate, context) {
       const input = params as ReadToolInput;
-      if (!['.md', '.txt', '.html', '.htm', '.css', '.json', '.yaml', '.yml', '.csv', '.xml'].includes(extname(input.path).toLowerCase())) throw new Error('Builder reads text documents only. Use design.md and image descriptions instead of reading images.');
+      if (!['.md', '.txt', '.html', '.htm', '.css', '.json', '.yaml', '.yml', '.csv', '.xml', '.js', '.mjs', '.cjs', '.ts', '.py', '.sh', '.toml'].includes(extname(input.path).toLowerCase())) throw new Error('Builder reads text documents only. Use design.md and image descriptions instead of reading images.');
       const result = await native.execute(callId, input, signal, onUpdate, context);
       if (result.content.some(block => block.type === 'image')) throw new Error('Builder uses textual image descriptions, not image blocks.');
       return result;

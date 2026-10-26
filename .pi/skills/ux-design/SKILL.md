@@ -1,13 +1,14 @@
 ---
 name: ux-design
-description: "Design task flows, information architecture, interaction models and usability hypotheses. Use when task completion and behavior are central; product value and feature scope precede this work, while visual component composition is a separate emphasis. Express inspectable digital flows as HTML prototypes."
+description: "Design task flows, information architecture, interaction models and usability hypotheses. Use when task completion and behavior are central; product value and feature scope precede this work, while visual component composition is a separate emphasis. Specify flows and evidence appropriate to the available concept or prototype medium."
 metadata:
-  audience: designer
-  domain_type: ux_design
-  design_categories: [ux]
-  module_type: discipline
-  capabilities: [ux-design, task-flows, information-architecture, interaction-design, usability]
-  supported_outputs: [html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "ux_design"
+  dreamatic-categories: "digital"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "ux-design task-flows information-architecture interaction-design usability"
+  dreamatic-outputs: "image html"
+  version: "2.0"
 ---
 
 # User Experience Design
@@ -45,11 +46,11 @@ and confirmation to actual consequences rather than adding confirmation everywhe
 ## Make the experience inspectable
 
 Link journeys, interaction sequences and edge states to specific user decisions.
-UI/UX's primary deliverable is complete HTML page design under `plan/html/<scope-id>/`,
-with CSS/JS as needed. Realize visual composition, realistic copy and relevant
-states/flows; screen images or journey descriptions alone are insufficient.
-Discover supporting knowledge for interface composition and HTML authoring
-by description, capabilities and supported output. Verify the implemented behavior against the design.
+Choose the evidence medium from the host's actual capabilities. For image concepts,
+provide readable screens or state sequences and explain the task transitions and
+unimplemented behavior in the specification. For an interactive authoring host,
+realize and test the required flows. A static showcase of images is presentation,
+not proof of implemented navigation, state changes or usability.
 
 Retain exact behavior/content rules and proposed evaluation in the specification:
 realistic tasks, participant needs, observable success, friction and assumptions.

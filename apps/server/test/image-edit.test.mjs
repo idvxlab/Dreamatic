@@ -24,7 +24,7 @@ test('edits send original image multipart bytes and persist separate media with 
   assert.match(req.headers['content-type'],/^multipart\/form-data; boundary=/);
   const parts=[];for await(const part of req)parts.push(part);
   const form=await new Request('http://fixture',{method:'POST',headers:{'content-type':req.headers['content-type']},body:Buffer.concat(parts)}).formData();
-  assert.equal(form.get('model'),'edit-model');assert.match(form.get('prompt'),/^Make the background blue\r?\n\r?\nOutput constraint:/);assert.equal(form.get('size'),'1x1');assert.equal(form.has('response_format'),false);
+  assert.equal(form.get('model'),'edit-model');assert.match(form.get('prompt'),/^Make the background blue\r?\n\r?\nOutput geometry:/);assert.equal(form.get('size'),'1x1');assert.equal(form.has('response_format'),false);
   assert.deepEqual(Buffer.from(await form.get('image').arrayBuffer()),png);
   res.setHeader('Content-Type','application/json');res.end(JSON.stringify({data:[{b64_json:png.toString('base64')}],usage:{total_tokens:7}}));
  });
@@ -39,7 +39,7 @@ test('edits send original image multipart bytes and persist separate media with 
  const record=JSON.parse(await readFile(join(f.root,'inputs/media-edits',records[0]),'utf8'));
  assert.equal(record.model,'edit-model');assert.equal(record.prompt,'Make the background blue');assert.equal(record.usage.total_tokens,7);
  assert.equal((await projectFiles(f.workspace,'demo')).filter(file=>file.id.startsWith('inputs/media-edits')).length,0);
- assert.deepEqual(imageEditSettings(f.env),{enabled:true,configured:true,model:'edit-model',size:'auto'});
+ assert.deepEqual(imageEditSettings(f.env),{enabled:true,configured:true,model:'edit-model',size:'auto',capabilities:undefined});
  assert.ok(!JSON.stringify(record).includes('fixture-key'));
 });
 test('edit validation, provider failures, invalid outputs and cancellation preserve source assets',async t=>{
@@ -85,7 +85,7 @@ test('HTTP edit routes expose safe settings and return a catalogued image withou
  assert.equal((await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:'../source.png',prompt:'Change'})})).status,400);
 });
 
-test('edits preserve original pixel dimensions despite global settings, reject changed outputs, and honor explicit user resize', async t => {
+test('edits preserve original pixel dimensions despite global settings, retain changed outputs, and honor explicit user resize', async t => {
  const {deflateSync}=await import('node:zlib');
  // Real PNG fixtures with valid CRCs and compressed scanlines.
  function image(width,height) {
@@ -108,15 +108,15 @@ test('edits preserve original pixel dimensions despite global settings, reject c
  output=image(180,320);
  const secondBase=await edit(['artifacts/source.png','artifacts/second.png'],'以图二为底图，参考图一的配色');
  assert.equal(secondBase.editSize,'180x320');assert.equal(secondBase.baseImageId,'artifacts/second.png');assert.equal(secondBase.sizeSource,'base-image');
- assert.match(requests.at(-1).prompt,/preserve input image 2/);
+ assert.match(requests.at(-1).prompt,/generate at 180x320/);
  const baseRecord=JSON.parse(await readFile(join(f.root,'inputs/media-edits',`${secondBase.editId}.json`),'utf8'));
  assert.equal(baseRecord.baseImageMethod,'explicit');assert.equal(baseRecord.sourceId,'artifacts/second.png');assert.deepEqual(baseRecord.outputDimensions,{width:180,height:320});
  const inferred=await edit(['artifacts/source.png','artifacts/second.png'],'保留图二的构图，融合图一的元素');assert.equal(inferred.editSize,'180x320');assert.equal(inferred.baseImageMethod,'inferred');
  const reordered=await edit(['artifacts/second.png','artifacts/source.png'],'以图二为底图',{taskId:'reordered',attempt:1,inputOrdinals:[2,1]});assert.equal(reordered.baseImageId,'artifacts/second.png');
  assert.match(requests.at(-1).prompt,/Input image 1: Image 2; material artifacts\/second.png/);
- await assert.rejects(edit(['artifacts/source.png','artifacts/second.png'],'融合两张图'),/expected 320x180/);
+ assert.equal((await edit(['artifacts/source.png','artifacts/second.png'],'融合两张图')).dimensionStatus,'different-ratio');
  output=original;
- await assert.rejects(edit(['artifacts/source.png','artifacts/second.png'],'以图二为底图'),/expected 180x320/);
+ assert.equal((await edit(['artifacts/source.png','artifacts/second.png'],'以图二为底图')).dimensionStatus,'different-ratio');
  // Use the user's original reference, even if an agent rewrites it to a different base.
  const originalBase=await edit(['artifacts/source.png','artifacts/second.png'],'以图二为底图',{taskId:'base-rewrite',attempt:1,originalPrompt:'以图一为底图'});assert.equal(originalBase.baseImageId,'artifacts/source.png');
  output=resized;
@@ -124,13 +124,24 @@ test('edits preserve original pixel dimensions despite global settings, reject c
 
  output=resized;
  const count=(await readdir(join(f.root,'inputs/user-assets'))).length;
- await assert.rejects(edit('artifacts/source.png','Make the background green'),/expected 320x180, received 640x360/);
- assert.equal((await readdir(join(f.root,'inputs/user-assets'))).length,count);
+ assert.equal((await edit('artifacts/source.png','Make the background green')).dimensionStatus,'same-ratio');
+ assert.equal((await readdir(join(f.root,'inputs/user-assets'))).length,count+1);
  // Rewritten agent instructions cannot authorize resizing on behalf of the user.
- await assert.rejects(edit('artifacts/source.png','Resize the image to 640x360',{taskId:'rewrite',attempt:1,originalPrompt:'Change the background'}),/expected 320x180/);
+ assert.equal((await edit('artifacts/source.png','Resize the image to 640x360',{taskId:'rewrite',attempt:1,originalPrompt:'Change the background'})).dimensionStatus,'same-ratio');
  const changed=await edit('artifacts/source.png','请把图片尺寸改为640×360');assert.equal(changed.editSize,'640x360');assert.equal(requests.at(-1).size,'640x360');
  const record=JSON.parse(await readFile(join(f.root,'inputs/media-edits',`${changed.editId}.json`),'utf8'));
  assert.equal(record.sizeMode,'resize');assert.deepEqual(record.sourceDimensions,[{width:320,height:180}]);assert.deepEqual(record.outputDimensions,{width:640,height:360});
- await assert.rejects(edit('artifacts/source.png','Resize the image to 800x600'),/expected 800x600/);
+ assert.equal((await edit('artifacts/source.png','Resize the image to 800x600')).dimensionStatus,'different-ratio');
  assert.deepEqual(await readFile(join(f.root,'artifacts/source.png')),original);
+});
+
+test('generation enforces size confirmations before provider calls and retains adapted outputs',async t=>{
+ let calls=0;const f=await fixture(t,(req,res)=>{calls++;res.end(JSON.stringify({data:[{b64_json:png.toString('base64')}]}));});
+ const env={...f.env,DREAMATIC_IMAGE_EDIT_CAPABILITIES:'{"sizes":["16x16"],"step":16}'};
+ const edit=(prompt,sizeOptions)=>editProjectImage(f.workspace,'demo','artifacts/source.png',prompt,new AbortController().signal,env,{taskId:'confirmation',attempt:1,sizeOptions});
+ await assert.rejects(edit('Change background',{}),/Review and accept/);assert.equal(calls,0);
+ await assert.rejects(edit('Output 32x32',{acceptAdaptation:true}),/conflicts/);assert.equal(calls,0);
+ const result=await edit('Output 32x32',{confirmConflict:true,acceptAdaptation:true});assert.equal(calls,1);
+ assert.equal(result.requestSize,'16x16');assert.deepEqual(result.targetDimensions,{width:1,height:1});assert.equal(result.dimensionStatus,'exact');
+ const record=JSON.parse(await readFile(join(f.root,'inputs/media-edits',result.editId+'.json'),'utf8'));assert.equal(record.requestSize,'16x16');assert.equal(record.sizeOptions.confirmConflict,true);
 });

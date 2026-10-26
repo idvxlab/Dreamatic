@@ -47,6 +47,8 @@ test('project switches isolate live callbacks, completion, stop and delayed sess
     export async function renameProjectMedia(){}
     export async function getImageEditSettings(){return {enabled:true,configured:true,model:"fixture",size:"1024x1024"}}
     export async function editProjectImage(){}
+    export async function planImageEdit(){}
+    export async function finalizeImageEdit(){}
     export async function deleteRun(){}
     export async function getRuntimeConfig(){}
     export async function saveRuntimeConfig(){}

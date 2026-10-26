@@ -297,8 +297,8 @@ export interface ImageEditSettings { enabled: boolean; configured: boolean; mode
 export async function getImageEditSettings(runId: string): Promise<ImageEditSettings> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit`, { cache: 'no-store' }));
 }
-export async function editProjectImage(runId: string, id: string, prompt: string, signal: AbortSignal): Promise<import('./types').ProjectFile> {
-  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, prompt }), signal }));
+export async function editProjectImage(runId: string, id: string, prompt: string, signal: AbortSignal, sizeOptions?: EditSizeOptions): Promise<import('./types').ProjectFile> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, prompt, sizeOptions }), signal }));
 }
 
 export interface EditorTask {
@@ -316,4 +316,13 @@ export async function submitEditorTask(runId: string, task: Pick<EditorTask, 'id
 }
 export async function editorTaskAction(runId: string, id: string, action: 'cancel' | 'retry'): Promise<EditorTask> {
   return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/editor/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
+}
+
+export interface EditSizeOptions { target?: {width:number;height:number}; confirmConflict?: boolean; acceptAdaptation?: boolean }
+export interface EditSizePlan { sourceDimensions: {width:number;height:number}; targetDimensions: {width:number;height:number}; requestSize: string; capabilitiesKnown: boolean; conflict: boolean; adapted: boolean }
+export async function planImageEdit(runId:string,id:string,prompt:string,sizeOptions:EditSizeOptions,signal:AbortSignal):Promise<EditSizePlan> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit/plan`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,prompt,sizeOptions}),signal}));
+}
+export async function finalizeImageEdit(runId:string,editId:string,method:'scale'|'crop'|'pad'):Promise<import('./types').ProjectFile> {
+  return parse(await fetch(`/api/runs/${encodeURIComponent(runId)}/media/edit/finalize`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({editId,method})}));
 }

@@ -119,3 +119,25 @@ test('image edit settings persist and validate without exposing image credential
  await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_ENABLED:'maybe'}},env));
  await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_ENDPOINT:'file:///tmp/edit'}},env));
 });
+
+test('approved Skill paths persist per role while malformed or relative paths cannot partially apply', async t => {
+ const root = await fixture(t), env = {};
+ const paths = JSON.stringify({designer:['/approved/campaign-method'],editor:['~/skills/image-method']});
+ const saved = await saveRuntimeConfig(root,{values:{DREAMATIC_SKILL_PATHS:paths}},env);
+ assert.equal(saved.values.DREAMATIC_SKILL_PATHS,paths);assert.equal(env.DREAMATIC_SKILL_PATHS,paths);
+ const before = await readFile(join(root,'.env'),'utf8');
+ for (const value of ['[]','{"unknown":[]}','{"designer":["relative/path"]}','{"editor":"/path"}']) {
+  await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_SKILL_PATHS:value}},env));
+  assert.equal(await readFile(join(root,'.env'),'utf8'),before);assert.equal(env.DREAMATIC_SKILL_PATHS,paths);
+ }
+});
+
+test('edit-only size capabilities validate before modifying settings',async t=>{
+ const root=await fixture(t,''),env={};
+ const value='{"sizes":["1024x1024","1024x1536"],"step":16,"maxPixels":4194304,"maxEdge":2048}';
+ const saved=await saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_CAPABILITIES:value}},env);
+ assert.equal(saved.values.DREAMATIC_IMAGE_EDIT_CAPABILITIES,value);
+ const original=await readFile(join(root,'.env'),'utf8');
+ for(const invalid of ['{"sizes":["auto"]}','{"step":0}','{"maxPixels":-1}']) await assert.rejects(saveRuntimeConfig(root,{values:{DREAMATIC_IMAGE_EDIT_CAPABILITIES:invalid}},env));
+ assert.equal(await readFile(join(root,'.env'),'utf8'),original);
+});

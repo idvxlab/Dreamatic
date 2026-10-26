@@ -1,14 +1,14 @@
 ---
 name: icon-system
-description: "Design icon and pictogram families with coherent geometry, optical weight and semantic distinctions. Use for controls, explanations and visual symbols; precise interface icons use authored SVG in HTML, while generated studies do not guarantee editable vector delivery."
+description: "Design icon and pictogram families through coherent geometry, optical weight, semantic distinctions and use-size adaptation. Use for controls, explanations and visual symbols; distinguish concept studies from verified vector geometry."
 metadata:
-  audience: designer
-  domain_type: icon_system
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [icon-design, pictograms, optical-alignment, svg-authoring]
-  supported_outputs: [image, html]
-  version: "1.0"
+  dreamatic-roles: "designer"
+  dreamatic-domain: "icon_system"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "icon-design pictograms optical-alignment svg-authoring"
+  dreamatic-outputs: "image html"
+  version: "2.1"
 ---
 
 # Icon System
@@ -36,8 +36,9 @@ only on its color. The clickable area can be larger than the visible symbol.
 
 ## Express deterministically where needed
 
-For precise interface symbols, author local SVG with a consistent viewBox and
-theme-aware colors through the existing HTML sources/resources mechanism. A
+For precise interface symbols, specify a consistent viewBox and theme-aware colors.
+When a vector-authoring host is available, realize and inspect the SVG geometry.
+Image-only hosts provide concept studies and cannot establish editable vectors. A
 decorative SVG should be hidden from assistive technology; an icon-only control
 needs a meaningful accessible name on the control. Informative standalone
 graphics need appropriate text alternatives. Avoid duplicate announcements.

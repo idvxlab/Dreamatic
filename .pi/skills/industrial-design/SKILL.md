@@ -2,12 +2,13 @@
 name: industrial-design
 description: "Resolve physical product architecture, mechanisms, ergonomics, CMF, assembly and manufacturing intent. Use when structural relationships and realization choices are central; open product-value and use-concept questions need broader physical-product framing. Concept images do not establish engineering readiness."
 metadata:
-  audience: designer
-  domain_type: industrial_design
-  design_categories: [industrial]
-  module_type: discipline
-  capabilities: [product-architecture, mechanism-design, ergonomics, cmf, manufacturing-intent]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "industrial_design"
+  dreamatic-categories: "product"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "product-architecture mechanism-design ergonomics cmf manufacturing-intent"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Industrial Design

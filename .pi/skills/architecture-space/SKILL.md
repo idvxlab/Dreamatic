@@ -3,12 +3,13 @@ name: architecture-space
 description: "Design buildings, interiors and spatial concepts through program, circulation, scale, material and light. Use when spatial organization is the main decision; visitor interpretation and signage may need additional wayfinding knowledge. Concepts do not establish engineering readiness."
 license: MIT
 metadata:
-  audience: designer
-  domain_type: architecture_space_design
-  design_categories: [space]
-  module_type: discipline
-  capabilities: [spatial-design, architecture, interior-design, circulation, material-lighting]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "architecture_space_design"
+  dreamatic-categories: "space"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "spatial-design architecture interior-design circulation material-lighting"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Architecture and Space

@@ -2,12 +2,13 @@
 name: service-design
 description: "Design end-to-end services through customer journeys, touchpoints, staff actions and operational handoffs. Use when the service promise and delivery system are central; supports UX touchpoints without replacing interface-flow responsibility. Express blueprints and service scenarios as images or readable HTML."
 metadata:
-  audience: designer
-  domain_type: service_design
-  design_categories: [service]
-  module_type: discipline
-  capabilities: [service-blueprints, customer-journeys, touchpoint-design, operational-handoffs]
-  supported_outputs: [image, html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "service_design"
+  dreamatic-categories: "service"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "service-blueprints customer-journeys touchpoint-design operational-handoffs"
+  dreamatic-outputs: "image html"
+  version: "2.0"
 ---
 
 # Service Design
@@ -44,8 +45,8 @@ operations or service levels.
 ## Show the service
 
 Choose journeys, scenes, touchpoints and blueprint segments by meaningful questions.
-Keep exact process logic, roles, timing and labels in the specification and authored
-HTML where deterministic reading matters; imagery communicates tangible scenes.
+Keep exact process logic, roles, timing and labels in the specification. Where
+deterministic authoring is available, use it for readable process representations; imagery communicates tangible scenes.
 Judge the coherence of the promise across common exceptions and identify what
 organizational feasibility still requires validation.
 

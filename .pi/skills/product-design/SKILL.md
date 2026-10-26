@@ -3,12 +3,13 @@ name: product-design
 description: "Frame physical product concepts through user needs, functional experience, use scenarios and lifecycle. Use when deciding what object and experience should exist; mechanism, assembly and manufacturing-led problems need industrial realization knowledge. Does not cover digital product strategy; outputs are concept images."
 license: MIT
 metadata:
-  audience: designer
-  domain_type: product_design
-  design_categories: [industrial]
-  module_type: discipline
-  capabilities: [physical-product-design, product-concepts, use-scenarios, product-lifecycle]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "product_design"
+  dreamatic-categories: "product"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "physical-product-design product-concepts use-scenarios product-lifecycle"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Physical Product Design

@@ -2,12 +2,13 @@
 name: exhibition-wayfinding
 description: "Design visitor interpretation, spatial sequences and signage systems for exhibitions and public environments. Use when visitor orientation and information in space are central; can own spatial or communication decisions, while building-wide architecture may need separate knowledge. Outputs are concept views."
 metadata:
-  audience: designer
-  domain_type: exhibition_wayfinding
-  design_categories: [space, media_communication]
-  module_type: discipline
-  capabilities: [exhibition-design, wayfinding, signage, visitor-journeys]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "exhibition_wayfinding"
+  dreamatic-categories: "space visual"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "exhibition-design wayfinding signage visitor-journeys"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Exhibition and Wayfinding Design

@@ -6,6 +6,7 @@ import { CONTEXT_FILES, CONTEXT_PROJECTIONS, hasUnifiedContext, readRunContext }
 export interface ProjectFile {
   id: string;
   title: string;
+  editId?: string; targetDimensions?: {width:number;height:number}; outputDimensions?: {width:number;height:number}; requestSize?: string; dimensionStatus?: 'exact' | 'same-ratio' | 'near-ratio' | 'different-ratio';
   originalName?: string;
   kind: string;
   category: 'context' | 'assets' | 'references';

@@ -6,6 +6,20 @@ Orchestrator → Researcher → Designer → Builder and delivery policy. Role p
 live in `prompts/`; professional knowledge remains in the repository `.pi/skills`.
 No Pi runtime source is copied into Dreamatic.
 
+Skill sources are controlled per role through Pi’s native loader override. Ambient
+user/project Skills cannot extend or shadow the application catalog. Approved
+third-party paths use DREAMATIC_SKILL_PATHS; tool requirements, scoped native reads
+and per-session catalogs/Skill-read records are documented in
+[Skill policy](../../docs/SKILL-POLICY.md). Researcher uses design-research,
+Designer/Builder can use design-review within their actual evidence capabilities,
+and Editor shares image-prompting knowledge with Designer.
+
+Leading human `$skill-name` or `/skill:skill-name` directives select approved
+knowledge per role. The application prompt adapter validates source/policy hashes
+and records explicit reads before calling Pi's public prompt API. It disables
+unchecked native command expansion. Clarification and resume retain the latest
+selection; delegated model instructions cannot create a new human selection.
+
 The design handoff is `intent.md`, `research.md`, `design.md` at the run root.
 JSON files store transport data, image receipts and checkpoint metadata only.
 Each Image section in design.md contains Introduction, Size and Prompt headings.

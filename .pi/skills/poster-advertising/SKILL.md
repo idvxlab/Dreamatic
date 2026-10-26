@@ -3,12 +3,13 @@ name: poster-advertising
 description: "Develop poster and advertising campaigns through audience insight, message hierarchy, visual hooks and format adaptation. Use when the communication response is central; identity systems and publication reading sequences require their own methods. Deliver concept images without claiming measured campaign effectiveness."
 license: MIT
 metadata:
-  audience: designer
-  domain_type: graphic_campaign_design
-  design_categories: [media_communication]
-  module_type: discipline
-  capabilities: [poster-design, advertising-design, campaign-design, message-hierarchy]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "graphic_campaign_design"
+  dreamatic-categories: "visual"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "poster-design advertising-design campaign-design message-hierarchy"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Poster and Advertising

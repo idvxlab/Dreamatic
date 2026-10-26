@@ -2,13 +2,13 @@
 name: accessible-interface
 description: "Design interface accessibility for HTML pages and project showcases, including keyboard access, focus, semantics, contrast and reflow. Use when access barriers need detailed treatment; supports the owning design discipline rather than replacing it."
 metadata:
-  audience: designer
-  domain_type: accessible_interface
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [accessibility, keyboard-navigation, semantic-html, contrast, responsive-layout]
-  supported_outputs: [html]
-  version: "1.0"
+  dreamatic-roles: "designer builder"
+  dreamatic-domain: "accessible_interface"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "accessibility keyboard-navigation semantic-html contrast responsive-layout"
+  dreamatic-outputs: "html"
+  version: "2.0"
 ---
 
 # Accessible Interface

@@ -32,6 +32,14 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   let clip;
   const server=createServer(async(req,res)=>{
     const url=new URL(req.url,'http://fixture');
+    if(url.pathname.endsWith('/media/edit/finalize')) {
+      let body='';for await(const part of req)body+=part;const input=JSON.parse(body);assert.equal(input.method,'scale');
+      const id='inputs/user-assets/scaled.png';const file={id,path:id,title:'Scaled result',kind:'png',category:'assets',group:'Uploaded files',outputDimensions:{width:1086,height:1448},targetDimensions:{width:1086,height:1448},dimensionStatus:'exact'};files.push(file);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(file));return;
+    }
+    if(url.pathname.endsWith('/media/edit/plan')) {
+      let body='';for await(const part of req)body+=part;const input=JSON.parse(body);const target=input.sizeOptions?.target??{width:1086,height:1448};
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify({sourceDimensions:{width:1086,height:1448},targetDimensions:target,requestSize:target.width+'x'+target.height,capabilitiesKnown:input.prompt==='Use supported size',adapted:input.prompt==='Use supported size',conflict:/2304/.test(input.prompt)&&target.height!==2304}));return;
+    }
     if(url.pathname.endsWith('/media/edit')) {
       res.setHeader('Content-Type','application/json');
       if(req.method==='GET'){res.end(JSON.stringify({enabled:true,configured:true,model:'fixture-edit',size:'1024x1024'}));return;}
@@ -39,7 +47,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
       assert.equal(input.id,'inputs/user-assets/photo.png');assert.ok(input.prompt);editCalls++;
       if(input.prompt==='Fail editing'){res.statusCode=400;res.end(JSON.stringify({error:'Image editing failed. Please try again.'}));return;}
       if(input.prompt==='Wait for cancellation')return;
-      const id='inputs/user-assets/edit-'+editCalls+'.png';const file={id,path:id,title:'Edited result '+editCalls,kind:'png',category:'assets',group:'Uploaded files'};
+      const id='inputs/user-assets/edit-'+editCalls+'.png';const file={id,path:id,title:'Edited result '+editCalls,kind:'png',category:'assets',group:'Uploaded files',editId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',outputDimensions:{width:1728,height:2304},targetDimensions:{width:1086,height:1448},dimensionStatus:'same-ratio'};
       files.push(file);res.end(JSON.stringify(file));return;
     }
     if(url.pathname.endsWith('/media/name')) {
@@ -167,6 +175,15 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   dialog=page.locator('dialog[open]');await dialog.getByRole('tab',{name:'Edit with prompt',exact:true}).click();
   await dialog.getByText('fixture-edit',{exact:true}).waitFor();
   assert.match(await dialog.locator('.image-edit-previews img').getAttribute('src'),/photo.png/);
+  await dialog.getByText('1086 × 1448',{exact:false}).first().waitFor();
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('尺寸维持不变 1086 x 2304');
+  const conflict=dialog.getByRole('checkbox',{name:'The prompt conflicts with the selected size. Use the selected target dimensions.',exact:true});await conflict.waitFor();
+  assert.equal(await dialog.getByRole('button',{name:'Generate edit',exact:true}).isDisabled(),true);await page.screenshot({path:'/tmp/dreamatic-image-edit-confirmation.png',animations:'disabled'});await conflict.check();
+  assert.equal(await dialog.getByRole('button',{name:'Generate edit',exact:true}).isEnabled(),true);
+  await dialog.getByLabel('Size mode',{exact:true}).selectOption('custom');await dialog.getByLabel('Height (px)',{exact:true}).fill('2304');await conflict.waitFor({state:'hidden'});await page.screenshot({path:'/tmp/dreamatic-image-edit-custom-size.png',animations:'disabled'});
+  await dialog.getByLabel('Size mode',{exact:true}).selectOption('original');
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('Use supported size');
+  const adaptation=dialog.getByRole('checkbox',{name:'Generate at the supported size shown above; review crop, padding or scaling after generation.',exact:true});await adaptation.waitFor();assert.equal(await dialog.getByRole('button',{name:'Generate edit',exact:true}).isDisabled(),true);await adaptation.check();
   await dialog.getByLabel('Edit prompt',{exact:true}).fill('Keep the subject and change the background to blue');
   await page.screenshot({path:'/tmp/dreamatic-image-edit-prompt.png',animations:'disabled'});
   const countBeforeEdit=await page.locator('.canvas-artboard').count();
@@ -175,8 +192,23 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   assert.equal(await dialog.locator('.image-edit-previews img').count(),2);
   assert.equal(await page.locator('.canvas-artboard').count(),countBeforeEdit);
   await page.screenshot({path:'/tmp/dreamatic-image-edit-result.png',animations:'disabled'});
-  await dialog.getByRole('button',{name:'Add result to canvas',exact:true}).click();
+  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(150);await page.screenshot({path:'/tmp/dreamatic-image-edit-mobile.png',animations:'disabled'});await page.setViewportSize({width:1400,height:960});
+  assert.equal(await dialog.getByRole('button',{name:'Generate edit',exact:true}).count(),0);
+  await dialog.getByRole('button',{name:'Confirm',exact:true}).waitFor();
+  const callsAfterGeneration=editCalls;
+  await dialog.getByLabel('Edit prompt',{exact:true}).fill('Regenerate with a softer blue background');
+  await dialog.getByRole('button',{name:'Generate edit',exact:true}).waitFor();
+  assert.equal(await dialog.getByRole('button',{name:'Confirm',exact:true}).count(),0);
+  await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();
+  await dialog.getByRole('button',{name:'Confirm',exact:true}).waitFor();
+  assert.equal(editCalls,callsAfterGeneration+1);
+  assert.equal(await page.locator('.canvas-artboard').count(),countBeforeEdit);
+  await dialog.getByRole('button',{name:'Scale to target',exact:true}).click();
+  await dialog.getByText('Actual output: 1086 × 1448',{exact:false}).waitFor();
+  assert.equal(await dialog.getByRole('button',{name:'Scale to target',exact:true}).count(),0);
+  await dialog.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+1,countBeforeEdit);
+  assert.equal(editCalls,callsAfterGeneration+1,'confirmation must not call the image provider');assert.equal(await page.locator('dialog[open]').count(),0);
   await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();await page.getByRole('button',{name:'Fit project',exact:true}).click();
   await page.locator('.workspace-file-row').filter({has:page.locator('strong',{hasText:'Final image'})}).getByRole('button',{name:'Edit image: Final image',exact:true}).click();
   dialog=page.locator('dialog[open]');await dialog.getByRole('tab',{name:'Edit with prompt',exact:true}).click();await dialog.getByText('fixture-edit',{exact:true}).waitFor();
@@ -185,7 +217,7 @@ test('canvas accepts project media drops, preserves duplicate instances, edits g
   await dialog.getByLabel('Edit prompt',{exact:true}).fill('Wait for cancellation');await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();
   await dialog.getByRole('button',{name:'Cancel generation',exact:true}).click();await dialog.getByText('Image editing cancelled.',{exact:true}).waitFor();
   await dialog.getByLabel('Edit prompt',{exact:true}).fill('Make a warmer version');await dialog.getByRole('button',{name:'Generate edit',exact:true}).click();await dialog.getByText('Edited image saved to the asset list.',{exact:true}).waitFor();
-  await dialog.getByRole('button',{name:'Add result to canvas',exact:true}).click();await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+2,countBeforeEdit);
+  await dialog.getByRole('button',{name:'Confirm',exact:true}).click();await page.waitForFunction(count=>document.querySelectorAll('.canvas-artboard').length===count+2,countBeforeEdit);
   await page.getByRole('button',{name:'Reflow project cards',exact:true}).click();await page.getByRole('button',{name:'Fit project',exact:true}).click();
   const toRemove=page.locator('.canvas-artboard').filter({has:page.locator('figcaption strong',{hasText:'Final image'})}).first();
   const removedId=await toRemove.getAttribute('data-element-id');

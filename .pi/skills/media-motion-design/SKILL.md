@@ -1,13 +1,14 @@
 ---
 name: media-motion-design
-description: "Design audiovisual narratives, motion-graphic concepts and media campaigns through framing, rhythm and sequencing. Use for storyboards, keyframes or locally authored browser motion; browser microinteractions are a separate method. Image and HTML outputs do not imply video or audio generation."
+description: "Design audiovisual narratives, motion-graphic concepts and media campaigns through framing, rhythm and sequencing. Use for storyboards, keyframes and temporal specifications; interface microinteractions are a separate method. This knowledge does not provide media generation tools."
 metadata:
-  audience: designer
-  domain_type: media_motion_design
-  design_categories: [media_communication]
-  module_type: discipline
-  capabilities: [motion-design, storyboarding, keyframes, audiovisual-narrative, media-campaigns]
-  supported_outputs: [image, html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "media_motion_design"
+  dreamatic-categories: "visual"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "motion-design storyboarding keyframes audiovisual-narrative media-campaigns"
+  dreamatic-outputs: "image html"
+  version: "2.1"
 ---
 
 # Media and Motion Design

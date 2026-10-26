@@ -1,14 +1,14 @@
 ---
 name: generative-art
-description: "Develop algorithmic art and procedural motifs with explicit rules, seeded variation and native browser drawing. Use when procedural visual behavior adds meaning; HTML can carry the implemented algorithm, while generated images only illustrate its intended appearance. Not an engineering simulation."
+description: "Develop visual rules, seeded variation and procedural motifs for algorithmic art. Use when a visual process is central; describe concept imagery or specify a reproducible algorithm according to the available authoring medium. Does not provide a procedural executor."
 metadata:
-  audience: designer
-  domain_type: generative_art
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [generative-art, procedural-graphics, seeded-randomness, canvas-drawing, svg-drawing]
-  supported_outputs: [image, html]
-  version: "1.0"
+  dreamatic-roles: "designer"
+  dreamatic-domain: "generative_art"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "generative-art procedural-graphics seeded-randomness canvas-drawing svg-drawing"
+  dreamatic-outputs: "image html"
+  version: "2.1"
 ---
 
 # Generative Art
@@ -36,8 +36,10 @@ parameters that produce useful aesthetic changes, with an understandable reset.
 
 ## Deliver the actual medium
 
-Use local JavaScript with native SVG or Canvas drawing for procedural HTML.
-Author complete algorithms and presentation sources. No remote drawing library, fixed vendor template or new
+When the host supplies procedural authoring, native SVG/Canvas drawing can express
+the algorithm with an explicit seed and parameters. Author and test the process
+through that host’s actual tools; image-only hosts can describe and illustrate it
+but cannot establish an implemented algorithm. No remote drawing library, fixed vendor template or new
 executor is required. Provide meaningful text alongside non-text art when needed;
 animated work should have a still/reduced-motion path and bounded rendering work.
 

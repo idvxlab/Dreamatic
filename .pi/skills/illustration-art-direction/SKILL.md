@@ -2,12 +2,13 @@
 name: illustration-art-direction
 description: "Design illustration, characters and narrative image series through shape language, composition and stylistic continuity. Use when imagery carries the story; can support a UX scope but does not own interface flows. HTML captions preserve exact text without making this an HTML-authoring module."
 metadata:
-  audience: designer
-  domain_type: illustration_art_direction
-  design_categories: [media_communication]
-  module_type: discipline
-  capabilities: [illustration, character-design, art-direction, visual-storytelling]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "illustration_art_direction"
+  dreamatic-categories: "visual"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "illustration character-design art-direction visual-storytelling"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Illustration and Art Direction
@@ -49,6 +50,7 @@ small placements or alternate aspect ratios.
 Choose scenes, expressions, views and variants from actual narrative questions,
 without a fixed image count. Carry visible style rules, subject features, reference
 roles and composition into self-contained image prompts. Include required literal
-lettering in those prompts; use authored HTML when deterministic text is essential.
+lettering in those prompts; use deterministic text authoring where the host supports it, and otherwise retain
+exact copy in the specification without claiming image glyph fidelity.
 Judge narrative clarity, emotional specificity and identifiable continuity, rather
 than trusting a shared style adjective.

@@ -54,6 +54,10 @@ test('six workbench views preserve conversation, canvas and project isolation an
     if (url.pathname === '/api/runs') { json(runs); return; }
     if (/^\/api\/runs\/[AB]$/.test(url.pathname)) { json(runs.find(run => run.id === url.pathname.split('/').at(-1))); return; }
     if (url.pathname.endsWith('/workflow/stream')) { res.setHeader('Content-Type', 'text/event-stream'); res.end('data: ' + JSON.stringify({ type: 'snapshot', workflow: url.pathname.includes('/A/') ? workflow : [] }) + '\n\n'); return; }
+    if(url.pathname.endsWith('/media/edit/plan')) {
+      let body='';for await(const part of req)body+=part;const input=JSON.parse(body);const target=input.sizeOptions?.target??{width:1086,height:1448};
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify({sourceDimensions:{width:1086,height:1448},targetDimensions:target,requestSize:target.width+'x'+target.height,capabilitiesKnown:false,adapted:false,conflict:/2304/.test(input.prompt)&&target.height!==2304}));return;
+    }
     if (url.pathname.endsWith('/media/edit')) {
       if(req.method==='GET'){json({enabled:true,configured:true,model:'fixture-editor',size:'auto'});return;}
       let body='';for await(const part of req)body+=part;const input=JSON.parse(body);assert.equal(input.id,'artifacts/design.png');assert.equal(input.prompt,'Use softer lighting');
@@ -221,7 +225,7 @@ test('six workbench views preserve conversation, canvas and project isolation an
   await editDialog.getByText('Edited image saved to the asset list.',{exact:true}).waitFor();
   await page.locator('.workspace-file-label strong').filter({hasText:'Refined image'}).waitFor();
   assert.equal(await editDialog.isVisible(),true,'catalog refresh must preserve the open result preview');
-  await editDialog.getByRole('button',{name:'Add result to canvas',exact:true}).click();
+  await editDialog.getByRole('button',{name:'Confirm',exact:true}).click();
   await page.locator('.canvas-artboard figcaption strong').filter({hasText:'Refined image'}).waitFor();
   await nav('Preview').click(); assert.equal(await page.locator('.workbench-tools').isVisible(), false);
   const expanded = await page.locator('.workspace').boundingBox(); assert.ok(expanded.width > right.width + 300);

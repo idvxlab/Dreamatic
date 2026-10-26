@@ -1,3 +1,4 @@
+export const PROMPT_MIN_SIZE = { width: 300, height: 240 } as const;
 /** Pure canvas data rules, shared by persistence and interactions. Ports hold any number of edges. */
 export interface CanvasEdge { id: string; source: string; target: string }
 export interface GraphNode { id: string; kind: string }

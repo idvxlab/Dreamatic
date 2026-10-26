@@ -1,14 +1,14 @@
 ---
 name: interaction-motion
-description: "Design browser microinteractions and page transitions with continuity, interruption handling and reduced-motion alternatives. Use when motion communicates an interface state or viewing action; supports HTML interactions rather than film narrative, storyboards or video production."
+description: "Specify interface motion through state continuity, interruption handling and reduced-motion alternatives. Use when movement communicates an interface state or viewing action; express transition intent or implemented behavior according to available host capabilities."
 metadata:
-  audience: designer
-  domain_type: interaction_motion
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [microinteractions, browser-motion, transition-design, reduced-motion]
-  supported_outputs: [html]
-  version: "1.0"
+  dreamatic-roles: "designer"
+  dreamatic-domain: "interaction_motion"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "microinteractions browser-motion transition-design reduced-motion"
+  dreamatic-outputs: "html"
+  version: "2.1"
 ---
 
 # Interaction Motion
@@ -32,8 +32,9 @@ Avoid changing interaction geometry while a person is aiming at a control.
 
 ## Author within the browser budget
 
-Prefer CSS for simple state changes and native browser animation APIs for
-interruptible sequences. Animate explicit properties, favoring transforms and
+When the host provides executable interface authoring, prefer CSS for simple state
+changes and native browser animation APIs for interruptible sequences. In a concept
+image workflow, specify the states and transition intent without claiming implementation. Animate explicit properties, favoring transforms and
 opacity where they express the intended effect. Bound complex drawing and avoid
 unnecessary layout work. Stop continuous work when hidden or offscreen; size
 effects for mobile as well as desktop. Do not introduce an external animation

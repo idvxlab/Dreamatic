@@ -3,12 +3,13 @@ name: design-system
 description: "Define cross-deliverable visual and material rules, tokens, consistency anchors and protected assets. Use when several outputs need a coherent family across a project; this is broader than a UI component library and does not replace the owning discipline."
 license: MIT
 metadata:
-  audience: designer
-  domain_type: cross_domain_design_system
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [design-tokens, visual-consistency, consistency-anchors, cross-artifact-system]
-  supported_outputs: [image, html]
+  dreamatic-roles: "designer builder editor"
+  dreamatic-domain: "cross_domain_design_system"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "design-tokens visual-consistency consistency-anchors cross-artifact-system"
+  dreamatic-outputs: "image html"
+  version: "2.0"
 ---
 
 # Design System

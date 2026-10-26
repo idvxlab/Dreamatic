@@ -1,3 +1,5 @@
+import { finalizeImageEdit } from './image-edit-output.js';
+import { preflightImageEdit } from './image-edit.js';
 import { submitEditorTask, listEditorTasks, cancelEditorTask, waitEditorTask, type EditorInput } from './editor.js';
 import { randomUUID as editorUUID } from 'node:crypto';
 import { imageEditSettings } from './image-edit.js';
@@ -422,6 +424,15 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
         json(response, 202, await submitEditorTask(workspaceDir, runId, record(await body(request)) as unknown as EditorInput)); return;
       }
     }
+    const editPlanMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media\/edit\/(plan|finalize)$/);
+    if (request.method === 'POST' && editPlanMatch?.[1]) {
+      const input = record(await body(request));
+      const runId = decodeURIComponent(editPlanMatch[1]);
+      json(response, 200, editPlanMatch[2] === 'plan'
+        ? await preflightImageEdit(workspaceDir,runId,String(input.id),String(input.prompt ?? ''),record(input.sizeOptions ?? {}))
+        : await finalizeImageEdit(workspaceDir,runId,input.editId,input.method));
+      return;
+    }
     const mediaEditMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/media\/edit$/);
     if (request.method === 'GET' && mediaEditMatch?.[1]) {
       json(response, 200, imageEditSettings()); return;
@@ -433,7 +444,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       response.once('close', cancel);
       try {
         const runId = decodeURIComponent(mediaEditMatch[1]);
-        const task = await submitEditorTask(workspaceDir, runId, { id: editorUUID(), source: 'natural-language', inputIds: [input.id as string], prompt: input.prompt as string });
+        const task = await submitEditorTask(workspaceDir, runId, { id: editorUUID(), source: 'natural-language', inputIds: [input.id as string], prompt: input.prompt as string, sizeOptions: record(input.sizeOptions ?? {}) });
         const abort = () => { void cancelEditorTask(workspaceDir, runId, task.id).catch(() => {}); };
         controller.signal.addEventListener('abort', abort, { once: true });
         if (controller.signal.aborted) abort();

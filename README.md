@@ -244,6 +244,7 @@ Pi **1.4.0** provides model sessions, providers, resource discovery, Skills, too
 
 - [Design pipeline, configuration, recovery, and delivery](apps/server/DESIGN-PIPELINE.md)
 - [Design Skill sources and attribution](docs/DESIGN-SKILL-SOURCES.md)
+- [Skill roles, approved third-party knowledge and diagnostics](docs/SKILL-POLICY.md)
 - [Frontend design system](docs/FRONTEND-DESIGN-SYSTEM.md)
 - [Refactor preparation and historical boundaries](docs/REFACTOR-PREPARATION.md)
 
@@ -258,3 +259,9 @@ Canvas prompts and the existing image-edit dialog use the same Editor task servi
 Task states and immutable transition snapshots live in `inputs/media-edits/editor-tasks.json`; tool receipts retain actual model settings and all source IDs. `context/edit.md` is the Design Context projection of that journal, including failures, cancellations, attempts, inputs, outputs and upstream task references. Writes are serialized and atomic within the local server. Reading tasks repairs a missing Markdown projection and reconciles interrupted tasks with saved tool receipts, without automatically reissuing a paid request. An unavailable output keeps its history and is marked unavailable. This storage assumes one Dreamatic server owns a workspace.
 
 Undo/Redo affects the board only. A completed task inserts output only when its original prompt node and task association still exist. Handled task IDs persist outside undo history, so polling and reload do not recreate an undone result. Results whose cards were deleted remain in the media library and can be dragged back and connected manually. Cancelling aborts the local request; a remote provider may already have processed it. Browser tests use local reasoning/image fixtures; real model quality and provider-specific fusion limits need verification with the configured service.
+
+### Image edit dimensions
+
+The image editor reads source pixel dimensions before generation. Keep original dimensions by default, or choose a custom target. Conflicting prompt dimensions and adapted provider sizes require confirmation. `DREAMATIC_IMAGE_EDIT_CAPABILITIES` declares verified edit-only constraints (`sizes`, `step`, `maxPixels`, `maxEdge`); blank means unverified, not guaranteed. Update these constraints when changing edit providers or models.
+
+Valid model outputs are retained even when dimensions differ. The editor shows target, requested and actual dimensions. Matching aspect ratios allow proportional scaling; other ratios offer explicit centered cropping or white padding. All processed outputs are separate PNG assets; provider originals, historical tasks, and Showcase references remain unchanged. Upscaling does not create additional real detail. Original and processing receipts are exported under `inputs/media-edits`.

@@ -2,12 +2,13 @@
 name: packaging-design
 description: "Design packaging structure, opening experience, protection and shelf communication. Use when containment and package graphics must work together; can own industrial or communication decisions, while brand positioning and unrelated product architecture need separate knowledge. Images communicate concepts, not production dielines."
 metadata:
-  audience: designer
-  domain_type: packaging_design
-  design_categories: [industrial, media_communication]
-  module_type: discipline
-  capabilities: [packaging-structure, package-graphics, opening-experience, shelf-communication]
-  supported_outputs: [image]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "packaging_design"
+  dreamatic-categories: "product visual"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "packaging-structure package-graphics opening-experience shelf-communication"
+  dreamatic-outputs: "image"
+  version: "2.0"
 ---
 
 # Packaging Design

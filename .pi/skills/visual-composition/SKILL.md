@@ -3,12 +3,13 @@ name: visual-composition
 description: "Refine hierarchy, grids, spacing, typography, contrast and balance across graphic and presentation formats. Use when attention and reading relationships need improvement; supports an established professional direction rather than deciding brand strategy, product value or interface behavior. Applies to image and HTML composition."
 license: MIT
 metadata:
-  audience: designer
-  domain_type: visual_composition
-  design_categories: []
-  module_type: cross_domain
-  capabilities: [visual-hierarchy, layout-composition, grid-systems, spacing, contrast]
-  supported_outputs: [image, html]
+  dreamatic-roles: "designer builder editor"
+  dreamatic-domain: "visual_composition"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "visual-hierarchy layout-composition grid-systems spacing contrast"
+  dreamatic-outputs: "image html"
+  version: "2.0"
 ---
 
 # Visual Composition

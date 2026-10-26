@@ -153,6 +153,7 @@ export interface CanvasState {
 
 export type WorkbenchView = 'overview' | 'canvas' | 'preview' | 'context' | 'assets' | 'references';
 export interface ProjectFile {
+  editId?: string; targetDimensions?: {width:number;height:number}; outputDimensions?: {width:number;height:number}; requestSize?: string; dimensionStatus?: 'exact' | 'same-ratio' | 'near-ratio' | 'different-ratio';
   originalName?: string;
   thumbnailUrl?: string;
   id: string;

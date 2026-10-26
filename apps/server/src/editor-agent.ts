@@ -7,7 +7,7 @@ import { createDreamaticAgent } from './agent-session.js';
 import { cancelEditorTask, editorTaskMarkdown, submitEditorTask, waitEditorTask, recordEditorPlanningFailure } from './editor.js';
 import { projectFiles, type ProjectFile } from './project-files.js';
 
-export function editorTool(options: { repoRoot: string; originalRequest?: string; inventory?: ProjectFile[]; workspaceDir: string; runId: string; signal: AbortSignal; emit: (event: unknown) => void }): ToolDefinition {
+export function editorTool(options: { repoRoot: string; originalRequest?: string; skillRequest?: string; inventory?: ProjectFile[]; workspaceDir: string; runId: string; signal: AbortSignal; emit: (event: unknown) => void }): ToolDefinition {
   return {
     name: 'edit_materials', label: 'Editor',
     description: 'Delegate image modifications or multi-image fusion to Editor. Supply a Markdown editing instruction and all exact project image file IDs. Editor persists a new asset and context/edit.md. Never use image_generate to modify existing materials.',
@@ -20,7 +20,7 @@ export function editorTool(options: { repoRoot: string; originalRequest?: string
       if (inputOrdinals.some(ordinal => ordinal < 1)) throw new Error('Editor inputs must reference current project images.');
       options.emit({ type: 'workflow_event', event: { type: 'agent_started', agent: 'editor', invocationId, task: input.instruction } });
       try {
-      const { session } = await createDreamaticAgent({ root: join(options.workspaceDir, 'runs', options.runId), role: 'editor', textOnly: true,
+      const { session, prompt } = await createDreamaticAgent({ root: join(options.workspaceDir, 'runs', options.runId), repoRoot: options.repoRoot, role: 'editor', textOnly: true, skillRequest: options.skillRequest ?? options.originalRequest ?? '',
         systemPrompt: await readFile(join(options.repoRoot, 'apps/server/prompts/editor.md'), 'utf8'),
         tools: [{ name: 'image_edit', label: 'Edit or fuse materials', description: 'Edit the supplied stable image references. This is the only image editing executor. Selects the configured edit model, using all inputs for fusion.', parameters: Type.Object({ prompt: Type.String() }),
           async execute(_call, args) {
@@ -35,7 +35,7 @@ export function editorTool(options: { repoRoot: string; originalRequest?: string
       options.signal.addEventListener('abort', abort, { once: true });
       try {
         options.signal.throwIfAborted();
-        await session.prompt(`# Editing request\n\n${input.instruction}\n\n## Input materials\n\n${input.inputIds.map((id, index) => `- Image ${inputOrdinals[index]}: ${id}; name: ${inventory.find(file => file.id === id)?.title}`).join('\n')}`);
+        await prompt(`# Editing request\n\n${input.instruction}\n\n## Input materials\n\n${input.inputIds.map((id, index) => `- Image ${inputOrdinals[index]}: ${id}; name: ${inventory.find(file => file.id === id)?.title}`).join('\n')}`);
         const result = await waitEditorTask(options.workspaceDir, options.runId, id);
         options.emit({ type: 'workflow_event', event: { type: result.status === 'succeeded' ? 'agent_finished' : 'agent_interrupted', agent: 'editor', invocationId, output: editorTaskMarkdown(result), error: result.error } });
         return { content: [{ type: 'text', text: editorTaskMarkdown(result) }], details: { taskId: id } };

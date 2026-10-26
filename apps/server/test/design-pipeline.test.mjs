@@ -46,6 +46,8 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
   if(req.url.endsWith('/images/generations')) { imageRequests++; if(failHero && data.prompt.includes('portrait')) {heroFailureRequests++;res.writeHead(502,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'upstream unavailable'}));return;} await new Promise(resolve=>setTimeout(resolve,1000)); res.setHeader('Content-Type','application/json'); res.end(JSON.stringify({data:[{b64_json:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='}]})); return; }
   const system = data.messages.find(m=>m.role==='system')?.content || '';
   const stage = system.includes('Understand the request') ? 'orchestrator' : system.includes('Read intent.md. Use search') ? 'researcher' : system.includes('Produce only design.md') ? 'designer' : 'builder';
+  if (stage === 'designer' && JSON.stringify(data.messages).includes('/skill:pipeline-method')) assert.match(JSON.stringify(data.messages.filter(message => message.role === 'user')), /Explicit campaign anchor: copper moon/);
+  else assert.doesNotMatch(JSON.stringify(data.messages), /Explicit campaign anchor: copper moon/);
   assert.match(system,/Dreamatic saves your final response/);
   assert.match(system,/Never call unavailable tools/);
   assert.ok(!data.tools.some(tool=>['write','edit'].includes(tool.function.name)));
@@ -88,11 +90,15 @@ test('Pi SDK completes four stages, reuses a valid run and recovers a changed Ma
  const base=`http://127.0.0.1:${server.address().port}/v1`;
  Object.assign(process.env,{DREAMATIC_CONFIG_DIR:root,DREAMATIC_BASE_URL:base,DREAMATIC_API_KEY:'fixture',DREAMATIC_MODEL:'fixture',DREAMATIC_CONTEXT_WINDOW:'32768',DREAMATIC_MAX_TOKENS:'8192',DREAMATIC_IMAGE_BASE_URL:base,DREAMATIC_IMAGE_CAPABILITIES:'',DREAMATIC_IMAGE_DEFAULT_SIZE:'1024x1024',DREAMATIC_PROVIDER_TYPE:'openai-compatible',DREAMATIC_MODEL_TOTAL_TIMEOUT_MS:'750'});
  const { mkdir, writeFile, copyFile } = await import('node:fs/promises');
+ const method = join(root, 'pipeline-method'); await mkdir(join(method, 'agents'), {recursive:true});
+ await writeFile(join(method, 'SKILL.md'), '---\nname: pipeline-method\ndescription: Campaign knowledge for this fixture.\n---\nExplicit campaign anchor: copper moon.');
+ await writeFile(join(method, 'agents/openai.yaml'), 'policy:\n  allow_implicit_invocation: false\n');
+ process.env.DREAMATIC_SKILL_PATHS = JSON.stringify({designer:[method]});
  await mkdir(join(root,'apps/server/prompts'),{recursive:true});
  for(const role of ['orchestrator','researcher','designer','builder']) await copyFile(join(process.cwd(),'apps/server/prompts',`${role}.md`),join(root,'apps/server/prompts',`${role}.md`));
  await mkdir(join(root,'runs','project'),{recursive:true});
  const emitted=[];
- const options={repoRoot:root,workspaceDir:root,runId:'project',text:'Design a lamp',signal:new AbortController().signal,emit(event){emitted.push(event)}};
+ const options={repoRoot:root,workspaceDir:root,runId:'project',text:'/skill:pipeline-method Design a lamp',signal:new AbortController().signal,emit(event){emitted.push(event)}};
  let pending;
  await runDesign({...options,onQuestion:request=>{pending=request;}});
  assert.equal(pending.title,'Choose the intended setting');

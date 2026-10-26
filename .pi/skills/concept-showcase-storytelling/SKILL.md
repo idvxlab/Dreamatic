@@ -2,12 +2,13 @@
 name: concept-showcase-storytelling
 description: "Curate image-based design work into a project-specific visual exhibition: concept thesis, complete work arrangement, narrative, image hierarchy and integrated design explanation. Use when art-directing a portfolio or design showcase."
 metadata:
-  audience: builder
-  domain_type: concept_showcase_storytelling
-  module_type: cross_domain
-  capabilities: [art-direction, design-storytelling, image-curation, editorial-composition]
-  supported_outputs: [html]
-  version: "2.1"
+  dreamatic-roles: "builder"
+  dreamatic-domain: "concept_showcase_storytelling"
+  dreamatic-categories: ""
+  dreamatic-module: "cross_domain"
+  dreamatic-capabilities: "art-direction design-storytelling image-curation editorial-composition"
+  dreamatic-outputs: "html"
+  version: "3.1"
 ---
 
 # Curate the work, articulate the idea
@@ -21,20 +22,22 @@ worth seeing; make that idea visible first and explain it with the right evidenc
 Identify the concept thesis, intended audience, distinctive decisions and necessary
 limits from the design specification, per-image introduction, prompt, dimensions,
 related descriptions and references. Use these textual sources to map every work
-to its intended communication purpose. Designer has already chosen the works:
-exhibit all of them, with deliberate differences in scale, grouping and emphasis.
+to its intended communication purpose. Respect the approved selection and coverage requirements. Arrange the works with
+deliberate differences in scale, grouping and emphasis; selection changes follow
+the actual brief rather than an assumed upstream role.
 Choose a hero for its conceptual and narrative role, not guessed image quality.
 
-Do not read generated images or require a vision model. Do not claim to have
-observed composition, fidelity, legibility or particular details. Describe design
-intent honestly. Without visual inspection, preserve full source proportions and
+Use the evidence and inspection capabilities actually supplied by the host.
+Textual descriptions support intended meaning, not observed composition, fidelity
+or legibility. Make visual claims only when the actual images can be inspected;
+otherwise describe documented design intent honestly. Without visual inspection, preserve full source proportions and
 avoid focal-point-dependent crops or overlays over presumed negative space. Do
 not fabricate use testing, process history, engineering validation or performance.
 
-Complete a separate written exhibition direction before implementation: thesis,
-hero, every work's role/group/purpose in narrative order, necessary explanation,
-palette/type/spacing and narrow-screen sequence. The direction guides composition;
-it is not the final exhibition text. Domain tools may persist and check this record.
+Resolve the exhibition direction: thesis, hero, work relationships, narrative order,
+necessary explanation, palette/type/spacing and narrow-screen sequence. Record it
+through the existing planning mechanism when needed; this method does not require
+a separate artifact or a fixed implementation phase.
 
 ## Find the narrative native to this project
 
@@ -81,11 +84,12 @@ sources in a secondary references area; original work needs no invented sources.
 Distinguish concept proposals and assumptions from documented facts. Do not display
 internal generation prompts or the curation record as exhibition text.
 
-Use semantic static HTML, inline CSS and system or existing local fonts. Native
+Use semantic static presentation and the host’s available source format and fonts. Native
 links and anchors support inspection without a script-dependent interface. Avoid
 external imports, animation libraries and hidden gallery panels. When supplied by the host, use stable work references rather than transcribing
 technical filenames; otherwise preserve the exact source supplied by the host. Preserve the association between a work and its source. Check image paths,
-mobile overflow, opening hierarchy and caption readability in the real preview.
+mobile overflow, opening hierarchy and caption readability using the host’s actual
+preview when available; distinguish source checks from observed rendering.
 Aesthetic quality cannot be reduced to a CSS checklist; recheck whether the first
 impression and reading sequence actually communicate this project's idea.
 

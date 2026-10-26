@@ -1,3 +1,5 @@
+import { editCapabilities } from './image-edit-plan.js';
+import { parseSkillSources } from './skill-sources.js';
 import { modelCapabilities } from "@dreamatic/project-data";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -6,6 +8,8 @@ import { parseEnv } from "node:util";
 
 export interface ConfigField { key: string; label: string; module: string; example: string; description: string; type: string; defaultValue: string; options?: string[]; min?: number; max?: number; restartRequired?: boolean }
 export const CONFIG_FIELDS: ConfigField[] = [
+  { key: 'DREAMATIC_IMAGE_EDIT_CAPABILITIES', label: 'Image edit capabilities (JSON)', module: 'image', example: '{"sizes":["1024x1024","1536x1024","1024x1536"],"step":16,"maxPixels":4194304}', description: 'Verified edit endpoint constraints for the configured provider and model. Leave blank when unknown. Supports sizes, step, maxPixels and maxEdge.', type: 'text', defaultValue: '' },
+  { key: 'DREAMATIC_SKILL_PATHS', label: 'Approved Skill paths by role (JSON)', module: 'system', example: '{"designer":["/absolute/path/to/my-skill"]}', description: 'Optional per-role paths to individual Skill directories or SKILL.md files. Ambient user/project Skills are disabled. Approval grants knowledge reading, not tools or dependency installation.', type: 'text', defaultValue: '' },
   { key: 'DREAMATIC_MODEL_EDITOR', label: 'Editor model', module: 'reasoning', example: 'your-text-model', description: 'Optional. Leave blank to use the default reasoning model.', type: 'text', defaultValue: '' },
   { key: 'DREAMATIC_THINKING_LEVEL_EDITOR', label: 'Editor thinking level', module: 'reasoning', example: 'high', description: 'Optional. Applies only to models that support thinking levels.', type: 'select', defaultValue: '', options: ['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
   { key: 'DREAMATIC_IMAGE_EDIT_ENABLED', label: 'Image editing', module: 'image', example: 'true', description: 'Enable prompt-based edits using a source image. Requires an image model that supports editing.', type: 'select', defaultValue: 'true', options: ['true', 'false'] },
@@ -427,8 +431,10 @@ function validate(field: ConfigField, value: unknown): string {
   const trimmed = value.trim();
   if (field.options && !field.options.includes(trimmed)) throw new Error(`${field.label}: Unsupported option`);
   if (field.type === "url" && trimmed) { let url; try { url = new URL(trimmed); } catch { throw new Error(`${field.label}: Enter a complete HTTP(S) URL`); } if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error(`${field.label}: Enter an HTTP(S) URL without embedded credentials`); }
+  if (field.key === 'DREAMATIC_SKILL_PATHS') parseSkillSources(trimmed);
   const validSize = (size: unknown) => typeof size === "string" && /^([1-9]\d*)x([1-9]\d*)$/.test(size) && size.split("x").every(part => Number.isSafeInteger(Number(part)));
   if (field.key === 'DREAMATIC_IMAGE_EDIT_SIZE' && trimmed && trimmed !== 'auto' && !validSize(trimmed)) throw new Error('Image edit size must use auto or WIDTHxHEIGHT');
+  if (field.key === 'DREAMATIC_IMAGE_EDIT_CAPABILITIES') editCapabilities(trimmed);
   if (field.key === "DREAMATIC_IMAGE_DEFAULT_SIZE" && !validSize(trimmed)) throw new Error("Image ceiling must use WIDTHxHEIGHT with positive integer dimensions");
   if (field.key === "DREAMATIC_IMAGE_CAPABILITIES" && trimmed) {
     const data = JSON.parse(trimmed);

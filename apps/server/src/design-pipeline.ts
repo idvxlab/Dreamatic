@@ -1,4 +1,5 @@
 import { createDreamaticAgent } from './agent-session.js';
+import { requestedSkillNames } from './skill-policy.js';
 import { editorTool, editorInventory, editorMaterials } from './editor-agent.js';
 import { imageSlot } from './image-slots.js';
 import { requestImage, retryImage, type ImageFailure } from './image-request.js';
@@ -186,6 +187,8 @@ export async function runDesign(options: PipelineOptions) {
   const resume = text === '继续完成' || text === 'Continue workflow';
   if (!resume && state.request !== text) { state.request = state.request ? `${state.request}\n\nUser revision:\n${text}` : text; state.completed = {}; }
   if (!state.request) throw new Error('No original request to resume');
+  // Clarification answers and resume commands retain the latest human selection.
+  const skillRequest = state.request.split('\n\nUser revision:\n').reverse().find(request => requestedSkillNames(request).length) ?? '';
   await mkdir(join(root, 'final'), { recursive: true });
   await mkdir(join(root, 'artifacts'), { recursive: true });
   const briefPath = join(root, 'brief.json');
@@ -513,10 +516,10 @@ export async function runDesign(options: PipelineOptions) {
       const materialInventory = stage === 'orchestrator' ? await editorMaterials(workspaceDir, runId, messageImageIds) : [];
       let editorUsed = false;
       if (stage === 'orchestrator') {
-        const delegate = editorTool({ repoRoot, inventory: materialInventory, originalRequest: text, workspaceDir, runId, signal, emit: event => { void bus((event as { event: Record<string, unknown> }).event); } });
+        const delegate = editorTool({ repoRoot, inventory: materialInventory, originalRequest: text, skillRequest, workspaceDir, runId, signal, emit: event => { void bus((event as { event: Record<string, unknown> }).event); } });
         tools.push({ ...delegate, async execute(...args) { editorUsed = true; return delegate.execute(...args); } });
       }
-      const { session } = await createDreamaticAgent({ root, role: stage, systemPrompt: `${instruction}\n\n${DELIVERY_POLICY}\nDesignated output: ${outputs[index]}`, skills: stage === 'designer' ? [join(repoRoot, '.pi/skills')] : stage === 'builder' ? [join(repoRoot, '.pi/skills/concept-showcase-storytelling')] : [], textOnly: stage === 'builder', tools });
+      const { session, prompt } = await createDreamaticAgent({ root, role: stage, systemPrompt: `${instruction}\n\n${DELIVERY_POLICY}\nDesignated output: ${outputs[index]}`, repoRoot, textOnly: stage === 'builder', tools, skillRequest });
       options.onSession?.(session);
       const responseTimer = createModelResponseTimer({
         firstOutputMs: Number(setting(`DREAMATIC_MODEL_TURN_TIMEOUT_MS_${stage.toUpperCase()}`) || setting('DREAMATIC_MODEL_TURN_TIMEOUT_MS')),
@@ -551,7 +554,7 @@ export async function runDesign(options: PipelineOptions) {
       const abort = () => { void session.abort(); }; signal.addEventListener('abort', abort, { once: true });
       let result: string;
       try {
-        await session.prompt(`User request:\n${state.request}${stage === 'orchestrator' ? '\n\nEditable project materials (use edit_materials for image editing):\n' + await editorInventory(workspaceDir, runId, materialInventory) : ''}\n\n${prior.map((doc,i) => `--- ${outputs[i]} ---\n${doc}`).join('\n\n')}\n\n${allowed ? `${capability?.verified ? 'Verified supported sizes within current budget (not necessarily exhaustive)' : 'Model size capability is UNKNOWN. Choose WIDTHxHEIGHT within the configured ceiling, which is only a budget, not detected model support or a model maximum; Builder will validate through actual generation. Unverified ceiling'}: ${allowed.join(', ')}` : ''}${['designer', 'builder'].includes(stage) ? '\n\nReference verification report (advisory, never a reason to stop):\n' + await source(join(root, '.citation-report.json')) : ''}${exhibitionContext}${restoredDirection ? '\nA validated exhibition direction from the earlier attempt is restored. Preserve it; repair the saved .builder-output.json HTML instead of starting the exhibition over. Call plan_showcase only if you need to change the direction.' : ''}`, { images: (stage === 'builder' ? [] : attachments).map(image => ({ type: 'image' as const, data: image.data.replace(/^data:[^,]+,/, ''), mimeType: image.mimeType })) });
+        await prompt(`User request:\n${state.request}${stage === 'orchestrator' ? '\n\nEditable project materials (use edit_materials for image editing):\n' + await editorInventory(workspaceDir, runId, materialInventory) : ''}\n\n${prior.map((doc,i) => `--- ${outputs[i]} ---\n${doc}`).join('\n\n')}\n\n${allowed ? `${capability?.verified ? 'Verified supported sizes within current budget (not necessarily exhaustive)' : 'Model size capability is UNKNOWN. Choose WIDTHxHEIGHT within the configured ceiling, which is only a budget, not detected model support or a model maximum; Builder will validate through actual generation. Unverified ceiling'}: ${allowed.join(', ')}` : ''}${['designer', 'builder'].includes(stage) ? '\n\nReference verification report (advisory, never a reason to stop):\n' + await source(join(root, '.citation-report.json')) : ''}${exhibitionContext}${restoredDirection ? '\nA validated exhibition direction from the earlier attempt is restored. Preserve it; repair the saved .builder-output.json HTML instead of starting the exhibition over. Call plan_showcase only if you need to change the direction.' : ''}`, { images: (stage === 'builder' ? [] : attachments).map(image => ({ type: 'image' as const, data: image.data.replace(/^data:[^,]+,/, ''), mimeType: image.mimeType })) });
         signal.throwIfAborted();
         if (!pendingImages && responseTimer.failure) throw new Error(`Model response timeout (${responseTimer.failure}); tool execution time is excluded. Resume to retry this stage`);
         result = session.getLastAssistantText() || '';

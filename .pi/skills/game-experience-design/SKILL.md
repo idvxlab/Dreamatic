@@ -1,13 +1,14 @@
 ---
 name: game-experience-design
-description: "Design player goals, core loops, rules, worlds and narrative experiences. Use for game concepts expressed as images or scoped browser prototypes; game interface knowledge can support UX work but does not replace general UX responsibility or provide a game-engine executor."
+description: "Design player goals, core loops, rules, worlds and narrative experiences. Use when player agency and game systems are central; communicate concepts or playable evidence according to available host capabilities. Interface flows can use supporting UX knowledge."
 metadata:
-  audience: designer
-  domain_type: game_experience_design
-  design_categories: [game]
-  module_type: discipline
-  capabilities: [game-design, core-loops, player-experience, world-building, game-prototyping]
-  supported_outputs: [image, html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "game_experience_design"
+  dreamatic-categories: "game"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "game-design core-loops player-experience world-building game-prototyping"
+  dreamatic-outputs: "image html"
+  version: "2.1"
 ---
 
 # Game Experience Design
@@ -45,9 +46,9 @@ interactive objects readable against atmosphere.
 Choose world views, interface studies, characters, interaction sequences and rule
 explanations by distinct design questions. Carry rules, states and visual anchors
 into the specification. Image outputs communicate concepts; they are not playable
-software, animation or 3D assets. When a local browser prototype is appropriate,
-discover suitable HTML authoring knowledge, author the prototype through HTML
-sources and describe only its implemented behavior.
+software, animation or 3D assets. When the host provides browser-prototype authoring, use that capability for
+playable evidence and describe only implemented behavior. Otherwise communicate
+rules and state changes as concept views and proposed playtest questions.
 
 Distinguish hypotheses from completed playtests. Judge meaningful decisions, feedback,
 world coherence and what future prototypes still need to verify.

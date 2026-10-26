@@ -1,3 +1,4 @@
+import { PROMPT_MIN_SIZE } from '@dreamatic/project-data/canvas-graph';
 import { normalizeCanvasEdges, type CanvasEdge } from '@dreamatic/project-data/canvas-graph';
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
@@ -52,8 +53,8 @@ export function normalizeCanvasState(runId: string, value: unknown): CanvasState
       kind: item.kind as CanvasElementState["kind"],
       x: finite(item.x),
       y: finite(item.y),
-      width: Math.max(80, Math.min(2400, finite(item.width, 320))),
-      height: Math.max(40, Math.min(2400, finite(item.height, 220))),
+      width: Math.max(item.kind === "prompt" ? PROMPT_MIN_SIZE.width : 80, Math.min(2400, finite(item.width, 320))),
+      height: Math.max(item.kind === "prompt" ? PROMPT_MIN_SIZE.height : 40, Math.min(2400, finite(item.height, 220))),
       ...(typeof item.fileId === "string" ? { fileId: item.fileId } : {}),
       ...(typeof item.assetPath === "string" ? { assetPath: item.assetPath } : {}),
       ...(typeof item.text === "string" ? { text: item.text.slice(0, 20_000) } : {}),

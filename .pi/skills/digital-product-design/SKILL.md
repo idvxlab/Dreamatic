@@ -1,13 +1,14 @@
 ---
 name: digital-product-design
-description: "Define digital product value, capabilities, feature architecture and core experience loops for apps, SaaS and connected services. Use when deciding what a product should do and why; add task-interaction or interface-composition knowledge for detailed UX and UI decisions. Express concepts as HTML prototypes."
+description: "Define digital product value, capabilities, feature architecture and core experience loops for apps, SaaS and connected services. Use when deciding what a product should do and why; add task-interaction or interface-composition knowledge for detailed UX and UI decisions. Communicate product concepts through the host’s available design medium."
 metadata:
-  audience: designer
-  domain_type: digital_product_design
-  design_categories: [ux]
-  module_type: discipline
-  capabilities: [product-strategy, value-proposition, feature-architecture, experience-loops]
-  supported_outputs: [html]
+  dreamatic-roles: "designer"
+  dreamatic-domain: "digital_product_design"
+  dreamatic-categories: "digital"
+  dreamatic-module: "discipline"
+  dreamatic-capabilities: "product-strategy value-proposition feature-architecture experience-loops"
+  dreamatic-outputs: "image html"
+  version: "2.0"
 ---
 
 # Digital Product Design
@@ -53,8 +54,9 @@ assumptions when unverified. Commercial and usability success remain hypotheses.
 
 Choose pages, states and scenarios from actual journeys, roles and consequences,
 including empty/loading/error cases and relevant device contexts. A polished landing
-screen cannot explain a multi-step product. Deliver UI tasks as complete HTML page
-designs with realistic content, visual composition and necessary local interactions,
-using CSS/JS as needed. Discover suitable HTML authoring knowledge
-from the installed Skill catalog. Verify authored sources against the specified requirements. A local prototype does not establish
-backend integration or a deployed service.
+screen cannot explain a multi-step product. Specify realistic content, visual
+composition, states and intended interactions. In an image-concept workflow, choose
+screen/state views and keep behavior and acceptance criteria in the specification.
+When an authoring host supports interactive prototypes, realize the relevant flows
+and distinguish implemented behavior from proposed integrations. A static exhibition
+of screen concepts does not establish working application behavior or a deployed service.
